@@ -1,0 +1,501 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowRight,
+  Clock3,
+  Gem,
+  LockKeyhole,
+  ShieldCheck,
+  Ticket,
+} from "lucide-react";
+import heroImage from "../../assets/hero-world-cup-clean.png";
+import heroScrollVideo from "../../assets/Background.mp4";
+import renaissLogo from "../../assets/renaiss-logo-mark.png";
+import { GlareHover } from "../GlareHover";
+import { Magnet } from "../Magnet";
+import { formatNumber } from "../../data/ticketMath";
+import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+import { RulesRoom } from "./RulesRoom";
+
+function getMilestoneSnapshot(milestones, currentValue) {
+  const sorted = [...milestones].sort((left, right) => left.threshold - right.threshold);
+  if (sorted.length === 0) {
+    return {
+      sorted,
+      previous: null,
+      next: null,
+      progress: 0,
+      unlocked: [],
+      remaining: 0,
+      complete: true,
+    };
+  }
+
+  const previous = [...sorted].reverse().find((milestone) => milestone.threshold <= currentValue) ?? null;
+  const nextOpen = sorted.find((milestone) => milestone.threshold > currentValue) ?? null;
+  const next = nextOpen ?? sorted[sorted.length - 1];
+  const previousThreshold = previous?.threshold ?? 0;
+  const progress = nextOpen
+    ? Math.min(100, Math.max(0, ((currentValue - previousThreshold) / Math.max(1, next.threshold - previousThreshold)) * 100))
+    : 100;
+  const unlocked = sorted.filter((milestone) => currentValue >= milestone.threshold);
+
+  return {
+    sorted,
+    previous,
+    next,
+    progress,
+    unlocked,
+    remaining: Math.max(0, next.threshold - currentValue),
+    complete: !nextOpen,
+  };
+}
+
+function getFeaturedHomeMatch(matches) {
+  return matches.find((match) => match.status === "closing_soon")
+    ?? matches.find((match) => match.status === "open")
+    ?? matches.find((match) => match.status === "locked")
+    ?? matches.find((match) => match.status === "official_final")
+    ?? matches.find((match) => match.status === "scheduled")
+    ?? matches[0]
+    ?? null;
+}
+
+function getFeaturedStatusTone(status) {
+  if (["open", "closing_soon"].includes(status)) return "voteable";
+  if (status === "locked") return "locked";
+  if (status === "official_final") return "final";
+  return "scheduled";
+}
+
+function getFeaturedStatusIcon(status) {
+  if (["open", "closing_soon"].includes(status)) return Ticket;
+  if (status === "official_final") return ShieldCheck;
+  return LockKeyhole;
+}
+
+function useScrollScrubbedHomeVideo(containerRef, videoRef) {
+  useEffect(() => {
+    const container = containerRef.current;
+    const video = videoRef.current;
+    if (!container || !video) return undefined;
+
+    const reduceMotionQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (reduceMotionQuery?.matches) {
+      video.pause();
+      return undefined;
+    }
+
+    let frameId = 0;
+    let duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 6;
+
+    const syncVideoToScroll = () => {
+      frameId = 0;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+      const containerTop = container.getBoundingClientRect().top + window.scrollY;
+      const travel = Math.max(1, container.offsetHeight - viewportHeight);
+      const progress = Math.min(1, Math.max(0, (window.scrollY - containerTop) / travel));
+      const targetTime = Math.min(Math.max(0, duration - 0.02), Math.max(0, progress * duration));
+
+      video.pause();
+      if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.006) {
+        video.currentTime = targetTime;
+      }
+    };
+
+    const requestSync = () => {
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(syncVideoToScroll);
+    };
+
+    const handleMetadata = () => {
+      duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : duration;
+      requestSync();
+    };
+
+    video.addEventListener("loadedmetadata", handleMetadata);
+    window.addEventListener("scroll", requestSync, { passive: true });
+    window.addEventListener("resize", requestSync);
+
+    if (video.readyState >= 1) handleMetadata();
+    requestSync();
+
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
+      video.removeEventListener("loadedmetadata", handleMetadata);
+      window.removeEventListener("scroll", requestSync);
+      window.removeEventListener("resize", requestSync);
+    };
+  }, [containerRef, videoRef]);
+}
+
+function HeroFeaturedMatch({ match, teams, onOpenMatch, copy }) {
+  if (!match || teams.length < 2) return null;
+
+  const { compactVotes, dateTime, matchStatus, teamName, venueName, t } = copy;
+  const [left, right] = teams;
+  const canVote = ["open", "closing_soon"].includes(match.status);
+  const tone = getFeaturedStatusTone(match.status);
+  const StatusIcon = getFeaturedStatusIcon(match.status);
+
+  return (
+    <section className={`hero-featured-match is-${tone}`} aria-label={t("home.featuredMatchAria")}>
+      <header>
+        <span>
+          <StatusIcon size={15} strokeWidth={2.25} />
+          {canVote ? t("home.heroVoteCue") : t("home.heroReadOnlyCue")}
+        </span>
+        <strong>{match.id.toUpperCase()} · {matchStatus(match.status)}</strong>
+      </header>
+
+      <section className="hero-featured-match__teams" aria-label={t("home.featuredTeamsAria")}>
+        {[left, right].map((team) => (
+          <article className="hero-featured-team" key={team.id}>
+            <img src={team.flagSrc} alt="" aria-hidden="true" />
+            <span>
+              <strong>{teamName(team)}</strong>
+              <small>{t("home.votePool", { votes: compactVotes(team.votes) })}</small>
+            </span>
+          </article>
+        ))}
+        <em>{t("vote.versusShort")}</em>
+      </section>
+
+      <dl className="hero-featured-meta" aria-label={t("home.featuredMetaAria")}>
+        <div>
+          <dt>{t("common.cutoff")}</dt>
+          <dd>{dateTime(match.cutoffAt)} {t("common.hkt")}</dd>
+        </div>
+        <div>
+          <dt>{t("common.venue")}</dt>
+          <dd>{venueName(match.venue)}</dd>
+        </div>
+      </dl>
+
+      <Magnet as="button" className="hero-featured-action" type="button" strength={60} onClick={onOpenMatch}>
+        {canVote ? t("home.openFeaturedVote") : t("home.inspectFeaturedMatch")}
+        <ArrowRight size={16} strokeWidth={2.3} />
+      </Magnet>
+    </section>
+  );
+}
+
+function HeroCommandDeck({
+  activeRound,
+  featuredMatch,
+  featuredTeams,
+  onOpenFeaturedMatch,
+  copy,
+}) {
+  const { roundLabel, t } = copy;
+
+  return (
+    <section className="hero-match-capsule" aria-label={t("home.heroConsole")}>
+      <header className="hero-command-card__head">
+        <span>
+          <img src={renaissLogo} alt="" aria-hidden="true" />
+          {t("home.campaignDesk")}
+        </span>
+        <strong>{roundLabel(activeRound, "englishLabel")}</strong>
+      </header>
+
+      <HeroFeaturedMatch
+        match={featuredMatch}
+        teams={featuredTeams}
+        onOpenMatch={onOpenFeaturedMatch}
+        copy={copy}
+      />
+    </section>
+  );
+}
+
+function formatMilestoneReward(milestone) {
+  if (!milestone?.rewardAmount) return "";
+  return `${formatNumber(milestone.rewardAmount)} ${milestone.rewardCurrency || "USDT"}`;
+}
+
+function formatMilestoneRewardCompact(milestone) {
+  if (!milestone?.rewardAmount) return "";
+  const currency = milestone.rewardCurrency === "USDT" ? "U" : milestone.rewardCurrency;
+  return `${formatNumber(milestone.rewardAmount)} ${currency || ""}`.trim();
+}
+
+function getMilestoneOverallProgress(milestoneSnapshot, currentValue) {
+  const finalThreshold = milestoneSnapshot.sorted[milestoneSnapshot.sorted.length - 1]?.threshold ?? 0;
+  if (!finalThreshold) return 100;
+  return Math.min(100, Math.max(0, (currentValue / finalThreshold) * 100));
+}
+
+function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTitle, heroMilestoneDetail, copy, className = "" }) {
+  const { milestonePrize, t } = copy;
+  const scrollAnchorRef = useRef(null);
+  const [scrollRatio, setScrollRatio] = useState(0);
+  const totalMilestones = milestoneSnapshot.sorted.length;
+  const focusedMilestone = milestoneSnapshot.complete
+    ? milestoneSnapshot.sorted[milestoneSnapshot.sorted.length - 1]
+    : milestoneSnapshot.next;
+  const focusedReward = formatMilestoneReward(focusedMilestone);
+  const focusedSlots = focusedMilestone?.rewardSlots ?? 0;
+  const campaignProgress = getMilestoneOverallProgress(milestoneSnapshot, currentValue);
+  const visualProgress = Math.min(campaignProgress, Math.max(0, campaignProgress * scrollRatio));
+  const finalThreshold = milestoneSnapshot.sorted[milestoneSnapshot.sorted.length - 1]?.threshold ?? 0;
+  const railFill = Math.min(92, Math.max(0, visualProgress * 0.92));
+  const nextTargetSummary = milestoneSnapshot.complete
+    ? t("home.milestoneCompleteSummary")
+    : t("home.milestoneNextTicketSummary", {
+      count: formatNumber(milestoneSnapshot.next?.threshold ?? 0),
+      remaining: formatNumber(milestoneSnapshot.remaining),
+    });
+
+  useEffect(() => {
+    const anchor = scrollAnchorRef.current;
+    if (!anchor) return undefined;
+
+    let frameId = 0;
+    const updateScrollRatio = () => {
+      frameId = 0;
+      const rect = anchor.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+      const start = viewportHeight * 0.9;
+      const end = viewportHeight * 0.22;
+      const nextRatio = Math.min(1, Math.max(0, (start - rect.top) / Math.max(1, start - end)));
+
+      setScrollRatio((previousRatio) => (
+        Math.abs(previousRatio - nextRatio) < 0.004 ? previousRatio : nextRatio
+      ));
+    };
+
+    const requestUpdate = () => {
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(updateScrollRatio);
+    };
+
+    requestUpdate();
+    window.addEventListener("scroll", requestUpdate, { passive: true });
+    window.addEventListener("resize", requestUpdate);
+
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
+      window.removeEventListener("scroll", requestUpdate);
+      window.removeEventListener("resize", requestUpdate);
+    };
+  }, []);
+
+  return (
+    <section className="home-milestone-scroll-shell" ref={scrollAnchorRef}>
+      <GlareHover
+        as="article"
+        className={["hero-milestone-command", className].filter(Boolean).join(" ")}
+        aria-label={t("home.milestoneProgress")}
+        style={{
+          "--milestone-scroll-fill": `${visualProgress}%`,
+          "--milestone-campaign-fill": `${campaignProgress}%`,
+        }}
+      >
+        <header className="hero-milestone-command__head">
+          <span>
+            <Gem size={15} strokeWidth={2.25} />
+            {t("home.prizeLadder")}
+          </span>
+          <em>{t("home.milestoneCurrentTickets", { count: formatNumber(currentValue) })}</em>
+        </header>
+
+        <p className="hero-milestone-command__caption">
+          {t("home.milestoneTicketExplain")} <span>{nextTargetSummary}</span>
+        </p>
+
+        <section className="hero-milestone-command__focus">
+          <span>{milestoneSnapshot.complete ? t("home.milestoneAllRewards") : t("home.milestoneNextReward")}</span>
+          <strong>{heroMilestoneTitle}</strong>
+          <p>{heroMilestoneDetail}</p>
+          <dl>
+            <div>
+              <dt>{t("home.milestoneTarget")}</dt>
+              <dd>{formatNumber(focusedMilestone?.threshold ?? 0)}</dd>
+            </div>
+            <div>
+              <dt>{t("home.milestoneRewardAmount")}</dt>
+              <dd>{focusedReward || "-"}</dd>
+            </div>
+            <div>
+              <dt>{t("home.milestoneReward")}</dt>
+              <dd>{focusedMilestone ? milestonePrize(focusedMilestone) : "-"}</dd>
+            </div>
+            <div>
+              <dt>{t("home.milestonePrizeSlots")}</dt>
+              <dd>{focusedSlots ? t("home.milestoneSlotCount", { count: formatNumber(focusedSlots) }) : "-"}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <ol
+          className="hero-milestone-levels"
+          style={{
+            "--milestone-fill": `${visualProgress}%`,
+            "--milestone-rail-fill": `${railFill}%`,
+          }}
+          aria-label={t("home.milestoneTrack")}
+        >
+          {milestoneSnapshot.sorted.map((milestone, index) => {
+            const isUnlocked = currentValue >= milestone.threshold;
+            const isNext = !isUnlocked && milestone.id === milestoneSnapshot.next?.id;
+            const thresholdProgress = finalThreshold
+              ? Math.min(100, Math.max(0, (milestone.threshold / finalThreshold) * 100))
+              : 100;
+            const isScrollLit = visualProgress + 0.35 >= thresholdProgress;
+            const stepProgress = totalMilestones > 1 ? index / (totalMilestones - 1) : 0.5;
+            const dotLeft = Math.min(94, Math.max(6, 6 + (stepProgress * 88)));
+            const statusLabel = isUnlocked
+              ? t("home.unlockedStatus")
+              : isNext
+                ? t("home.nextStatus")
+                : t("home.lockedStatus");
+            return (
+              <li
+                className={[
+                  isUnlocked ? "is-unlocked" : "is-locked",
+                  isNext ? "is-next" : "",
+                  isScrollLit ? "is-scroll-lit" : "is-scroll-dim",
+                ].filter(Boolean).join(" ")}
+                key={milestone.id}
+                aria-current={isNext ? "step" : undefined}
+                aria-label={`${String(index + 1).padStart(2, "0")} ${t("home.milestoneTargetValue", { count: formatNumber(milestone.threshold) })} ${formatMilestoneRewardCompact(milestone) || "-"} ${statusLabel}`}
+                style={{ "--milestone-dot-left": `${dotLeft}%` }}
+              >
+                <em>{String(index + 1).padStart(2, "0")}</em>
+                <span>{t("home.milestoneTargetValue", { count: formatNumber(milestone.threshold) })}</span>
+                <strong>{formatMilestoneRewardCompact(milestone) || "-"}</strong>
+                <small>{t("home.milestoneUnlockHint")}</small>
+              </li>
+            );
+          })}
+        </ol>
+        <section className="hero-milestone-command__summary" aria-label={t("home.milestoneSummaryAria")}>
+          <output>
+            <span>{t("home.currentMetric")}</span>
+            <strong>{formatNumber(currentValue)}</strong>
+          </output>
+          <output>
+            <span>{milestoneSnapshot.complete ? t("home.milestoneState") : t("home.remaining")}</span>
+            <strong>{milestoneSnapshot.complete ? t("home.allUnlocked") : formatNumber(milestoneSnapshot.remaining)}</strong>
+          </output>
+        </section>
+        <span className="hero-milestone-command__meter" aria-hidden="true">
+          <span style={{ width: `${visualProgress}%` }} />
+        </span>
+      </GlareHover>
+    </section>
+  );
+}
+
+export function HomeRoom({
+  activeRound,
+  matches,
+  teamsById,
+  milestones,
+  currentMilestoneValue,
+  rounds,
+  drawStats,
+  onSelectView,
+  onSelectMatch,
+}) {
+  const copy = useCampaignCopy();
+  const { t } = copy;
+  const homeRoomRef = useRef(null);
+  const heroVideoRef = useRef(null);
+  const activeRoundMatches = matches.filter((match) => match.roundId === activeRound.id);
+  const featuredMatch = getFeaturedHomeMatch(activeRoundMatches);
+  const featuredTeams = featuredMatch?.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean) ?? [];
+  const milestoneSnapshot = getMilestoneSnapshot(milestones, currentMilestoneValue);
+  const heroMilestoneTitle = milestoneSnapshot.complete
+    ? t("home.allMilestonesOpen")
+    : milestoneSnapshot.next ? copy.milestoneLabel(milestoneSnapshot.next) : t("home.nextMilestone");
+  const heroMilestoneDetail = milestoneSnapshot.complete
+    ? t("home.allMilestonesDetail")
+    : t("home.ticketsToTarget", { remaining: formatNumber(milestoneSnapshot.remaining), target: formatNumber(milestoneSnapshot.next.threshold) });
+  const handleOpenFeaturedMatch = () => {
+    if (featuredMatch) onSelectMatch(featuredMatch.id);
+    onSelectView("vote");
+  };
+
+  useScrollScrubbedHomeVideo(homeRoomRef, heroVideoRef);
+
+  return (
+    <section className="home-room" ref={homeRoomRef} aria-label={t("home.aria")}>
+      <div className="home-video-backdrop" aria-hidden="true">
+        <img className="home-video-backdrop__poster" src={heroImage} alt="" />
+        <video
+          className="home-video-backdrop__video"
+          ref={heroVideoRef}
+          src={heroScrollVideo}
+          poster={heroImage}
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+          disablePictureInPicture
+        />
+      </div>
+
+      <figure className="hero-stage">
+        <figcaption className="hero-stage__content">
+          <section className="hero-copy">
+            <h1>{t("home.title")}</h1>
+            <p>
+              {t("home.body")}
+            </p>
+            <menu className="hero-actions" aria-label={t("home.primaryActionsAria")}>
+              <li>
+                <Magnet>
+                  <button
+                    className="hero-action hero-action--primary renaiss-metal-button is-light"
+                    type="button"
+                    onClick={() => onSelectView("vote")}
+                  >
+                    <Ticket size={18} strokeWidth={2.2} />
+                    {t("home.startVoting")}
+                    <ArrowRight size={17} strokeWidth={2.2} />
+                  </button>
+                </Magnet>
+              </li>
+              <li>
+                <Magnet>
+                  <button className="hero-action hero-action--ghost renaiss-metal-button" type="button" onClick={() => onSelectView("schedule")}>
+                    <Clock3 size={18} strokeWidth={2.2} />
+                    {t("home.viewSchedule")}
+                  </button>
+                </Magnet>
+              </li>
+            </menu>
+          </section>
+
+          <HeroCommandDeck
+            activeRound={activeRound}
+            featuredMatch={featuredMatch}
+            featuredTeams={featuredTeams}
+            onOpenFeaturedMatch={handleOpenFeaturedMatch}
+            copy={copy}
+          />
+        </figcaption>
+      </figure>
+
+      <section className="home-scroll-sections">
+        <HeroMilestoneCommand
+          className="home-milestone-panel"
+          milestoneSnapshot={milestoneSnapshot}
+          currentValue={currentMilestoneValue}
+          heroMilestoneTitle={heroMilestoneTitle}
+          heroMilestoneDetail={heroMilestoneDetail}
+          copy={copy}
+        />
+        <RulesRoom
+          activeRound={activeRound}
+          activeRoundMatches={activeRoundMatches}
+          rounds={rounds}
+          drawStats={drawStats}
+          teamsById={teamsById}
+          className="home-rules-panel"
+        />
+      </section>
+    </section>
+  );
+}

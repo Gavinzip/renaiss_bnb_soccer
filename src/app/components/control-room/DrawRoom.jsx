@@ -1,0 +1,500 @@
+import {
+  AlertTriangle,
+  Award,
+  CheckCircle2,
+  CircleDashed,
+  Clock3,
+  LockKeyhole,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
+import { AnimatedContent } from "../AnimatedContent";
+import { GlareHover } from "../GlareHover";
+import { Magnet } from "../Magnet";
+import { formatNumber, formatPercent } from "../../data/ticketMath";
+import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+
+const drawStepIds = ["results", "eligible", "snapshot", "reveal"];
+
+function getActiveDrawStep(status) {
+  if (status === "revealed") return 3;
+  if (status === "snapshot_ready") return 2;
+  if (status === "eligible_ready") return 1;
+  return 0;
+}
+
+function getDrawStateCopy(activeDraw, t) {
+  if (activeDraw.drawStatusResolved === "revealed") {
+    return {
+      tone: "revealed",
+      Icon: CheckCircle2,
+      eyebrow: t("draw.winnersRevealed"),
+      title: t("draw.completeTitle"),
+      body: t("draw.completeBody"),
+    };
+  }
+
+  if (activeDraw.drawStatusResolved === "snapshot_ready") {
+    return {
+      tone: "snapshot",
+      Icon: ShieldCheck,
+      eyebrow: t("draw.snapshotReady"),
+      title: t("draw.snapshotTitle"),
+      body: t("draw.snapshotBody"),
+    };
+  }
+
+  if (activeDraw.eligibleEntries > 0 || activeDraw.drawStatusResolved === "eligible_ready") {
+    return {
+      tone: "eligible",
+      Icon: Award,
+      eyebrow: t("draw.eligiblePoolLive"),
+      title: t("draw.eligibleTitle"),
+      body: t("draw.eligibleBody"),
+    };
+  }
+
+  if (activeDraw.pendingEntries > 0) {
+    return {
+      tone: "pending",
+      Icon: Clock3,
+      eyebrow: t("draw.waitingResults"),
+      title: t("draw.waitingTitle"),
+      body: t("draw.waitingBody"),
+    };
+  }
+
+  return {
+    tone: "locked",
+    Icon: LockKeyhole,
+    eyebrow: t("draw.noEligible"),
+    title: t("draw.noEligibleTitle"),
+    body: t("draw.noEligibleBody"),
+  };
+}
+
+function PrizeSlots({ count, active, stateTone, t }) {
+  return (
+    <ol className="prize-slots" aria-label={t("draw.prizeSlotsAria", { count: formatNumber(count) })}>
+      {Array.from({ length: count }, (_, index) => (
+        <AnimatedContent
+          as="li"
+          className={[active ? "is-active" : "", `is-${stateTone}`].filter(Boolean).join(" ")}
+          delay={index * 0.012}
+          distance={10}
+          duration={0.32}
+          key={`slot-${index + 1}`}
+        >
+          <span>{String(index + 1).padStart(2, "0")}</span>
+        </AnimatedContent>
+      ))}
+    </ol>
+  );
+}
+
+function ResultTable({ matches, teamsById, copy }) {
+  const { teamName, t } = copy;
+
+  return (
+    <section className="draw-results" aria-label={t("draw.resultTableAria")}>
+      <header>
+        <span>{t("draw.advancingResults")}</span>
+        <strong>{t("draw.officialOnly")}</strong>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>{t("common.match")}</th>
+            <th>{t("draw.teams")}</th>
+            <th>{t("common.status")}</th>
+            <th>{t("common.advancing")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {matches.map((match) => {
+            const [left, right] = match.teams.map((teamId) => teamsById.get(teamId));
+            const isFinal = match.status === "official_final";
+            const advancing = match.advancingTeamId ? teamName(teamsById.get(match.advancingTeamId)) : t("draw.pending");
+            return (
+              <tr className={isFinal ? "is-final" : "is-pending"} key={match.id}>
+                <td>{match.id.toUpperCase()}</td>
+                <td>{teamName(left)} / {teamName(right)}</td>
+                <td>{isFinal ? match.score || t("common.final") : t("draw.pendingFinal")}</td>
+                <td>{advancing}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function UserDrawStatus({ activeDraw, t }) {
+  const hasEligible = activeDraw.eligibleEntries > 0;
+  const hasPending = activeDraw.pendingEntries > 0;
+  const hasLost = activeDraw.lostEntries > 0;
+  const status = hasEligible ? t("draw.eligibleBeforeReveal") : hasPending ? t("draw.pendingResult") : t("draw.notEligibleYet");
+  const reason = hasEligible
+    ? t("draw.correctOfficial")
+    : hasPending
+      ? t("draw.previewWait")
+      : t("draw.noWinningAllocation");
+
+  return (
+    <section className="user-draw-status" aria-label={t("draw.userDrawAria")}>
+      <header>
+        <span>{t("draw.userDrawCenter")}</span>
+        <strong>{status}</strong>
+      </header>
+      <p>{reason}</p>
+      <dl>
+        <dt>{t("draw.eligibleEntries")}</dt>
+        <dd>{formatNumber(activeDraw.eligibleEntries)}</dd>
+        <dt>{t("common.totalPool")}</dt>
+        <dd>{formatNumber(activeDraw.totalPoolEntries)}</dd>
+        <dt>{t("draw.estimatedChance")}</dt>
+        <dd>{formatPercent(activeDraw.estimatedChance)}</dd>
+        <dt>{t("draw.lostEntries")}</dt>
+        <dd>{hasLost ? formatNumber(activeDraw.lostEntries) : "0"}</dd>
+        <dt>{t("draw.revealStatus")}</dt>
+        <dd>{activeDraw.drawStatusResolved === "revealed" ? t("draw.revealed") : t("draw.awaitingReveal")}</dd>
+        <dt>{t("draw.wonNotWon")}</dt>
+        <dd>{activeDraw.drawStatusResolved === "revealed" ? t("draw.notWon") : t("draw.pendingReveal")}</dd>
+        <dt>{t("common.auditReference")}</dt>
+        <dd>{activeDraw.drawStatusResolved === "revealed" ? "demo-audit-ref" : t("draw.snapshotNotRevealed")}</dd>
+      </dl>
+    </section>
+  );
+}
+
+function DrawReadinessDeck({ activeDraw, t }) {
+  const finalsComplete = activeDraw.officialFinalCount >= activeDraw.matchCount;
+  const revealReady = ["snapshot_ready", "revealed"].includes(activeDraw.drawStatusResolved);
+  const cards = [
+    {
+      id: "finals",
+      tone: finalsComplete ? "ready" : "pending",
+      Icon: finalsComplete ? ShieldCheck : Clock3,
+      label: t("draw.officialFinals"),
+      value: `${formatNumber(activeDraw.officialFinalCount)}/${formatNumber(activeDraw.matchCount)}`,
+      detail: finalsComplete ? t("draw.eligibilityCanLock") : t("draw.waitingMatchResults"),
+    },
+    {
+      id: "eligible",
+      tone: activeDraw.eligibleEntries > 0 ? "eligible" : "quiet",
+      Icon: Award,
+      label: t("draw.eligibleEntries"),
+      value: formatNumber(activeDraw.eligibleEntries),
+      detail: t("draw.correctPicksOnly"),
+    },
+    {
+      id: "pending",
+      tone: activeDraw.pendingEntries > 0 ? "pending" : "quiet",
+      Icon: CircleDashed,
+      label: t("draw.pendingEntries"),
+      value: formatNumber(activeDraw.pendingEntries),
+      detail: t("draw.awaitingFinals"),
+    },
+    {
+      id: "prizes",
+      tone: "prize",
+      Icon: Award,
+      label: t("draw.roundPrizes"),
+      value: formatNumber(activeDraw.prizeCount),
+      detail: t("draw.winnerSlots"),
+    },
+    {
+      id: "boundary",
+      tone: revealReady ? "snapshot" : "locked",
+      Icon: revealReady ? ShieldCheck : LockKeyhole,
+      label: t("draw.revealLayer"),
+      value: revealReady ? t("draw.snapshot") : t("draw.notWired"),
+      detail: t("draw.contractOutsideBuild"),
+    },
+  ];
+
+  return (
+    <section className="draw-readiness-deck" aria-label={t("draw.readinessAria")}>
+      {cards.map((card, index) => {
+        const Icon = card.Icon;
+        return (
+          <AnimatedContent as="article" className={`draw-readiness-card is-${card.tone}`} delay={index * 0.025} distance={8} key={card.id}>
+            <span>
+              <Icon size={16} strokeWidth={2.25} />
+              {card.label}
+            </span>
+            <strong>{card.value}</strong>
+            <small>{card.detail}</small>
+          </AnimatedContent>
+        );
+      })}
+    </section>
+  );
+}
+
+function RoundDrawLedger({ drawStats, activeDraw, onSelectRound, copy }) {
+  const { roundLabel, t } = copy;
+
+  return (
+    <section className="round-draw-ledger" aria-label={t("draw.roundLedgerAria")}>
+      <header>
+        <span>
+          <RefreshCw size={16} strokeWidth={2.25} />
+          {t("draw.roundLedgerTitle")}
+        </span>
+        <strong>{t("draw.roundLedgerReset")}</strong>
+      </header>
+      <ol>
+        {drawStats.map((round, index) => {
+          const roundState = getDrawStateCopy(round, t);
+          const isActive = round.id === activeDraw.id;
+          const stagedEntries = round.eligibleEntries + round.pendingEntries;
+          const entryCopy = round.eligibleEntries > 0
+            ? t("draw.roundLedgerReady", { entries: formatNumber(round.eligibleEntries) })
+            : round.pendingEntries > 0
+              ? t("draw.roundLedgerPending", { entries: formatNumber(round.pendingEntries) })
+              : t("draw.roundLedgerQuiet");
+
+          return (
+            <AnimatedContent as="li" key={round.id} delay={index * 0.026} distance={10}>
+              <Magnet
+                as="button"
+                className={[
+                  "round-draw-ledger__card",
+                  isActive ? "is-active" : "",
+                  `is-${roundState.tone}`,
+                ].filter(Boolean).join(" ")}
+                type="button"
+                strength={58}
+                aria-current={isActive ? "step" : undefined}
+                aria-label={t("draw.roundLedgerButtonAria", {
+                  round: roundLabel(round, "advanceLabel"),
+                  state: roundState.eyebrow,
+                })}
+                onClick={() => onSelectRound(round.id)}
+              >
+                <span className="round-draw-ledger__index">{String(index + 1).padStart(2, "0")}</span>
+                <span className="round-draw-ledger__copy">
+                  <strong>{roundLabel(round, "advanceLabel")}</strong>
+                  <small>{t("draw.roundLedgerFinals", {
+                    finals: formatNumber(round.officialFinalCount),
+                    matches: formatNumber(round.matchCount),
+                  })}</small>
+                </span>
+                <dl>
+                  <div>
+                    <dt>{t("draw.roundPrizes")}</dt>
+                    <dd>{formatNumber(round.prizeCount)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("draw.roundLedgerEntries")}</dt>
+                    <dd>{formatNumber(stagedEntries)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("draw.estimatedChance")}</dt>
+                    <dd>{formatPercent(round.estimatedChance)}</dd>
+                  </div>
+                </dl>
+                <em>{entryCopy}</em>
+              </Magnet>
+            </AnimatedContent>
+          );
+        })}
+      </ol>
+      <p>{t("draw.roundLedgerBoundary")}</p>
+    </section>
+  );
+}
+
+function DrawRoundRail({ drawStats, activeDraw, simulatedRoundId, onSelectRound, copy }) {
+  const { roundLabel, t } = copy;
+  const simulatedIndex = Math.max(0, drawStats.findIndex((round) => round.id === simulatedRoundId));
+
+  return (
+    <aside className="draw-round-rail" aria-label={t("draw.roundsAria")}>
+      <header>
+        <span>{t("draw.roundPools")}</span>
+        <strong>{t("draw.winnersEach", { count: formatNumber(activeDraw.prizeCount) })}</strong>
+      </header>
+      <ol>
+        {drawStats.map((round, index) => {
+          const isActive = round.id === activeDraw.id;
+          const canInspect = index <= simulatedIndex;
+          const stagedEntries = round.eligibleEntries + round.pendingEntries;
+          const roundState = getDrawStateCopy(round, t);
+
+          return (
+            <li key={round.id} className={[isActive ? "is-active" : "", canInspect ? "is-inspectable" : "is-future-locked"].filter(Boolean).join(" ")}>
+              <Magnet
+                as="button"
+                type="button"
+                className={`draw-round-rail__button is-${roundState.tone}`}
+                strength={42}
+                disabled={!canInspect}
+                onClick={() => onSelectRound(round.id)}
+                aria-current={isActive ? "step" : undefined}
+              >
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <strong>{roundLabel(round)}</strong>
+                <small>{canInspect ? `${formatNumber(stagedEntries)} ${t("common.entries")}` : t("roundRail.futureLocked")}</small>
+              </Magnet>
+            </li>
+          );
+        })}
+      </ol>
+    </aside>
+  );
+}
+
+function DrawProgressMap({ activeDraw, activeStep, drawState, t }) {
+  const settledPercent = Math.min(100, Math.round((activeDraw.officialFinalCount / Math.max(1, activeDraw.matchCount)) * 100));
+  const eligiblePercent = Math.min(100, Math.round((activeDraw.eligibleEntries / Math.max(1, activeDraw.eligibleEntries + activeDraw.pendingEntries)) * 100));
+  const DrawStateIcon = drawState.Icon;
+
+  return (
+    <section className={`draw-progress-map is-${drawState.tone}`} aria-label={t("draw.progressMap")}>
+      <header>
+        <span>
+          <DrawStateIcon size={17} strokeWidth={2.25} />
+          {drawState.eyebrow}
+        </span>
+        <h2>{drawState.title}</h2>
+        <p>{drawState.body}</p>
+      </header>
+
+      <section className="draw-progress-map__meters">
+        <article>
+          <span>{t("draw.officialFinals")}</span>
+          <strong>{formatNumber(activeDraw.officialFinalCount)} / {formatNumber(activeDraw.matchCount)}</strong>
+          <i style={{ "--progress": `${settledPercent}%` }} aria-hidden="true" />
+        </article>
+        <article>
+          <span>{t("draw.eligibleEntries")}</span>
+          <strong>{formatNumber(activeDraw.eligibleEntries)}</strong>
+          <i style={{ "--progress": `${eligiblePercent}%` }} aria-hidden="true" />
+        </article>
+        <article>
+          <span>{t("draw.roundPrizes")}</span>
+          <strong>{formatNumber(activeDraw.prizeCount)}</strong>
+          <i style={{ "--progress": "100%" }} aria-hidden="true" />
+        </article>
+      </section>
+
+      <ol className="draw-step-runway" aria-label={t("draw.pipelineAria")}>
+        {drawStepIds.map((stepId, index) => (
+          <li className={index <= activeStep ? "is-active" : ""} key={stepId} aria-current={index === activeStep ? "step" : undefined}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <strong>{t(`draw.steps.${stepId}`)}</strong>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function DrawPrizeRunway({ activeDraw, drawState, t }) {
+  return (
+    <section className="draw-prize-runway" aria-label={t("draw.prizeRunway", { count: formatNumber(activeDraw.prizeCount) })}>
+      <header>
+        <span>{t("draw.prizeSlotsAria", { count: formatNumber(activeDraw.prizeCount) })}</span>
+        <strong>{formatNumber(activeDraw.prizeCount)}</strong>
+      </header>
+      <ol>
+        {Array.from({ length: activeDraw.prizeCount }, (_, index) => (
+          <li className={activeDraw.eligibleEntries > 0 ? `is-${drawState.tone}` : ""} key={`draw-slot-${index + 1}`}>
+            {String(index + 1).padStart(2, "0")}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function DrawMatchRibbon({ matches, teamsById, copy }) {
+  const { matchStatusCompact, teamName, t } = copy;
+
+  return (
+    <section className="draw-match-ribbon" aria-label={t("draw.matchRibbonAria")}>
+      <header>
+        <span>{t("draw.advancingResults")}</span>
+        <strong>{t("draw.officialOnly")}</strong>
+      </header>
+      <ol>
+        {matches.map((match) => {
+          const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
+          const advancingTeam = teamsById.get(match.advancingTeamId);
+          return (
+            <li className={match.advancingTeamId ? "has-result" : ""} key={match.id}>
+              <span>{match.id.toUpperCase()}</span>
+              <strong>{teams.map((team) => teamName(team)).join(" / ")}</strong>
+              <small>{advancingTeam ? `${t("common.advancing")} ${teamName(advancingTeam)}` : matchStatusCompact(match.status)}</small>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+export function DrawRoom({ activeRound, rounds, simulatedRoundId, drawStats, matches, teamsById, onSelectRound }) {
+  const copy = useCampaignCopy();
+  const { roundLabel, t } = copy;
+  const activeDraw = drawStats.find((round) => round.id === activeRound.id) ?? drawStats[0];
+  const activeStep = getActiveDrawStep(activeDraw.drawStatusResolved);
+  const roundMatches = matches.filter((match) => match.roundId === activeRound.id);
+  const drawState = getDrawStateCopy(activeDraw, t);
+
+  return (
+    <section className="draw-room draw-room-v2" aria-label={t("draw.roomAria")}>
+      <DrawRoundRail drawStats={drawStats} activeDraw={activeDraw} rounds={rounds} simulatedRoundId={simulatedRoundId} onSelectRound={onSelectRound} copy={copy} />
+
+      <article className="draw-stage-map">
+        <header className="draw-stage-map__head">
+          <span>{roundLabel(activeDraw, "englishLabel")}</span>
+          <h1>{t("views.draw.title")}</h1>
+          <p>{t("views.draw.body")}</p>
+        </header>
+
+        <DrawProgressMap activeDraw={activeDraw} activeStep={activeStep} drawState={drawState} t={t} />
+
+        <section className="draw-stage-map__stats" aria-label={t("mast.currentRoundBalances")}>
+          <output>
+            <span>{t("draw.eligibleEntries")}</span>
+            <strong>{formatNumber(activeDraw.eligibleEntries)}</strong>
+          </output>
+          <output>
+            <span>{t("common.pending")}</span>
+            <strong>{formatNumber(activeDraw.pendingEntries)}</strong>
+          </output>
+          <output>
+            <span>{t("common.roundPool")}</span>
+            <strong>{formatNumber(activeDraw.totalPoolEntries)}</strong>
+          </output>
+          <output>
+            <span>{t("draw.estimatedChance")}</span>
+            <strong>{formatPercent(activeDraw.estimatedChance)}</strong>
+          </output>
+        </section>
+
+        <DrawPrizeRunway activeDraw={activeDraw} drawState={drawState} t={t} />
+        <DrawMatchRibbon matches={roundMatches} teamsById={teamsById} copy={copy} />
+
+        <footer className="draw-boundary-notes">
+          <p>
+            <ShieldCheck size={17} strokeWidth={2.2} />
+            {t("draw.correctEnterOnly")}
+          </p>
+          <p>
+            <LockKeyhole size={17} strokeWidth={2.2} />
+            {t("draw.revealContractNotBuilt")}
+          </p>
+          <p>
+            <AlertTriangle size={17} strokeWidth={2.2} />
+            {t("draw.noFakeWinners")}
+          </p>
+        </footer>
+      </article>
+    </section>
+  );
+}

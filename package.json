@@ -1,0 +1,48 @@
+{
+  "name": "renaiss-bnb-football",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "preview": "vite preview",
+    "fetch:ledger": "node scripts/fetch-lucky-draw-ledger.mjs",
+    "fetch:ledger:local": "node scripts/fetch-lucky-draw-ledger.mjs --env-file config/lucky-draw.env.local",
+    "bench:ledger:local": "node scripts/fetch-lucky-draw-ledger.mjs --env-file config/lucky-draw.env.local --dry-run --progress --cache-dir /tmp/renaiss-football-lucky-draw-benchmark",
+    "contract:compile": "hardhat compile",
+    "contract:deploy:check": "node scripts/deploy-lucky-draw.mjs --env-file config/draw-contract.env.local",
+    "contract:deploy:bsc": "node scripts/deploy-lucky-draw.mjs --env-file config/draw-contract.env.local --broadcast",
+    "contract:roles:check": "node scripts/configure-lucky-draw-roles.mjs --env-file config/draw-contract.env.local",
+    "contract:roles": "node scripts/configure-lucky-draw-roles.mjs --env-file config/draw-contract.env.local --broadcast",
+    "contract:round": "node scripts/run-lucky-draw-round.mjs --env-file config/draw-contract.env.local",
+    "wallet:create": "node scripts/create-deployment-wallet.mjs",
+    "x:resolve": "node src/cli.js resolve-account --handle renaissxyz",
+    "x:sync:full": "node src/cli.js sync --mode full --handle renaissxyz",
+    "x:sync:delta": "node src/cli.js sync --mode delta --handle renaissxyz --max-pages 2",
+    "x:watch": "node src/cli.js watch --handle renaissxyz --interval-ms 60000 --max-pages 2",
+    "x:verify": "node src/cli.js verify --handle renaissxyz"
+  },
+  "dependencies": {
+    "ethers": "^6.16.0",
+    "flag-icons": "^7.5.0",
+    "gsap": "^3.15.0",
+    "lucide-react": "^0.468.0",
+    "motion": "^12.40.0",
+    "ogl": "^1.0.11",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.6",
+    "@vitejs/plugin-react": "^4.3.4",
+    "hardhat": "^3.7.0",
+    "playwright": "^1.60.0",
+    "solc": "^0.8.35",
+    "vite": "^6.0.7"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

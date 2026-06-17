@@ -1,0 +1,116 @@
+.elastic-slider-container {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.elastic-slider-wrapper {
+  display: flex;
+  width: 100%;
+  touch-action: none;
+  user-select: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+}
+
+.elastic-slider-root {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-grow: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  align-items: center;
+  padding: 0.95rem 0;
+  outline: none;
+}
+
+.elastic-slider-root:active {
+  cursor: grabbing;
+}
+
+.elastic-slider-root:focus-visible .elastic-slider-track {
+  box-shadow:
+    0 0 0 2px rgba(10, 12, 12, 0.95),
+    0 0 0 4px rgba(240, 209, 139, 0.45),
+    inset 0 0 0 1px rgba(245, 246, 241, 0.08);
+}
+
+.elastic-slider-track-wrapper {
+  display: flex;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.elastic-slider-track {
+  position: relative;
+  height: 100%;
+  flex-grow: 1;
+  overflow: hidden;
+  border-radius: 9999px;
+  background:
+    linear-gradient(180deg, rgba(245, 246, 241, 0.12), rgba(245, 246, 241, 0.035)),
+    rgba(245, 246, 241, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(245, 246, 241, 0.08),
+    inset 0 1px 2px rgba(0, 0, 0, 0.42);
+}
+
+.elastic-slider-range {
+  position: absolute;
+  height: 100%;
+  border-radius: 9999px;
+  background:
+    linear-gradient(90deg, rgba(240, 209, 139, 0.92), rgba(255, 239, 196, 0.98)),
+    rgba(240, 209, 139, 0.88);
+  box-shadow:
+    0 0 12px rgba(240, 209, 139, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.elastic-slider-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  color: rgba(245, 246, 241, 0.52);
+}
+
+.elastic-slider-icon svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.35;
+}
+
+.elastic-slider-value {
+  position: absolute;
+  margin: 0;
+  transform: translateY(-1rem);
+  color: rgba(245, 246, 241, 0.54);
+  font-size: 0.75rem;
+  font-weight: 720;
+  letter-spacing: 0;
+}
+
+.elastic-slider-container.is-disabled {
+  opacity: 0.54;
+}
+
+.elastic-slider-container.is-disabled .elastic-slider-root {
+  cursor: not-allowed;
+}
+
+.elastic-slider-container.is-disabled .elastic-slider-range {
+  background:
+    linear-gradient(90deg, rgba(245, 246, 241, 0.26), rgba(245, 246, 241, 0.16)),
+    rgba(245, 246, 241, 0.18);
+  box-shadow: none;
+}

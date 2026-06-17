@@ -1,0 +1,60 @@
+{
+  "sourceLabel": "mock-vote-preview-api",
+  "sourceStatus": "preview-backend",
+  "generatedAt": "2026-06-17T22:18:00+08:00",
+  "allocations": [
+    {
+      "id": "backend-round16-m73-italy",
+      "walletAddress": "0xce3a75756b2fc69b501db511b2cce2bcbac77bd5",
+      "roundId": "round16",
+      "matchId": "m73",
+      "teamId": "italy",
+      "tickets": 18,
+      "source": "mock-vote-preview-api",
+      "official": false
+    },
+    {
+      "id": "backend-round16-m76-morocco",
+      "walletAddress": "0xce3a75756b2fc69b501db511b2cce2bcbac77bd5",
+      "roundId": "round16",
+      "matchId": "m76",
+      "teamId": "morocco",
+      "tickets": 36,
+      "source": "mock-vote-preview-api",
+      "official": false
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "outcome-round16-m73-italy",
+      "allocationId": "backend-round16-m73-italy",
+      "walletAddress": "0xce3a75756b2fc69b501db511b2cce2bcbac77bd5",
+      "roundId": "round16",
+      "matchId": "m73",
+      "teamId": "italy",
+      "tickets": 18,
+      "result": "won",
+      "lostTickets": 0
+    },
+    {
+      "id": "outcome-round16-m76-morocco",
+      "allocationId": "backend-round16-m76-morocco",
+      "walletAddress": "0xce3a75756b2fc69b501db511b2cce2bcbac77bd5",
+      "roundId": "round16",
+      "matchId": "m76",
+      "teamId": "morocco",
+      "tickets": 36,
+      "result": "lost",
+      "lostTickets": 36
+    }
+  ],
+  "roundSummaries": [
+    {
+      "roundId": "round16",
+      "submittedTickets": 54,
+      "settledTickets": 54,
+      "wonTickets": 18,
+      "lostTickets": 36
+    }
+  ]
+}
