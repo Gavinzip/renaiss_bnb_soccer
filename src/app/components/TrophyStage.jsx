@@ -1,4 +1,4 @@
-import trophyCutout from "../assets/championship-trophy-renaiss-ai.png";
+import trophyCutout from "../assets/championship-trophy-renaiss-ai.webp";
 import { ShinyText } from "./ShinyText";
 
 export function TrophyStage({

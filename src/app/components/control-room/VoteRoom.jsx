@@ -12,7 +12,7 @@ import {
 import { useState } from "react";
 import { compactAddress, formatNumber, ticketRangeLabel } from "../../data/ticketMath";
 import { getPreviewNotice } from "../../data/campaignRuntime";
-import prizeBonneySlab from "../../assets/prize-bonney-slab.jpg";
+import prizeBonneySlab from "../../assets/prize-bonney-slab.webp";
 import ElasticSlider from "../ElasticSlider/ElasticSlider";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";

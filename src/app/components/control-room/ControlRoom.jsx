@@ -12,7 +12,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { flushSync } from "react-dom";
-import renaissLogo from "../../assets/renaiss-logo-mark.png";
+import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { commandViews } from "../../data/campaignRuntime";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { AnimatedContent } from "../AnimatedContent";

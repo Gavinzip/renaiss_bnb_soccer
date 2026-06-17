@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import trophyImage from "../../assets/championship-trophy-renaiss-mark.png";
+import trophyImage from "../../assets/championship-trophy-renaiss-mark.webp";
 import { formatNumber } from "../../data/ticketMath";
 import { useBorderGlow } from "../BorderGlow";
 import LightRays from "../LightRays/LightRays";

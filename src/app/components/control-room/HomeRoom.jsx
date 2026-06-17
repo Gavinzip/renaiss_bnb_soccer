@@ -7,9 +7,10 @@ import {
   ShieldCheck,
   Ticket,
 } from "lucide-react";
-import heroImage from "../../assets/hero-world-cup-clean.png";
-import heroScrollVideo from "../../assets/Background.mp4";
-import renaissLogo from "../../assets/renaiss-logo-mark.png";
+import heroImage from "../../assets/hero-world-cup-clean.webp";
+import heroScrollVideo from "../../assets/Background.web.mp4";
+import heroScrollVideoMobile from "../../assets/Background.mobile.mp4";
+import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { formatNumber } from "../../data/ticketMath";
@@ -426,14 +427,16 @@ export function HomeRoom({
         <video
           className="home-video-backdrop__video"
           ref={heroVideoRef}
-          src={heroScrollVideo}
           poster={heroImage}
           muted
           playsInline
-          preload="auto"
+          preload="metadata"
           aria-hidden="true"
           disablePictureInPicture
-        />
+        >
+          <source src={heroScrollVideoMobile} type="video/mp4" media="(max-width: 760px)" />
+          <source src={heroScrollVideo} type="video/mp4" />
+        </video>
       </div>
 
       <figure className="hero-stage">

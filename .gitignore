@@ -15,6 +15,15 @@ cache/
 outputs/
 types/ethers-contracts/
 src/app/assets/generated/
+src/app/assets/source/
+src/app/assets/Background.mp4
+src/app/assets/hero-trophy-scroll-scrub.mp4
+src/app/assets/championship-trophy-cutout.png
+src/app/assets/championship-trophy-renaiss-ai.png
+src/app/assets/championship-trophy-renaiss-mark.png
+src/app/assets/hero-world-cup-clean.png
+src/app/assets/prize-bonney-slab.jpg
+src/app/assets/renaiss-logo-mark.png
 data/x-followers/*.json
 data/x-followers/*.jsonl
 data/x-followers/*.tmp
