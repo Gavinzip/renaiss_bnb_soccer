@@ -8,7 +8,6 @@ import {
   Ticket,
 } from "lucide-react";
 import heroImage from "../../assets/hero-world-cup-clean.webp";
-import heroScrollVideo from "../../assets/Background.web.mp4";
 import heroScrollVideoMobile from "../../assets/Background.mobile.mp4";
 import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { GlareHover } from "../GlareHover";
@@ -16,6 +15,9 @@ import { Magnet } from "../Magnet";
 import { formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { RulesRoom } from "./RulesRoom";
+
+const HERO_SCROLL_VIDEO_URL =
+  "https://pub-7230fa99c50e44e9b241e47cac526165.r2.dev/home/Background.web.2026-06-18.mp4";
 
 function getMilestoneSnapshot(milestones, currentValue) {
   const sorted = [...milestones].sort((left, right) => left.threshold - right.threshold);
@@ -435,7 +437,7 @@ export function HomeRoom({
           disablePictureInPicture
         >
           <source src={heroScrollVideoMobile} type="video/mp4" media="(max-width: 760px)" />
-          <source src={heroScrollVideo} type="video/mp4" />
+          <source src={HERO_SCROLL_VIDEO_URL} type="video/mp4" />
         </video>
       </div>
 
