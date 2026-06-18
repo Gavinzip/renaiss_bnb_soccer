@@ -25105,3 +25105,318 @@ body {
     padding-top: 0 !important;
   }
 }
+
+/* Auth layer: account linking and login modal. */
+.header-wallet.header-wallet--auth {
+  gap: 8px !important;
+  padding: 6px 8px 6px 10px !important;
+}
+
+.header-wallet__identity,
+.header-wallet__logout {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.header-wallet__identity {
+  display: grid;
+  grid-template-columns: 18px minmax(72px, max-content) max-content;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.header-wallet__identity span,
+.header-wallet__identity strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-wallet__logout {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.header-wallet__logout:hover,
+.header-wallet__logout:focus-visible {
+  color: #f3d99b;
+  border-color: rgba(243, 217, 155, 0.42);
+}
+
+.auth-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(236, 208, 139, 0.14), transparent 38%),
+    rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(18px);
+}
+
+.auth-modal {
+  width: min(620px, 100%);
+  color: #f7f3e8;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(34, 35, 32, 0.94), rgba(8, 9, 9, 0.96)),
+    #080909;
+  box-shadow:
+    0 34px 92px rgba(0, 0, 0, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  padding: 22px;
+}
+
+.auth-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.auth-modal__header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(238, 215, 158, 0.82);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-modal__header button {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+}
+
+.auth-modal__intro {
+  margin: 22px 0 18px;
+}
+
+.auth-modal__intro h2 {
+  margin: 0;
+  font-size: clamp(30px, 4.5vw, 48px);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.auth-modal__intro p {
+  max-width: 520px;
+  margin: 12px 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.auth-modal__issue {
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border: 1px solid rgba(244, 161, 101, 0.28);
+  border-radius: 14px;
+  color: #f0c58f;
+  background: rgba(244, 161, 101, 0.08);
+  font-size: 13px;
+}
+
+.auth-provider-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.auth-provider-list a,
+.auth-provider-list button {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.062), rgba(255, 255, 255, 0.025));
+  color: #f7f3e8;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.auth-provider-list a:hover,
+.auth-provider-list button:hover,
+.auth-provider-list a:focus-visible,
+.auth-provider-list button:focus-visible {
+  border-color: rgba(238, 215, 158, 0.44);
+  box-shadow: 0 0 0 1px rgba(238, 215, 158, 0.14), 0 14px 34px rgba(0, 0, 0, 0.24);
+}
+
+.auth-provider-list span {
+  font-weight: 850;
+}
+
+.auth-provider-list em {
+  grid-column: 2;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.auth-provider-list .is-disabled,
+.auth-provider-list button:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
+.auth-email-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.auth-email-form label {
+  display: grid;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.auth-email-form label div {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.36);
+}
+
+.auth-email-form input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #f7f3e8;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 760;
+}
+
+.auth-email-form button {
+  min-width: 136px;
+  min-height: 56px;
+  border: 1px solid rgba(238, 215, 158, 0.54);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(218, 190, 126, 0.86)),
+    #ead59f;
+  color: #111;
+  font-weight: 900;
+}
+
+.auth-email-form button:disabled {
+  opacity: 0.46;
+}
+
+.is-spinning {
+  animation: authSpin 0.9s linear infinite;
+}
+
+@keyframes authSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vote-wallet-panel__auth {
+  display: grid;
+  gap: 2px;
+  min-width: min(220px, 100%);
+  border: 1px solid rgba(238, 215, 158, 0.22);
+  border-radius: 16px;
+  background: rgba(238, 215, 158, 0.07);
+  color: inherit;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vote-wallet-panel__auth strong,
+.vote-wallet-panel__auth small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vote-wallet-panel__auth small {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+@media (max-width: 740px) {
+  .auth-modal-backdrop {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .auth-modal {
+    border-radius: 24px;
+    padding: 18px;
+  }
+
+  .auth-provider-list,
+  .auth-email-form {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-email-form input {
+    font-size: 17px;
+  }
+
+  .header-wallet.header-wallet--auth {
+    min-width: 0 !important;
+  }
+
+  .header-wallet__identity {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .header-wallet__identity strong {
+    display: none;
+  }
+}

@@ -4,6 +4,7 @@ import {
   Database,
   Home,
   Landmark,
+  LogOut,
   LockKeyhole,
   ShieldCheck,
   Ticket,
@@ -478,6 +479,12 @@ export function ControlRoom({
   currentMilestoneValue,
   simulationMode,
   liveQualification,
+  authSession,
+  authConfig,
+  authIssue,
+  authEndpointReady,
+  onOpenAuthModal,
+  onRefreshAuth,
   onSelectView,
   onToggleMobileNav,
   onSelectWallet,
@@ -497,6 +504,19 @@ export function ControlRoom({
   const matchStateCounts = countMatchStates(matches, activeRoundId);
   const compactWorkViews = new Set(["schedule", "vote", "draw"]);
   const showRoomMast = activeViewId !== "home" && !compactWorkViews.has(activeViewId);
+  const authWalletLinked = Boolean(authSession?.walletAddress);
+  const showAuthState = Boolean(authEndpointReady);
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    } finally {
+      await onRefreshAuth?.();
+    }
+  }
 
   useEffect(() => {
     let cancelPreloadJobs = () => {};
@@ -522,10 +542,26 @@ export function ControlRoom({
         </Magnet>
         <ViewMenu activeViewId={activeViewId} onSelectView={onSelectView} t={t} />
         <LanguageSwitch />
-        <section className="header-wallet" aria-label={t("vote.previewWallet")}>
-          <WalletCards size={18} strokeWidth={2.1} />
-          <span>{compactAddress(activeEntry?.userAddress)}</span>
-          <strong>{formatNumber(activeEntry?.finalTickets)} {t("common.tickets")}</strong>
+        <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
+          <button type="button" className="header-wallet__identity" onClick={showAuthState ? onOpenAuthModal : undefined}>
+            <WalletCards size={18} strokeWidth={2.1} />
+            {showAuthState ? (
+              <>
+                <span>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</span>
+                <strong>{authWalletLinked ? `${formatNumber(activeEntry?.finalTickets)} ${t("common.tickets")}` : t("auth.loginDetail")}</strong>
+              </>
+            ) : (
+              <>
+                <span>{compactAddress(activeEntry?.userAddress)}</span>
+                <strong>{formatNumber(activeEntry?.finalTickets)} {t("common.tickets")}</strong>
+              </>
+            )}
+          </button>
+          {showAuthState && authSession?.authenticated ? (
+            <button className="header-wallet__logout" type="button" onClick={handleLogout} aria-label={t("auth.logout")}>
+              <LogOut size={15} strokeWidth={2.25} />
+            </button>
+          ) : null}
         </section>
       </header>
 
@@ -612,6 +648,9 @@ export function ControlRoom({
               roundVoteOutcomes={roundVoteOutcomes}
               roundOutcomeSummary={roundOutcomeSummary}
               previewVoteIssue={previewVoteIssue}
+              authSession={authSession}
+              authEndpointReady={authEndpointReady}
+              onOpenAuthModal={onOpenAuthModal}
               onSelectWallet={onSelectWallet}
               onSelectMatch={onSelectMatch}
               onSelectTeam={onSelectTeam}

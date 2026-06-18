@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AuthModal } from "./components/control-room/AuthModal";
 import { ControlRoom } from "./components/control-room/ControlRoom";
 import { preloadHomeRoomAssets } from "./components/control-room/HomeRoom";
 import { VoteConfirmModal } from "./components/control-room/VoteConfirmModal";
@@ -96,6 +97,7 @@ function AppContent() {
   const previewVoteUrl = import.meta.env.VITE_VOTE_PREVIEW_URL
     || (import.meta.env.PROD ? "/api/vote-preview" : "/mock-api/vote-preview.json");
   const voteSubmitUrl = import.meta.env.VITE_VOTE_SUBMIT_URL || (import.meta.env.PROD ? "/api/votes" : "");
+  const authMeUrl = import.meta.env.VITE_AUTH_ME_URL || (import.meta.env.PROD ? "/api/auth/me" : "");
   const [ledger, setLedger] = useState(verifiedLedgerSnapshot);
   const [selectedLedgerEntry, setSelectedLedgerEntry] = useState(null);
   const [ledgerIssue, setLedgerIssue] = useState("");
@@ -106,6 +108,10 @@ function AppContent() {
   const [previewVoteData, setPreviewVoteData] = useState(getEmptyPreviewVoteData);
   const [previewVoteIssue, setPreviewVoteIssue] = useState("");
   const [previewVoteReady, setPreviewVoteReady] = useState(!previewVoteUrl);
+  const [authSession, setAuthSession] = useState({ authenticated: false, config: null });
+  const [authIssue, setAuthIssue] = useState("");
+  const [authReady, setAuthReady] = useState(!authMeUrl);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [activeViewId, setActiveViewId] = useState(DEFAULT_VIEW_ID);
   const [simulationMode, setSimulationMode] = useState("scenario");
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
@@ -126,6 +132,42 @@ function AppContent() {
   const [initialLoaderMounted, setInitialLoaderMounted] = useState(true);
   const [initialLoaderStartedAt] = useState(() => Date.now());
   const [matchStatusNow, setMatchStatusNow] = useState(() => Date.now());
+
+  const refreshAuthSession = useCallback(async () => {
+    if (!authMeUrl) {
+      setAuthReady(true);
+      return null;
+    }
+
+    setAuthReady(false);
+    try {
+      const response = await fetch(authMeUrl, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      setAuthSession(payload);
+      setAuthIssue("");
+      return payload;
+    } catch (error) {
+      setAuthSession({ authenticated: false, config: null });
+      setAuthIssue(t("auth.sessionIssue", { message: error.message }));
+      return null;
+    } finally {
+      setAuthReady(true);
+    }
+  }, [authMeUrl, t]);
+
+  useEffect(() => {
+    refreshAuthSession();
+  }, [refreshAuthSession]);
+
+  useEffect(() => {
+    if (authSession?.walletAddress) {
+      setSelectedWallet(authSession.walletAddress);
+    }
+  }, [authSession?.walletAddress]);
 
   useEffect(() => {
     const summaryUrl = ledgerSummaryUrl;
@@ -368,7 +410,7 @@ function AppContent() {
     [walletAllocations],
   );
   const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalFinalTickets ?? 0);
-  const initialDataReady = ledgerReady && milestoneReady && previewVoteReady;
+  const initialDataReady = ledgerReady && milestoneReady && previewVoteReady && authReady;
   const initialCoverAssetsReady = initialDataReady && initialAssetsReady;
   const initialExperienceReady = initialCoverAssetsReady && initialCoverPaintReady;
 
@@ -510,6 +552,10 @@ function AppContent() {
   }
 
   function handleRequestPreviewVote(amount) {
+    if (voteSubmitUrl && authMeUrl && !authSession?.walletAddress) {
+      setAuthModalOpen(true);
+      return;
+    }
     if (!selectedTeamId || remainingRoundTickets <= 0) return;
     setPendingVoteAmount(Math.max(1, Math.min(Math.floor(amount || 0), remainingRoundTickets)));
   }
@@ -556,8 +602,9 @@ function AppContent() {
         const response = await fetch(voteSubmitUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
+          credentials: "same-origin",
           body: JSON.stringify({
-            walletAddress: selectedWallet,
+            ...(authMeUrl ? {} : { walletAddress: selectedWallet }),
             roundId: activeRoundId,
             matchId: selectedMatch.id,
             teamId: selectedTeamId,
@@ -572,6 +619,7 @@ function AppContent() {
         setPreviewVoteIssue("");
       } catch (error) {
         setPreviewVoteIssue(t("data.previewVoteIssue", { message: error.message }));
+        if (/login|required|linked/i.test(error.message)) setAuthModalOpen(true);
         setPendingVoteAmount(null);
         return;
       }
@@ -615,6 +663,12 @@ function AppContent() {
         currentMilestoneValue={milestoneCurrentValue}
         simulationMode={simulationMode}
         liveQualification={displayedLiveQualification}
+        authSession={authSession}
+        authConfig={authSession?.config}
+        authIssue={authIssue}
+        authEndpointReady={Boolean(authMeUrl)}
+        onOpenAuthModal={() => setAuthModalOpen(true)}
+        onRefreshAuth={refreshAuthSession}
         onSelectView={handleSelectView}
         onToggleMobileNav={() => setMobileNavOpen((current) => !current)}
         onSelectWallet={setSelectedWallet}
@@ -632,6 +686,15 @@ function AppContent() {
         team={teamsById.get(selectedTeamId)}
         onCancel={() => setPendingVoteAmount(null)}
         onConfirm={() => handleConfirmPreviewVote(pendingVoteAmount)}
+      />
+      <AuthModal
+        open={authModalOpen}
+        authSession={authSession}
+        authConfig={authSession?.config}
+        authIssue={authIssue}
+        authEndpointReady={Boolean(authMeUrl)}
+        onClose={() => setAuthModalOpen(false)}
+        onRefresh={refreshAuthSession}
       />
     </>
   );

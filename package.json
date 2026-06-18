@@ -34,7 +34,8 @@
     "motion": "^12.40.0",
     "ogl": "^1.0.11",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "siwe": "^3.0.0"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.6",

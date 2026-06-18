@@ -9,6 +9,12 @@ import { createGzip } from 'node:zlib'
 
 import { milestones } from '../src/app/data/worldCupCampaign.js'
 import {
+  createAuthContext,
+  getAuthPublicStatus,
+  handleAuthRoute,
+  readAuthSession,
+} from './auth/routes.mjs'
+import {
   buildLedgerEntryResponse,
   buildLedgerSummary,
   buildTicketLookupResponse,
@@ -18,8 +24,11 @@ import {
   readLedgerPayload,
 } from './soccer-ledger-api.mjs'
 import { readVotePreview, submitVote } from './soccer-vote-store.mjs'
+import { loadLocalEnvFiles } from './env-loader.mjs'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
+loadLocalEnvFiles(repoRoot)
+
 const distDir = resolve(repoRoot, 'dist')
 const dataDir = process.env.SOCCER_DATA_DIR || process.env.LUCKY_DRAW_DATA_DIR || '/data/soccer'
 const cacheDir = process.env.LUCKY_DRAW_CACHE_DIR || join(dataDir, 'cache')
@@ -29,6 +38,7 @@ const votesDir = process.env.SOCCER_VOTES_DIR || join(dataDir, 'votes')
 const voteEventsPath = process.env.SOCCER_VOTE_EVENTS_PATH || join(votesDir, 'vote-events.jsonl')
 const voteStatePath = process.env.SOCCER_VOTE_STATE_PATH || join(votesDir, 'vote-state.json')
 const votePreviewPath = process.env.SOCCER_VOTE_PREVIEW_PATH || join(votesDir, 'vote-preview.json')
+const auth = createAuthContext({ dataDir })
 const snapshotKeep = readIntegerEnv('LUCKY_DRAW_SNAPSHOT_KEEP', 72, 1)
 const port = Number(process.env.PORT || 3000)
 const refreshMinutes = readIntegerEnv('LUCKY_DRAW_REFRESH_MINUTES', 10, 1)
@@ -50,6 +60,7 @@ const delayMs = process.env.LUCKY_DRAW_DELAY_MS || '30'
 const retries = process.env.LUCKY_DRAW_RETRIES || '8'
 const backoffMs = process.env.LUCKY_DRAW_BACKOFF_MS || '1000'
 const requestBodyLimitBytes = readIntegerEnv('HTTP_JSON_BODY_LIMIT_BYTES', 64 * 1024, 1024)
+const authRequiredForVotes = process.env.AUTH_REQUIRE_SESSION_FOR_VOTES !== '0'
 
 let refreshRunning = false
 let refreshTimer = null
@@ -621,6 +632,11 @@ const server = createServer(async (request, response) => {
         voteStatePath,
         votePreviewPath,
         voteStateExists: existsSync(voteStatePath),
+        authDir: auth.authDir,
+        auth: {
+          ...getAuthPublicStatus(auth),
+          requiredForVotes: authRequiredForVotes,
+        },
         refreshEnabled,
         refreshOnStartup,
         refreshMinutes,
@@ -648,6 +664,10 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  if (await handleAuthRoute({ auth, request, response, url, readJsonBody, sendJson })) {
+    return
+  }
+
   if (url.pathname === '/api/raffle-summary') {
     try {
       sendJson(request, response, 200, buildLedgerSummary(readLedgerPayload(ledgerPath)), {
@@ -671,7 +691,8 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === '/api/raffle-entry') {
-    const walletQuery = url.searchParams.get('wallet') || ''
+    const session = readAuthSession(auth, request)
+    const walletQuery = url.searchParams.get('wallet') || session?.walletAddress || ''
     if (!walletQuery.trim()) {
       sendJson(
         request,
@@ -723,13 +744,14 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === '/api/vote-preview') {
     try {
+      const session = readAuthSession(auth, request)
       sendJson(
         request,
         response,
         200,
         readVotePreview({
           statePath: voteStatePath,
-          walletAddress: url.searchParams.get('wallet') || '',
+          walletAddress: url.searchParams.get('wallet') || session?.walletAddress || '',
         }),
         { 'cache-control': 'no-store' },
       )
@@ -753,13 +775,25 @@ const server = createServer(async (request, response) => {
 
     try {
       const body = await readJsonBody(request)
+      const session = readAuthSession(auth, request)
+      if (authRequiredForVotes && !session) {
+        sendJson(request, response, 401, { ok: false, error: 'Login is required before submitting votes.' }, { 'cache-control': 'no-store' })
+        return
+      }
+      if (authRequiredForVotes && !session?.walletAddress) {
+        sendJson(request, response, 403, { ok: false, error: 'This login is not linked to a voting wallet yet.' }, { 'cache-control': 'no-store' })
+        return
+      }
       const ledger = readLedgerPayload(ledgerPath)
       const result = submitVote({
         statePath: voteStatePath,
         eventsPath: voteEventsPath,
         previewPath: votePreviewPath,
         ledger,
-        input: body,
+        input: {
+          ...body,
+          ...(session?.walletAddress ? { walletAddress: session.walletAddress } : {}),
+        },
       })
       sendJson(
         request,
@@ -833,6 +867,7 @@ const server = createServer(async (request, response) => {
 mkdirSync(dataDir, { recursive: true })
 mkdirSync(cacheDir, { recursive: true })
 mkdirSync(votesDir, { recursive: true })
+mkdirSync(auth.authDir, { recursive: true })
 
 function startBackgroundJobs() {
   if (refreshEnabled && refreshOnStartup) runLedgerRefresh('startup')

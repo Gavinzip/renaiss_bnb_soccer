@@ -25,6 +25,11 @@ Production builds read the server APIs by default:
 - `/api/milestones`
 - `/api/vote-preview`
 - `POST /api/votes`
+- `/api/auth/me`
+- `/api/auth/google/start`
+- `/api/auth/x/start`
+- `/api/auth/wallet/nonce`
+- `/api/auth/email/start`
 
 Local dev still uses the mock vote preview unless `VITE_VOTE_PREVIEW_URL` and `VITE_VOTE_SUBMIT_URL` are set.
 
@@ -54,6 +59,9 @@ On Zeabur, mount the persistent disk at `/data` and use `/data/soccer` for this 
     vote-events.jsonl           append-only user vote submissions
     vote-state.json             current vote allocation state
     vote-preview.json           frontend-compatible vote preview payload
+  auth/
+    sessions.json               signed session records
+    auth-state.json             OAuth state, wallet nonces, and hashed OTP challenges
 ```
 
 The Git backup target is `https://github.com/Gavinzip/renaiss_bnb_soccer_data.git`. The server restores missing
@@ -74,6 +82,26 @@ DATA_BACKUP_BRANCH=main
 DATA_BACKUP_RESTORE_ON_STARTUP=1
 DATA_BACKUP_RESTORE_FORCE=0
 
+AUTH_SESSION_SECRET=<at least 32 random characters>
+AUTH_REQUIRE_SESSION_FOR_VOTES=1
+AUTH_COOKIE_SECURE=1
+AUTH_SUCCESS_REDIRECT_PATH=/?auth=success
+AUTH_ERROR_REDIRECT_PATH=/?auth=error
+PUBLIC_APP_ORIGIN=https://renaiss-worldcup.zeabur.app
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/google/callback
+X_CLIENT_ID=...
+X_CLIENT_SECRET=...
+X_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/x/callback
+X_OAUTH_SCOPE=users.read
+SIWE_DOMAIN=renaiss-worldcup.zeabur.app
+SIWE_CHAIN_ID=56
+IDENTITY_RESOLVER_API_URL=...
+IDENTITY_RESOLVER_API_KEY=...
+RESEND_API_KEY=...
+EMAIL_FROM=Renaiss <login@renaiss.xyz>
+
 LUCKY_DRAW_REFRESH_MINUTES=10
 LUCKY_DRAW_REFRESH_HISTORY_LIMIT=24
 LUCKY_DRAW_CAMPAIGN_START=1781422200
@@ -84,6 +112,12 @@ BSCSCAN_API_KEY=...
 `DATA_BACKUP_GITHUB_TOKEN` is the PAT token variable name. Startup restore only copies missing files by default;
 set `DATA_BACKUP_RESTORE_FORCE=1` only when you intentionally want the data repo to overwrite `/data/soccer`.
 `BSCSCAN_API_KEY` is required for live ticket refresh. Do not commit either token.
+
+Production vote submission uses the signed auth session wallet when `AUTH_REQUIRE_SESSION_FOR_VOTES=1`; the server
+does not trust a client-supplied `walletAddress` for `POST /api/votes`. Google, X, and email logins create identity
+sessions first, then call `IDENTITY_RESOLVER_API_URL` to map that identity to a voting wallet. Wallet login verifies
+a signed message and can resolve directly to the signing address. If the resolver is not configured or returns no
+wallet, the user can be logged in but cannot submit votes.
 
 ## Lucky Draw Tickets And Contract
 

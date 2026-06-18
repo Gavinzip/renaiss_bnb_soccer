@@ -345,6 +345,8 @@ function VoteWalletPanel({
   previewVoteIssue,
   activeEntry,
   selectedWallet,
+  authSession,
+  authEndpointReady,
   activeRound,
   remainingRoundTickets,
   usedRoundTickets,
@@ -352,24 +354,33 @@ function VoteWalletPanel({
   matchesById,
   teamsById,
   onSelectWallet,
+  onOpenAuthModal,
   copy,
 }) {
   const { roundLabel, teamName, t } = copy;
+  const authWalletLinked = Boolean(authSession?.walletAddress);
 
   return (
-    <aside className="vote-wallet-panel" aria-label={t("vote.previewWallet")}>
+    <aside className="vote-wallet-panel" aria-label={authEndpointReady ? t("auth.accountAria") : t("vote.previewWallet")}>
       <header>
         <span>
           <WalletCards size={15} strokeWidth={2.25} />
-          {t("vote.previewWallet")}
+          {authEndpointReady ? t("auth.account") : t("vote.previewWallet")}
         </span>
-        <select value={selectedWallet} onChange={(event) => onSelectWallet(event.target.value)} aria-label={t("vote.selectPreviewWallet")}>
-          {ledger.leaderboardEntries.map((entry) => (
-            <option key={entry.userAddress} value={entry.userAddress}>
-              #{entry.rank} {compactAddress(entry.userAddress)} · {formatNumber(entry.finalTickets)}
-            </option>
-          ))}
-        </select>
+        {authEndpointReady ? (
+          <button className="vote-wallet-panel__auth" type="button" onClick={onOpenAuthModal}>
+            <strong>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</strong>
+            <small>{authWalletLinked ? t("auth.linked") : t("auth.loginDetail")}</small>
+          </button>
+        ) : (
+          <select value={selectedWallet} onChange={(event) => onSelectWallet(event.target.value)} aria-label={t("vote.selectPreviewWallet")}>
+            {ledger.leaderboardEntries.map((entry) => (
+              <option key={entry.userAddress} value={entry.userAddress}>
+                #{entry.rank} {compactAddress(entry.userAddress)} · {formatNumber(entry.finalTickets)}
+              </option>
+            ))}
+          </select>
+        )}
       </header>
       <section className="vote-balance-strip" aria-label={t("vote.roundBalance", { round: roundLabel(activeRound) })}>
         <output>
@@ -447,7 +458,10 @@ export function VoteRoom({
   roundVoteOutcomes = [],
   roundOutcomeSummary,
   previewVoteIssue = "",
+  authSession,
+  authEndpointReady = false,
   onSelectWallet,
+  onOpenAuthModal,
   onSelectMatch,
   onSelectTeam,
   onSetTicketAmount,
@@ -577,6 +591,8 @@ export function VoteRoom({
             previewVoteIssue={previewVoteIssue}
             activeEntry={activeEntry}
             selectedWallet={selectedWallet}
+            authSession={authSession}
+            authEndpointReady={authEndpointReady}
             activeRound={activeRound}
             remainingRoundTickets={remainingRoundTickets}
             usedRoundTickets={usedRoundTickets}
@@ -584,6 +600,7 @@ export function VoteRoom({
             matchesById={matchesById}
             teamsById={teamsById}
             onSelectWallet={onSelectWallet}
+            onOpenAuthModal={onOpenAuthModal}
             copy={copy}
           />
         </GlareHover>
