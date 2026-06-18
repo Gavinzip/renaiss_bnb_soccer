@@ -40,7 +40,7 @@ npm start
 Zeabur should build this repository with the checked-in `Dockerfile`, then run `npm start`.
 The server exposes `/health`; use it to confirm `ledgerExists`, `bscscanApiKeyConfigured`,
 `refreshMinutes`, `ledger.totalFinalTickets`, `ledger.ageSeconds`, `lastRefresh.durationSeconds`,
-and `refreshHistory`. A live API route returns JSON; if these routes return `index.html`, the
+`refreshHistory`, `lastRestore`, and `restoreHistory`. A live API route returns JSON; if these routes return `index.html`, the
 service is still running the static frontend image.
 
 On Zeabur, mount the persistent disk at `/data` and use `/data/soccer` for this project. The server keeps all ticket and vote data there:
@@ -56,7 +56,9 @@ On Zeabur, mount the persistent disk at `/data` and use `/data/soccer` for this 
     vote-preview.json           frontend-compatible vote preview payload
 ```
 
-The hourly Git backup target is `https://github.com/Gavinzip/renaiss_bnb_soccer_data.git`. Add these environment variables in Zeabur:
+The Git backup target is `https://github.com/Gavinzip/renaiss_bnb_soccer_data.git`. The server restores missing
+files from that repo on startup, then pushes `/data/soccer` back on the backup interval. Add these environment
+variables in Zeabur:
 
 ```sh
 SOCCER_DATA_DIR=/data/soccer
@@ -69,6 +71,8 @@ DATA_BACKUP_REPO_URL=https://github.com/Gavinzip/renaiss_bnb_soccer_data.git
 DATA_BACKUP_GITHUB_TOKEN=<PAT token>
 DATA_BACKUP_INTERVAL_MINUTES=60
 DATA_BACKUP_BRANCH=main
+DATA_BACKUP_RESTORE_ON_STARTUP=1
+DATA_BACKUP_RESTORE_FORCE=0
 
 LUCKY_DRAW_REFRESH_MINUTES=10
 LUCKY_DRAW_REFRESH_HISTORY_LIMIT=24
@@ -77,8 +81,9 @@ LUCKY_DRAW_CAMPAIGN_END=1784469600
 BSCSCAN_API_KEY=...
 ```
 
-`DATA_BACKUP_GITHUB_TOKEN` is the PAT token variable name. `BSCSCAN_API_KEY` is required for
-live ticket refresh. Do not commit either token.
+`DATA_BACKUP_GITHUB_TOKEN` is the PAT token variable name. Startup restore only copies missing files by default;
+set `DATA_BACKUP_RESTORE_FORCE=1` only when you intentionally want the data repo to overwrite `/data/soccer`.
+`BSCSCAN_API_KEY` is required for live ticket refresh. Do not commit either token.
 
 ## Lucky Draw Tickets And Contract
 

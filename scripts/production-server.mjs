@@ -41,6 +41,9 @@ const backupIntervalMs = backupIntervalMinutes * 60 * 1000
 const backupHistoryLimit = readIntegerEnv('DATA_BACKUP_HISTORY_LIMIT', 24, 1)
 const backupRepoUrl = process.env.DATA_BACKUP_REPO_URL || ''
 const backupEnabled = Boolean(backupRepoUrl && process.env.DATA_BACKUP_GITHUB_TOKEN) && process.env.DATA_BACKUP_ENABLED !== '0'
+const restoreHistoryLimit = readIntegerEnv('DATA_BACKUP_RESTORE_HISTORY_LIMIT', 12, 1)
+const restoreOnStartup = process.env.DATA_BACKUP_RESTORE_ON_STARTUP !== '0'
+const restoreEnabled = Boolean(backupRepoUrl && process.env.DATA_BACKUP_GITHUB_TOKEN) && restoreOnStartup
 const blockChunk = process.env.LUCKY_DRAW_BLOCK_CHUNK || '20000'
 const resolveConcurrency = process.env.LUCKY_DRAW_RESOLVE_CONCURRENCY || '3'
 const delayMs = process.env.LUCKY_DRAW_DELAY_MS || '30'
@@ -52,6 +55,7 @@ let refreshRunning = false
 let refreshTimer = null
 let backupRunning = false
 let backupTimer = null
+let restoreRunning = false
 let lastRefresh = {
   ok: false,
   startedAt: null,
@@ -72,6 +76,16 @@ let lastBackup = {
   trigger: null,
 }
 let backupHistory = []
+let lastRestore = {
+  ok: false,
+  startedAt: null,
+  finishedAt: null,
+  durationSeconds: null,
+  exitCode: null,
+  error: null,
+  trigger: null,
+}
+let restoreHistory = []
 
 function readIntegerEnv(name, fallback, min = 0) {
   const raw = process.env[name]
@@ -96,6 +110,10 @@ function rememberRefresh(entry) {
 
 function rememberBackup(entry) {
   backupHistory = [{ ...entry }, ...backupHistory].slice(0, backupHistoryLimit)
+}
+
+function rememberRestore(entry) {
+  restoreHistory = [{ ...entry }, ...restoreHistory].slice(0, restoreHistoryLimit)
 }
 
 function readHealthLedgerSnapshot() {
@@ -398,6 +416,67 @@ function runDataBackup(trigger) {
   })
 }
 
+function runDataRestore(trigger, onDone = () => {}) {
+  if (!restoreEnabled || restoreRunning) {
+    onDone()
+    return
+  }
+
+  restoreRunning = true
+  lastRestore = {
+    ok: false,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    durationSeconds: null,
+    exitCode: null,
+    error: null,
+    trigger,
+  }
+
+  const args = [
+    fileURLToPath(new URL('./restore-soccer-data.mjs', import.meta.url)),
+    '--data-dir',
+    dataDir,
+  ]
+
+  console.log(`[data-restore] start trigger=${trigger} data=${dataDir}`)
+  const child = spawn(process.execPath, args, {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: 'inherit',
+  })
+  child.on('close', (code) => {
+    restoreRunning = false
+    const finishedAt = new Date().toISOString()
+    lastRestore = {
+      ...lastRestore,
+      ok: code === 0,
+      finishedAt,
+      durationSeconds: durationSeconds(lastRestore.startedAt, finishedAt),
+      exitCode: code,
+      error: code === 0 ? null : `data restore exited with code ${code}`,
+    }
+    rememberRestore(lastRestore)
+    console.log(`[data-restore] finish trigger=${trigger} code=${code} duration=${lastRestore.durationSeconds ?? 'n/a'}s`)
+    onDone()
+  })
+  child.on('error', (error) => {
+    restoreRunning = false
+    const finishedAt = new Date().toISOString()
+    lastRestore = {
+      ...lastRestore,
+      ok: false,
+      finishedAt,
+      durationSeconds: durationSeconds(lastRestore.startedAt, finishedAt),
+      exitCode: null,
+      error: error.message,
+    }
+    rememberRestore(lastRestore)
+    console.error('[data-restore] failed', error)
+    onDone()
+  })
+}
+
 function runLedgerRefresh(trigger) {
   if (!refreshEnabled || refreshRunning) return
   if (!process.env.BSCSCAN_API_KEY) {
@@ -556,6 +635,11 @@ const server = createServer(async (request, response) => {
         backupRunning,
         lastBackup,
         backupHistory,
+        restoreEnabled,
+        restoreOnStartup,
+        restoreRunning,
+        lastRestore,
+        restoreHistory,
       },
       {
         'cache-control': 'no-store',
@@ -750,17 +834,27 @@ mkdirSync(dataDir, { recursive: true })
 mkdirSync(cacheDir, { recursive: true })
 mkdirSync(votesDir, { recursive: true })
 
-server.listen(port, () => {
-  console.log(`[server] listening on ${port}`)
-  console.log(`[server] dataDir=${dataDir}`)
-  console.log(`[server] ledgerPath=${ledgerPath}`)
-  console.log(`[server] voteStatePath=${voteStatePath}`)
+function startBackgroundJobs() {
   if (refreshEnabled && refreshOnStartup) runLedgerRefresh('startup')
   if (refreshEnabled) refreshTimer = setInterval(() => runLedgerRefresh('interval'), refreshIntervalMs)
   if (backupEnabled) {
     backupTimer = setInterval(() => runDataBackup('interval'), backupIntervalMs)
   } else {
     console.log('[data-backup] disabled: DATA_BACKUP_REPO_URL or DATA_BACKUP_GITHUB_TOKEN is not configured')
+  }
+}
+
+server.listen(port, () => {
+  console.log(`[server] listening on ${port}`)
+  console.log(`[server] dataDir=${dataDir}`)
+  console.log(`[server] ledgerPath=${ledgerPath}`)
+  console.log(`[server] voteStatePath=${voteStatePath}`)
+  if (restoreEnabled) {
+    runDataRestore('startup', startBackgroundJobs)
+  } else {
+    if (!restoreOnStartup) console.log('[data-restore] disabled: DATA_BACKUP_RESTORE_ON_STARTUP=0')
+    else console.log('[data-restore] disabled: DATA_BACKUP_REPO_URL or DATA_BACKUP_GITHUB_TOKEN is not configured')
+    startBackgroundJobs()
   }
 })
 
