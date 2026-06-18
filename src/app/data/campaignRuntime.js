@@ -147,17 +147,16 @@ export function summarizeRoundDraw(round, allocations) {
     0,
   );
   const roundAllocations = allocations.filter((allocation) => allocation.roundId === round.id);
-  const allocationByMatch = new Map(roundAllocations.map((allocation) => [allocation.matchId, allocation]));
 
-  const eligibleEntries = officialMatches.reduce((total, match) => {
-    const allocation = allocationByMatch.get(match.id);
-    if (!allocation || allocation.teamId !== match.advancingTeamId) return total;
+  const eligibleEntries = roundAllocations.reduce((total, allocation) => {
+    const match = matches.find((entry) => entry.id === allocation.matchId);
+    if (match?.status !== "official_final" || allocation.teamId !== match.advancingTeamId) return total;
     return total + allocation.tickets * round.multiplier;
   }, 0);
 
-  const lostEntries = officialMatches.reduce((total, match) => {
-    const allocation = allocationByMatch.get(match.id);
-    if (!allocation || allocation.teamId === match.advancingTeamId) return total;
+  const lostEntries = roundAllocations.reduce((total, allocation) => {
+    const match = matches.find((entry) => entry.id === allocation.matchId);
+    if (match?.status !== "official_final" || allocation.teamId === match.advancingTeamId) return total;
     return total + allocation.tickets;
   }, 0);
 

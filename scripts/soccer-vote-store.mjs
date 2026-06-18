@@ -32,6 +32,11 @@ function normalizeId(value) {
   return String(value || '').trim()
 }
 
+function getMatchCutoffTime(match) {
+  const cutoffTime = Date.parse(match?.cutoffAt || '')
+  return Number.isFinite(cutoffTime) ? cutoffTime : null
+}
+
 function ensureParent(path) {
   mkdirSync(dirname(path), { recursive: true })
 }
@@ -89,8 +94,8 @@ function appendVoteEvent(eventsPath, event) {
   appendFileSync(eventsPath, `${JSON.stringify(event)}\n`)
 }
 
-function allocationKey({ walletAddress, roundId, matchId }) {
-  return `${walletAddress}:${roundId}:${matchId}`
+function allocationKey({ walletAddress, roundId, matchId, teamId }) {
+  return `${walletAddress}:${roundId}:${matchId}:${teamId}`
 }
 
 function allocationId({ walletAddress, matchId, teamId }) {
@@ -147,6 +152,11 @@ function assertVoteInput(input) {
     throw Object.assign(new Error('This match is not accepting votes.'), { statusCode: 409 })
   }
 
+  const cutoffTime = getMatchCutoffTime(match)
+  if (cutoffTime !== null && Date.now() >= cutoffTime) {
+    throw Object.assign(new Error('This match closed one hour before kickoff and is not accepting votes.'), { statusCode: 409 })
+  }
+
   return { walletAddress, roundId, matchId, teamId, tickets, match }
 }
 
@@ -171,7 +181,7 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input }
   const { walletAddress, roundId, matchId, teamId, tickets } = normalizedInput
   const state = readVoteState(statePath)
   const allocations = normalizeStateAllocations(state)
-  const key = allocationKey({ walletAddress, roundId, matchId })
+  const key = allocationKey({ walletAddress, roundId, matchId, teamId })
   const existingIndex = allocations.findIndex((allocation) => allocationKey(allocation) === key)
   const ledgerTickets = findLedgerTickets(ledger, walletAddress)
 
@@ -179,21 +189,15 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input }
     throw Object.assign(new Error('Wallet is not in the ticket ledger.'), { statusCode: 403 })
   }
 
-  if (existingIndex >= 0 && allocations[existingIndex].teamId !== teamId) {
-    throw Object.assign(new Error('This match already has a submitted team. Team switches are not allowed.'), {
-      statusCode: 409,
-    })
-  }
-
-  const usedOutsideCurrentMatch = roundTicketsUsedByWallet(allocations, walletAddress, roundId, key)
-  const currentMatchTickets = existingIndex >= 0 ? allocations[existingIndex].tickets : 0
-  const nextMatchTickets = currentMatchTickets + tickets
-  const nextRoundTickets = usedOutsideCurrentMatch + nextMatchTickets
+  const usedOutsideCurrentTeam = roundTicketsUsedByWallet(allocations, walletAddress, roundId, key)
+  const currentTeamTickets = existingIndex >= 0 ? allocations[existingIndex].tickets : 0
+  const nextTeamTickets = currentTeamTickets + tickets
+  const nextRoundTickets = usedOutsideCurrentTeam + nextTeamTickets
 
   if (nextRoundTickets > ledgerTickets.finalTickets) {
     throw Object.assign(new Error('Vote amount exceeds available tickets for this round.'), {
       statusCode: 409,
-      availableTickets: Math.max(0, ledgerTickets.finalTickets - usedOutsideCurrentMatch - currentMatchTickets),
+      availableTickets: Math.max(0, ledgerTickets.finalTickets - usedOutsideCurrentTeam - currentTeamTickets),
     })
   }
 
@@ -208,8 +212,10 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input }
     matchId,
     teamId,
     tickets,
-    previousMatchTickets: currentMatchTickets,
-    nextMatchTickets,
+    previousTeamTickets: currentTeamTickets,
+    nextTeamTickets,
+    previousMatchTickets: currentTeamTickets,
+    nextMatchTickets: nextTeamTickets,
     finalRoundTickets: ledgerTickets.finalTickets,
     requestId: normalizeId(input?.requestId) || null,
   }
@@ -222,7 +228,7 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input }
     roundId,
     matchId,
     teamId,
-    tickets: nextMatchTickets,
+    tickets: nextTeamTickets,
     source: 'server-vote-store',
     official: false,
     createdAt: existingIndex >= 0 ? allocations[existingIndex].createdAt : event.createdAt,

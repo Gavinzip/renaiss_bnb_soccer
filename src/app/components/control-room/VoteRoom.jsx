@@ -80,11 +80,15 @@ function sortMatchesByDisplayPhase(left, right) {
 }
 
 function getTeamTone(match, team, allocation, selectedTeamId) {
-  if (allocation?.teamId === team.id) return "allocated";
+  if (allocation) return "allocated";
   if (selectedTeamId === team.id) return "selected";
   if (match.advancingTeamId === team.id) return "winner";
   if (match.advancingTeamId && match.advancingTeamId !== team.id) return "eliminated";
   return "idle";
+}
+
+function getTeamAllocation(roundAllocations, matchId, teamId) {
+  return roundAllocations.find((allocation) => allocation.matchId === matchId && allocation.teamId === teamId) ?? null;
 }
 
 function PrizePresentationSwitch({ mode, onChange, copy }) {
@@ -109,27 +113,31 @@ function PrizePresentationSwitch({ mode, onChange, copy }) {
 
 function MatchVoteGroup({
   match,
-  allocation,
+  allocations = [],
   selectedMatchId,
   selectedTeamId,
   teamsById,
   remainingRoundTickets,
   onSelectMatch,
   onSelectTeam,
-  allocationIndex = 0,
   copy,
 }) {
   const { compactVotes, dateTime, t, teamName, venueName } = copy;
   const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
+  const matchAllocations = allocations.filter((entry) => entry.matchId === match.id);
+  const matchTicketTotal = matchAllocations.reduce((total, entry) => total + entry.tickets, 0);
+  const matchAllocationIndex = matchAllocations.length > 0
+    ? allocations.findIndex((entry) => entry.id === matchAllocations[0].id)
+    : -1;
   const canVote = voteableStatuses.has(match.status) && remainingRoundTickets > 0;
   const selected = selectedMatchId === match.id;
-  const MatchIcon = getMatchIcon(match, allocation);
+  const MatchIcon = getMatchIcon(match, matchAllocations[0]);
   const phase = getMatchPhase(match);
   const tone = getMatchTone(match);
 
   function handlePickTeam(team) {
     onSelectMatch(match.id);
-    if (canVote && (!allocation || allocation.teamId === team.id)) onSelectTeam(team.id);
+    if (canVote) onSelectTeam(team.id);
   }
 
   return (
@@ -145,11 +153,11 @@ function MatchVoteGroup({
           <MatchIcon size={15} strokeWidth={2.35} />
           {t(phase.labelKey)}
         </strong>
-        {allocation ? (
+        {matchAllocations.length > 0 ? (
           <em className="vote-match-group__vote-mark">
             {t("vote.votedTicketBadge", {
-              index: formatNumber(allocationIndex + 1),
-              tickets: formatNumber(allocation.tickets),
+              index: formatNumber(matchAllocationIndex + 1),
+              tickets: formatNumber(matchTicketTotal),
             })}
           </em>
         ) : null}
@@ -158,10 +166,11 @@ function MatchVoteGroup({
 
       <section className="vote-match-group__teams" aria-label={t("schedule.teamsAria", { match: match.id.toUpperCase() })}>
         {teams.map((team, index) => {
+          const allocation = getTeamAllocation(allocations, match.id, team.id);
           const teamTone = getTeamTone(match, team, allocation, selected && selectedTeamId);
           const isSelected = selected && selectedTeamId === team.id;
-          const disabled = !canVote || (allocation && allocation.teamId !== team.id);
-          const stateText = allocation?.teamId === team.id
+          const disabled = !canVote;
+          const stateText = allocation
             ? t("vote.allocationForMatch", { team: teamName(team), tickets: formatNumber(allocation.tickets) })
             : isSelected
               ? t("vote.selectedForPreview")
@@ -223,7 +232,6 @@ function TicketAllocationPanel({
     selectedTeam
     && selectedMatch
     && voteableStatuses.has(selectedMatch.status)
-    && (!activeAllocation || activeAllocation.teamId === selectedTeam.id)
     && remainingRoundTickets > 0,
   );
 
@@ -322,8 +330,10 @@ function TicketAllocationPanel({
         disabled={!canSubmit}
         onClick={() => onConfirmPreviewVote(boundedTicketAmount)}
       >
-        {canSubmit ? <Send size={17} strokeWidth={2.35} /> : <LockKeyhole size={17} strokeWidth={2.35} />}
-        {t("vote.submitPreviewVote")}
+        <span className="vote-allocation-panel__cta-content">
+          {canSubmit ? <Send size={17} strokeWidth={2.35} /> : <LockKeyhole size={17} strokeWidth={2.35} />}
+          <span>{t("vote.submitPreviewVote")}</span>
+        </span>
       </Magnet>
     </aside>
   );
@@ -453,7 +463,9 @@ export function VoteRoom({
   const selectedRoundMatch = selectedMatch && roundMatches.some((match) => match.id === selectedMatch.id)
     ? selectedMatch
     : roundMatches[0];
-  const activeAllocation = roundAllocations.find((allocation) => allocation.matchId === selectedRoundMatch?.id);
+  const activeAllocation = selectedTeamId
+    ? getTeamAllocation(roundAllocations, selectedRoundMatch?.id, selectedTeamId)
+    : null;
   const selectedTeam = selectedRoundMatch?.teams.includes(selectedTeamId)
     ? teamsById.get(selectedTeamId)
     : null;

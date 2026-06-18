@@ -46,8 +46,8 @@ function displayPoolForMatch(match, teamsById) {
   return Math.max(4200, Math.round(voteSignal * 0.082));
 }
 
-function getMatchAllocation(match, allocations) {
-  return allocations.find((allocation) => allocation.matchId === match?.id);
+function getTeamAllocation(match, team, allocations) {
+  return allocations.find((allocation) => allocation.matchId === match?.id && allocation.teamId === team?.id);
 }
 
 function getTeamTone(match, team, allocation) {
@@ -466,7 +466,6 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
   return (
     <section className={`arena-side is-${side}`} aria-label={copy.t(side === "left" ? "schedule.leftBracket" : "schedule.rightBracket")}>
       {matches.map((match, index) => {
-        const allocation = getMatchAllocation(match, allocations);
         const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
         return (
           <article
@@ -486,7 +485,7 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
                 match={match}
                 team={team}
                 side={side}
-                allocation={allocation}
+                allocation={getTeamAllocation(match, team, allocations)}
                 selected={detail?.matchId === match.id && detail?.teamId === team.id}
                 onPickTeam={onPickTeam}
                 copy={copy}
@@ -652,7 +651,7 @@ function ArenaDetailPanel({
   const teamShare = clampPercent(Math.round((teamVotes / totalVotes) * 100));
   const visibleRounds = detailMatch.status === "official_final" ? 1 : voteableStatuses.has(detailMatch.status) ? 2 : 1;
   const simulatedVoters = Math.max(4, Math.round(displayPool / 45));
-  const canSubmit = mode === "vote" && voteableStatuses.has(detailMatch.status) && !allocation && remainingRoundTickets > 0;
+  const canSubmit = mode === "vote" && voteableStatuses.has(detailMatch.status) && remainingRoundTickets > 0;
   const canOpenVote = mode === "schedule" && voteableStatuses.has(detailMatch.status) && Boolean(onOpenVote);
   const resolvedTicketAmount = Math.max(1, Math.min(ticketAmount ?? 1, Math.max(1, remainingRoundTickets ?? 1)));
   const buttonDisabled = mode === "vote" ? !canSubmit : !canOpenVote;
@@ -774,7 +773,7 @@ export function TournamentArena({
   const activeDetailMatch = roundMatches.find((match) => match.id === visibleDetail.matchId) ?? selectedRoundMatch;
   const activeDetailTeam = teamsById.get(visibleDetail.teamId) ?? teamsById.get(activeDetailMatch?.teams?.[0]);
   const opponentTeam = teamsById.get(activeDetailMatch?.teams?.find((teamId) => teamId !== activeDetailTeam?.id));
-  const activeAllocation = getMatchAllocation(activeDetailMatch, roundAllocations);
+  const activeAllocation = getTeamAllocation(activeDetailMatch, activeDetailTeam, roundAllocations);
   const splitIndex = Math.ceil(roundMatches.length / 2);
   const leftMatches = roundMatches.slice(0, splitIndex);
   const rightMatches = roundMatches.slice(splitIndex);
@@ -841,7 +840,7 @@ export function TournamentArena({
     setRouteSelection(nextSelection);
     setDetail(nextSelection);
     onSelectMatch?.(match.id);
-    if (mode === "vote" && voteableStatuses.has(match.status) && !getMatchAllocation(match, roundAllocations)) {
+    if (mode === "vote" && voteableStatuses.has(match.status)) {
       onSelectTeam?.(team.id);
     }
   }

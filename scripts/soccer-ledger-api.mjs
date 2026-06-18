@@ -3,6 +3,8 @@ import { readFileSync, statSync } from 'node:fs'
 export const SUMMARY_LEADERBOARD_LIMIT = 10
 export const DEFAULT_ENTRY_INTERVAL_LIMIT = 0
 export const MAX_ENTRY_INTERVAL_LIMIT = 240
+export const DEFAULT_TICKET_LOOKUP_LIMIT = 100
+export const MAX_TICKET_LOOKUP_LIMIT = 500
 
 let ledgerCache = {
   ledger: null,
@@ -25,6 +27,15 @@ function entryAddresses(entry) {
     entry?.userAddress,
     ...(Array.isArray(entry?.sourceAddresses) ? entry.sourceAddresses : []),
   ].map(normalizeAddress).filter(Boolean)
+}
+
+function normalizeRangeEndpoint(start, end) {
+  const normalizedStart = Math.max(1, toInteger(start))
+  const normalizedEnd = Math.max(normalizedStart, toInteger(end || normalizedStart))
+  return {
+    start: normalizedStart,
+    end: normalizedEnd,
+  }
 }
 
 export function readLedgerPayload(ledgerPath) {
@@ -120,6 +131,96 @@ export function parseEntryIntervalQuery(searchParams) {
       : Number.isFinite(rawLimit)
         ? Math.min(MAX_ENTRY_INTERVAL_LIMIT, Math.max(0, Math.floor(rawLimit)))
         : DEFAULT_ENTRY_INTERVAL_LIMIT,
+  }
+}
+
+export function parseTicketLookupQuery(searchParams) {
+  const rawTicket = searchParams.get('ticket')
+  const rawStart = rawTicket || searchParams.get('start') || searchParams.get('from') || '1'
+  const rawEnd = rawTicket || searchParams.get('end') || searchParams.get('to') || rawStart
+  const rawLimit = Number(searchParams.get('limit') || DEFAULT_TICKET_LOOKUP_LIMIT)
+  const range = normalizeRangeEndpoint(rawStart, rawEnd)
+
+  return {
+    ...range,
+    limit: Number.isFinite(rawLimit)
+      ? Math.min(MAX_TICKET_LOOKUP_LIMIT, Math.max(1, Math.floor(rawLimit)))
+      : DEFAULT_TICKET_LOOKUP_LIMIT,
+  }
+}
+
+function intervalOverlap(interval, range) {
+  const intervalStart = Math.max(1, toInteger(interval?.start))
+  const intervalEnd = Math.max(intervalStart, toInteger(interval?.end || intervalStart))
+  const start = Math.max(intervalStart, range.start)
+  const end = Math.min(intervalEnd, range.end)
+  if (start > end) return null
+
+  return {
+    start,
+    end,
+    tickets: end - start + 1,
+  }
+}
+
+function buildTicketLookupHit(entry, interval, overlap) {
+  return {
+    userAddress: entry.userAddress || '',
+    sourceAddresses: Array.isArray(entry.sourceAddresses) ? entry.sourceAddresses : [],
+    rank: toInteger(entry.rank),
+    finalTickets: toInteger(entry.finalTickets),
+    rawTickets: toInteger(entry.rawTickets),
+    bonusTickets: toInteger(entry.bonusTickets),
+    ticketStart: entry.ticketStart ?? null,
+    ticketEnd: entry.ticketEnd ?? null,
+    interval: {
+      start: toInteger(interval.start),
+      end: toInteger(interval.end),
+      displayStart: interval.displayStart ?? null,
+      displayEnd: interval.displayEnd ?? null,
+      namespace: interval.namespace || 'raw',
+      source: interval.source || null,
+      pack: interval.pack || null,
+      txHash: interval.txHash || null,
+      timestamp: interval.timestamp ?? null,
+      blockNumber: interval.blockNumber ?? null,
+      ordinal: interval.ordinal ?? null,
+    },
+    overlap,
+  }
+}
+
+export function buildTicketLookupResponse(ledger, options = {}) {
+  const range = normalizeRangeEndpoint(options.start, options.end)
+  const limit = Math.min(MAX_TICKET_LOOKUP_LIMIT, Math.max(1, toInteger(options.limit || DEFAULT_TICKET_LOOKUP_LIMIT)))
+  const entries = Array.isArray(ledger.entries) ? ledger.entries : []
+  const hits = []
+  let totalHits = 0
+
+  for (const entry of entries) {
+    const intervals = Array.isArray(entry.ticketIntervals) ? entry.ticketIntervals : []
+    for (const interval of intervals) {
+      const overlap = intervalOverlap(interval, range)
+      if (!overlap) continue
+
+      totalHits += 1
+      if (hits.length < limit) hits.push(buildTicketLookupHit(entry, interval, overlap))
+    }
+  }
+
+  return {
+    query: {
+      start: range.start,
+      end: range.end,
+      limit,
+      totalFinalTickets: toInteger(ledger.totalFinalTickets),
+      ledgerHash: ledger.ledgerHash || null,
+      generatedAt: toInteger(ledger.generatedAt),
+    },
+    hits,
+    hitCount: totalHits,
+    returnedHitCount: hits.length,
+    truncated: totalHits > hits.length,
   }
 }
 

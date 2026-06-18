@@ -50,6 +50,10 @@ function getTeamVoteOutcome(roundVoteOutcomes, matchId, teamId) {
   return roundVoteOutcomes.find((outcome) => outcome.matchId === matchId && outcome.teamId === teamId) ?? null;
 }
 
+function getTeamAllocation(roundAllocations, matchId, teamId) {
+  return roundAllocations.find((entry) => entry.matchId === matchId && entry.teamId === teamId) ?? null;
+}
+
 export function MatchPrizeList({
   activeRound,
   matches,
@@ -81,8 +85,11 @@ export function MatchPrizeList({
       <ol className="match-prize-list-view__matches">
         {matches.map((match, matchIndex) => {
           const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
-          const allocation = roundAllocations.find((entry) => entry.matchId === match.id);
-          const allocationIndex = roundAllocations.findIndex((entry) => entry.matchId === match.id);
+          const matchAllocations = roundAllocations.filter((entry) => entry.matchId === match.id);
+          const matchTicketTotal = matchAllocations.reduce((total, entry) => total + entry.tickets, 0);
+          const allocationIndex = matchAllocations.length > 0
+            ? roundAllocations.findIndex((entry) => entry.id === matchAllocations[0].id)
+            : -1;
           const canPickMatch = voteableStatuses.has(match.status) && remainingRoundTickets > 0;
           const selected = selectedMatchId === match.id;
           const phase = getMatchPhase(match);
@@ -95,7 +102,7 @@ export function MatchPrizeList({
               className={[
                 "match-prize-lane",
                 selected ? "is-selected" : "",
-                allocation ? "has-vote-record" : "",
+                matchAllocations.length > 0 ? "has-vote-record" : "",
                 `is-phase-${phase.id}`,
                 voteableStatuses.has(match.status) ? "is-open" : "is-closed",
                 `is-${match.status}`,
@@ -111,11 +118,11 @@ export function MatchPrizeList({
                   <MatchIcon size={14} strokeWidth={2.35} />
                   {statusText}
                 </small>
-                {allocation ? (
+                {matchAllocations.length > 0 ? (
                   <em className="match-prize-lane__vote-mark">
                     {t("vote.votedTicketBadge", {
                       index: formatNumber(allocationIndex + 1),
-                      tickets: formatNumber(allocation.tickets),
+                      tickets: formatNumber(matchTicketTotal),
                     })}
                   </em>
                 ) : null}
@@ -123,9 +130,10 @@ export function MatchPrizeList({
 
               <section className="match-prize-lane__teams" aria-label={t("schedule.teamsAria", { match: match.id.toUpperCase() })}>
                 {teams.map((team, teamIndex) => {
-                  const canPickTeam = canPickMatch && (!allocation || allocation.teamId === team.id);
+                  const allocation = getTeamAllocation(roundAllocations, match.id, team.id);
+                  const canPickTeam = canPickMatch;
                   const isSelectedTeam = selected && selectedTeamId === team.id;
-                  const isAllocatedTeam = allocation?.teamId === team.id;
+                  const isAllocatedTeam = Boolean(allocation);
                   const isWinner = match.advancingTeamId === team.id;
                   const isEliminated = Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);
                   const voteOutcome = getTeamVoteOutcome(roundVoteOutcomes, match.id, team.id);

@@ -11,6 +11,7 @@ import {
 import { verifiedLedgerSnapshot } from "./data/ticketLedgerSnapshot";
 import { campaignMatches, milestones, roundDefinitions } from "./data/worldCupCampaign";
 import { teams } from "./data/teams";
+import { resolveMatchRuntimeState } from "./data/matchStatus";
 import {
   DEFAULT_MATCH_ID,
   DEFAULT_ROUND_ID,
@@ -33,6 +34,7 @@ import { preloadImage } from "./utils/preloadAssets";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
 const INITIAL_LOADER_EXIT_MS = 540;
+const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i;
 
 const bundledMilestoneSummary = {
   milestones,
@@ -43,15 +45,59 @@ const bundledMilestoneSummary = {
   generatedAt: null,
 };
 
+function normalizeWalletAddress(value) {
+  const address = String(value || "").trim();
+  return WALLET_ADDRESS_PATTERN.test(address) ? address.toLowerCase() : "";
+}
+
+function readInitialWalletAddress() {
+  if (typeof window === "undefined") return "";
+  return normalizeWalletAddress(new URLSearchParams(window.location.search).get("wallet"));
+}
+
+function urlWithWalletQuery(baseUrl, walletAddress) {
+  if (!baseUrl || !walletAddress) return baseUrl;
+  const url = new URL(baseUrl, window.location.origin);
+  url.searchParams.set("wallet", walletAddress);
+  return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : url.toString();
+}
+
+function normalizeLedgerEntryPayload(payload) {
+  const entry = payload?.entry;
+  if (!entry || typeof entry !== "object") return null;
+  const userAddress = normalizeWalletAddress(entry.userAddress ?? entry.user_address);
+  const finalTickets = Math.max(0, Math.floor(Number(entry.finalTickets ?? entry.final_tickets) || 0));
+  if (!userAddress || finalTickets <= 0) return null;
+
+  return {
+    ...entry,
+    userAddress,
+    sourceAddresses: Array.isArray(entry.sourceAddresses) ? entry.sourceAddresses : [],
+    packs: entry.packs && typeof entry.packs === "object" ? entry.packs : {},
+    rawTickets: Math.max(0, Math.floor(Number(entry.rawTickets ?? entry.raw_tickets) || 0)),
+    bonusTickets: Math.max(0, Math.floor(Number(entry.bonusTickets ?? entry.bonus_tickets) || 0)),
+    finalTickets,
+    sbt: String(entry.sbt ?? "none"),
+    sbtMultiplier: Number(entry.sbtMultiplier ?? entry.sbt_multiplier ?? 1),
+    eventCount: Math.max(0, Math.floor(Number(entry.eventCount ?? entry.event_count) || 0)),
+    firstBuybackAt: Math.max(0, Math.floor(Number(entry.firstBuybackAt ?? entry.first_buyback_at) || 0)),
+    lastBuybackAt: Math.max(0, Math.floor(Number(entry.lastBuybackAt ?? entry.last_buyback_at) || 0)),
+    ticketStart: entry.ticketStart ?? entry.ticket_start ?? null,
+    ticketEnd: entry.ticketEnd ?? entry.ticket_end ?? null,
+  };
+}
+
 function AppContent() {
   const copy = useCampaignCopy();
   const { t } = copy;
   const ledgerSummaryUrl = import.meta.env.VITE_LEDGER_SUMMARY_URL || (import.meta.env.PROD ? "/api/raffle-summary" : "");
+  const ledgerEntryUrl = import.meta.env.VITE_LEDGER_ENTRY_URL || (import.meta.env.PROD ? "/api/raffle-entry" : "");
   const milestoneSummaryUrl = import.meta.env.VITE_MILESTONE_SUMMARY_URL || (import.meta.env.PROD ? "/api/milestones" : "");
   const previewVoteUrl = import.meta.env.VITE_VOTE_PREVIEW_URL
     || (import.meta.env.PROD ? "/api/vote-preview" : "/mock-api/vote-preview.json");
   const voteSubmitUrl = import.meta.env.VITE_VOTE_SUBMIT_URL || (import.meta.env.PROD ? "/api/votes" : "");
   const [ledger, setLedger] = useState(verifiedLedgerSnapshot);
+  const [selectedLedgerEntry, setSelectedLedgerEntry] = useState(null);
   const [ledgerIssue, setLedgerIssue] = useState("");
   const [ledgerReady, setLedgerReady] = useState(!ledgerSummaryUrl);
   const [milestoneSummary, setMilestoneSummary] = useState(bundledMilestoneSummary);
@@ -69,7 +115,9 @@ function AppContent() {
   const [selectedTeamId, setSelectedTeamId] = useState(null);
   const [ticketAmount, setTicketAmount] = useState(DEFAULT_TICKET_AMOUNT);
   const [previewAllocations, setPreviewAllocations] = useState([]);
-  const [selectedWallet, setSelectedWallet] = useState(verifiedLedgerSnapshot.leaderboardEntries[0].userAddress);
+  const [selectedWallet, setSelectedWallet] = useState(
+    () => readInitialWalletAddress() || verifiedLedgerSnapshot.leaderboardEntries[0].userAddress,
+  );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [pendingVoteAmount, setPendingVoteAmount] = useState(null);
   const [initialAssetsReady, setInitialAssetsReady] = useState(false);
@@ -77,6 +125,7 @@ function AppContent() {
   const [initialLoaderVisible, setInitialLoaderVisible] = useState(true);
   const [initialLoaderMounted, setInitialLoaderMounted] = useState(true);
   const [initialLoaderStartedAt] = useState(() => Date.now());
+  const [matchStatusNow, setMatchStatusNow] = useState(() => Date.now());
 
   useEffect(() => {
     const summaryUrl = ledgerSummaryUrl;
@@ -97,7 +146,7 @@ function AppContent() {
         const normalized = normalizeLedgerSummary(payload);
         if (!normalized) throw new Error(t("data.invalidLedgerShape"));
         setLedger(normalized);
-        setSelectedWallet(normalized.leaderboardEntries[0]?.userAddress ?? "");
+        setSelectedWallet((current) => current || normalized.leaderboardEntries[0]?.userAddress || "");
         setLedgerIssue("");
       })
       .catch((error) => {
@@ -112,8 +161,36 @@ function AppContent() {
 
     return () => {
       cancelled = true;
-    };
+      };
   }, [ledgerSummaryUrl, t]);
+
+  useEffect(() => {
+    if (!ledgerEntryUrl || !selectedWallet) {
+      setSelectedLedgerEntry(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    fetch(urlWithWalletQuery(ledgerEntryUrl, selectedWallet), { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setSelectedLedgerEntry(normalizeLedgerEntryPayload(payload));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setSelectedLedgerEntry(null);
+        setLedgerIssue(t("data.ledgerIssue", { message: error.message }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ledgerEntryUrl, selectedWallet, t]);
 
   useEffect(() => {
     const milestoneUrl = milestoneSummaryUrl;
@@ -161,7 +238,7 @@ function AppContent() {
     let cancelled = false;
     setPreviewVoteReady(false);
 
-    fetch(previewVoteUrl, { cache: "no-store" })
+    fetch(urlWithWalletQuery(previewVoteUrl, selectedWallet), { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
@@ -186,7 +263,7 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [previewVoteUrl, t]);
+  }, [previewVoteUrl, selectedWallet, t]);
 
   useEffect(() => {
     if (simulationMode !== "realtime") return undefined;
@@ -228,7 +305,11 @@ function AppContent() {
     () => buildRealtimeRound32Preview({ matches: campaignMatches, teams, snapshot: liveQualification }),
     [liveQualification],
   );
-  const matches = simulationMode === "realtime" ? realtimeRound32Preview.matches : campaignMatches;
+  const sourceMatches = simulationMode === "realtime" ? realtimeRound32Preview.matches : campaignMatches;
+  const matches = useMemo(
+    () => sourceMatches.map((match) => resolveMatchRuntimeState(match, matchStatusNow)),
+    [matchStatusNow, sourceMatches],
+  );
   const teamsById = simulationMode === "realtime" ? realtimeRound32Preview.teamsById : staticTeamsById;
   const displayedLiveQualification = simulationMode === "realtime" ? realtimeRound32Preview.snapshot : liveQualification;
   const simulatedRound = useMemo(() => getRoundById(simulatedRoundId), [simulatedRoundId]);
@@ -240,8 +321,10 @@ function AppContent() {
     [activeRoundId, matches, selectedMatchId],
   );
   const activeEntry = useMemo(
-    () => ledger.leaderboardEntries.find((entry) => entry.userAddress === selectedWallet) ?? ledger.leaderboardEntries[0],
-    [ledger.leaderboardEntries, selectedWallet],
+    () => selectedLedgerEntry
+      ?? ledger.leaderboardEntries.find((entry) => entry.userAddress === selectedWallet)
+      ?? ledger.leaderboardEntries[0],
+    [ledger.leaderboardEntries, selectedLedgerEntry, selectedWallet],
   );
   const walletAllocations = useMemo(
     () => previewAllocations.filter((allocation) => allocation.walletAddress === selectedWallet),
@@ -360,6 +443,16 @@ function AppContent() {
   }, [initialLoaderVisible]);
 
   useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setMatchStatusNow(Date.now());
+    }, 60000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
     setTicketAmount((current) => Math.max(1, Math.min(current, Math.max(1, visibleRemainingRoundTickets))));
   }, [visibleRemainingRoundTickets]);
 
@@ -427,12 +520,10 @@ function AppContent() {
         allocation.walletAddress === selectedWallet
         && allocation.roundId === activeRoundId
         && allocation.matchId === selectedMatch.id
+        && allocation.teamId === selectedTeamId
       ));
 
       if (existingIndex >= 0) {
-        const existing = current[existingIndex];
-        if (existing.teamId !== selectedTeamId) return current;
-
         return current.map((allocation, index) => (
           index === existingIndex
             ? { ...allocation, tickets: allocation.tickets + tickets }

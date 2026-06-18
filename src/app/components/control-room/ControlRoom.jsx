@@ -36,27 +36,36 @@ const roomLoaders = {
 const LazyScheduleRoom = lazyNamed(roomLoaders.schedule, "ScheduleRoom");
 const LazyVoteRoom = lazyNamed(roomLoaders.vote, "VoteRoom");
 const LazyDrawRoom = lazyNamed(roomLoaders.draw, "DrawRoom");
+const roomPreloadCache = new Map();
 
 function preloadRoom(viewId) {
   const loader = roomLoaders[viewId];
   if (!loader) return Promise.resolve();
+  if (roomPreloadCache.has(viewId)) return roomPreloadCache.get(viewId);
 
-  return loader().then((module) => {
-    if (typeof module.preloadRoomAssets === "function") return module.preloadRoomAssets();
-    return undefined;
-  });
+  const preload = loader()
+    .then((module) => {
+      if (typeof module.preloadRoomAssets === "function") return module.preloadRoomAssets();
+      return undefined;
+    })
+    .catch((error) => {
+      roomPreloadCache.delete(viewId);
+      throw error;
+    });
+  roomPreloadCache.set(viewId, preload);
+  return preload;
 }
 
 function preloadInactiveRooms(activeViewId) {
   const order = activeViewId === "home"
-    ? ["vote", "schedule", "draw"]
-    : [activeViewId, "vote", "schedule", "draw"];
+    ? ["schedule", "vote", "draw"]
+    : [activeViewId, "schedule", "vote", "draw"];
   const uniqueOrder = [...new Set(order)].filter((viewId) => viewId !== "home");
 
   const cancelJobs = uniqueOrder.map((viewId, index) => (
     scheduleIdleWork(() => {
       preloadRoom(viewId).catch(() => undefined);
-    }, 650 + index * 450)
+    }, 260 + index * 240)
   ));
 
   return () => cancelJobs.forEach((cancel) => cancel());
@@ -410,6 +419,7 @@ function ViewMenu({ activeViewId, onSelectView, t }) {
               strength={72}
               aria-current={activeViewId === view.id ? "page" : undefined}
               onPointerEnter={() => handlePreload(view.id)}
+              onPointerDown={() => handlePreload(view.id)}
               onFocus={() => handlePreload(view.id)}
               onClick={() => onSelectView(view.id)}
             >

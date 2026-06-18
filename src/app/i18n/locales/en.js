@@ -116,7 +116,7 @@ export const enLocale = {
       "vote": {
         "eyebrow": "Voting room",
         "title": "Match Voting Room",
-        "body": "Pick one match and one advancing team. Once submitted, that match pick is locked."
+        "body": "Pick a match and send tickets to a team. Submitted tickets cannot be withdrawn, and both teams can receive tickets."
       },
       "draw": {
         "eyebrow": "Round prize desk",
@@ -126,7 +126,7 @@ export const enLocale = {
       "rules": {
         "eyebrow": "Operating rulebook",
         "title": "Round Reset Rulebook",
-        "body": "Votes live on the server first. Draw snapshots and reveal use on-chain tooling."
+        "body": "Votes live on the server first. Each match closes 1 hour before kickoff; only the draw reveal goes on-chain."
       }
     },
     "mast": {
@@ -377,13 +377,13 @@ export const enLocale = {
       "cutoffAt": "{time} HKT cutoff",
       "previewStaged": "Voted",
       "allocationStagedTitle": "Vote already placed",
-      "allocationStagedBody": "You can add tickets to the same team in this match; you cannot switch teams after submit.",
+      "allocationStagedBody": "You can add tickets to either team in the same match; submitted tickets cannot be withdrawn.",
       "closingSoon": "Closing soon",
       "openToVote": "Open to vote",
       "voteBeforeCutoffTitle": "Vote before cutoff",
       "chooseTeamTitle": "Choose a team",
-      "closingBody": "Submit tickets before cutoff; this match stops accepting votes after kickoff lock.",
-      "openBody": "Pick one team and submit tickets from this round balance before kickoff cutoff.",
+      "closingBody": "Voting closes 1 hour before kickoff; after cutoff this match stops accepting tickets.",
+      "openBody": "Pick one team and submit tickets from this round balance before the 1-hour pre-kickoff cutoff.",
       "noTicketsLeft": "No tickets left",
       "noTicketsTitle": "Round balance spent",
       "noTicketsBody": "This wallet has no remaining tickets for the selected round.",
@@ -417,7 +417,7 @@ export const enLocale = {
       "countryRequired": "Waiting for country pick",
       "ticketsReadyDetail": "{count} tickets ready to submit",
       "lockedStepDetail": "This match cannot accept votes",
-      "previewOnlyBoundary": "Submitting locks this match pick",
+      "previewOnlyBoundary": "Submitted tickets cannot be withdrawn",
       "previewReadyDetail": "Ready to submit tickets",
       "currentRoundSummary": "Current round voting summary",
       "pendingAllocationSummary": "Pending vote summary",
@@ -449,7 +449,7 @@ export const enLocale = {
       "currentRoundVoteTitle": "Active-Round Vote Desk",
       "currentRoundVoteBody": "Only active-round matches are shown. Final, in-play, and open-to-vote states are separated.",
       "stageDeckTitle": "{round} Vote Selection",
-      "stageDeckBody": "Each row is one match. Pick the advancing team, then submit tickets from the side panel. Same-team top-ups are allowed; switching teams is not.",
+      "stageDeckBody": "Each row is one match. Pick a team, then submit tickets from the side panel. You can add tickets to either team in the same match.",
       "groupedMatchesAria": "{round} grouped match voting list",
       "matchGroupHint": "Both teams inside this line belong to the same match",
       "chooseThisTeam": "Pick team",
@@ -580,131 +580,181 @@ export const enLocale = {
     "rules": {
       "roomAria": "Operating rules",
       "heroEyebrow": "Start here",
-      "heroTitle": "Submit locks the team. Draw chances settle by round.",
-      "heroBody": "Votes are saved on the server first. After official results, correct votes enter that round's draw; only the draw reveal goes on-chain.",
+      "heroTitle": "Pick the advancing team. Enter that match pool.",
+      "heroBody": "Votes stay on the server; correct picks enter after results; only the reveal goes on-chain.",
       "lifecycleEyebrow": "Flow",
-      "lifecycleTitle": "Vote, result, draw",
-      "roundRulebook": "How each round works",
-      "eligibilityMap": "{round} entry rules",
+      "lifecycleTitle": "How tickets become prizes",
+      "roundRulebook": "Entry rules",
+      "eligibilityMap": "{round} eligibility",
       "eligibilityAria": "Vote and entry eligibility",
       "roundListAria": "Per-round prize and draw state",
-      "notConnected": "Split",
-      "boundaryTitle": "What stays server-side, what goes on-chain",
+      "roundOverviewEyebrow": "Round overview",
+      "roundOverviewTitle": "Prize state by round",
+      "notConnected": "Data split",
+      "boundaryTitle": "Server handles votes; chain handles reveal",
+      "proofTitle": "Trackable, verifiable, claimable",
       "boundaryAria": "Server vote ledger and on-chain reveal split",
-      "productionOps": "Admin work",
-      "adminRequirements": "Needed before launch",
+      "productionOps": "Production ops",
+      "adminRequirements": "Launch checklist",
       "checklistAria": "Production admin and operations checklist",
       "activeRound": "Active round",
       "roundPrizes": "Round prizes",
       "campaignMatches": "Campaign matches",
       "totalSlots": "Total slots",
-      "currentPrizeDesk": "Current round prize list",
+      "currentPrizeDesk": "Round prize",
+      "prizePitchTitle": "{round}: {amount} per match",
+      "prizePitchBody": "Correct advancing-team picks enter that match draw.",
+      "prizePerMatch": "Per match",
       "matchPrizeTitle": "{round} match prizes",
-      "matchPrizeBody": "Defaulting to {amount} per match; each match can be tuned later.",
+      "matchPrizeBody": "Defaulting to {amount} per match; each match can be tuned independently.",
       "roundPrizeTotal": "Round prize total",
       "roundPrizeMatches": "Round matches",
       "matchCountValue": "{count} matches",
       "matchPrizeListAria": "Per-match prize list for this round",
       "mixedPrizeTotal": "Shown by match",
-      "lockNoticeEyebrow": "Vote lock rules",
-      "lockNoticeTitle": "Submit locks the team. You cannot switch.",
+      "lockNoticeEyebrow": "Lock rules",
+      "lockNoticeTitle": "Submit is final. Cutoff locks the match.",
       "lockNoticeAria": "Vote lock, round settlement, and official result rules",
       "lockNotice": {
         "submit": [
-          "Submit counts",
-          "You can add tickets to the same team. You cannot switch to the other team."
+          "Both teams allowed",
+          "Same-team tickets stack. The other team can also receive tickets."
         ],
         "settlement": [
-          "Rounds settle separately",
-          "Round of 16, quarter-final, and semi-final tickets each settle in their own round."
+          "Each round restarts",
+          "Round of 16, quarter-final, and semi-final votes are allocated from that round's ticket balance."
         ],
         "fifa": [
-          "Use official results",
-          "Advancement and wins follow FIFA official results."
+          "Official result rules",
+          "Eligibility follows FIFA official results and the confirmed admin snapshot."
+        ]
+      },
+      "essentials": {
+        "sameTeam": [
+          "Both teams",
+          "Either side can receive tickets."
+        ],
+        "noSwitch": [
+          "No withdrawal",
+          "Submitted tickets count."
+        ],
+        "official": [
+          "Official result",
+          "FIFA result decides."
+        ],
+        "serverChain": [
+          "Server first",
+          "Reveal goes on-chain."
         ]
       },
       "flow": {
-        "source": [
-          "Where tickets live",
-          "Pack tickets and vote records are saved on the server first."
+        "tickets": [
+          "1 vote per buyback",
+          "Qualified only"
         ],
-        "reset": [
-          "Reset by round",
-          "A new round starts from that round's available tickets."
+        "vote": [
+          "Vote team",
+          "Either side"
         ],
         "cutoff": [
-          "Close before kickoff",
-          "When time is up, the server stops accepting votes."
+          "Cutoff",
+          "1 hour before"
         ],
         "result": [
-          "After results",
-          "Correct votes enter the draw pool only after the result is official."
+          "Result",
+          "FIFA"
         ],
-        "draw": [
-          "Draw goes on-chain",
-          "The snapshot, randomness, and reveal are handled on-chain."
+        "pool": [
+          "Pool",
+          "Correct picks"
+        ],
+        "chain": [
+          "On-chain",
+          "VRF reveal"
+        ],
+        "winner": [
+          "Payout",
+          "Ticket to wallet"
+        ]
+      },
+      "proof": {
+        "server": [
+          "Qualified buybacks",
+          "Within the campaign window, successful on-chain, wallet-matched, and not duplicated."
+        ],
+        "fifa": [
+          "Official result",
+          "FIFA decides advancement"
+        ],
+        "chain": [
+          "On-chain reveal",
+          "Ledger hash + VRF"
+        ],
+        "payout": [
+          "Match winner",
+          "Winning ticket maps to wallet"
         ]
       },
       "eligibility": {
         "allocate": [
           "Can vote",
-          "Still open",
-          "This state can accept tickets and same-team top-ups."
+          "Submit allowed",
+          "Before cutoff, users can add tickets to either team."
         ],
         "locked": [
-          "In play",
-          "Voting stopped",
-          "After kickoff, the match is inspect-only."
+          "After cutoff",
+          "Inspect only",
+          "One hour before kickoff, voting stops and the match can only be viewed."
         ],
         "entry": [
           "Correct picks enter",
           "Official result",
-          "If your team advances, those tickets enter the draw pool."
+          "If your selected team advances, those match tickets enter that match pool."
         ],
         "prize": [
-          "Round pool",
+          "Match pool",
           "Separate draw",
-          "Each round has its own slots. They do not all roll into the final."
+          "Each match has its own prize and entry set. They do not all roll into the final."
         ]
       },
       "boundaries": {
         "wallet": [
           "Wallet identity",
-          "The wallet tells us who owns the tickets and vote records."
+          "The wallet maps ticket balance, vote records, and draw eligibility."
         ],
         "vote": [
           "Vote record",
-          "Submitted votes go to the server first. Same-team top-ups are allowed; team switches are not."
+          "Submitted votes go to the server first. Either team can receive tickets; submitted tickets cannot be withdrawn."
         ],
         "voteRecord": [
           "Cutoff snapshot",
-          "Each round freezes once with its hash and timestamp."
+          "After cutoff, match votes freeze with hash, timestamp, and source."
         ],
         "draw": [
-          "Draw on-chain",
+          "Draw reveal",
           "At draw time, the snapshot, randomness, and reveal move on-chain."
         ]
       },
       "ops": {
         "setup": [
           "Campaign setup",
-          "Edit rounds, matches, teams, cutoff times, prizes, and milestones."
+          "Rounds, matches, cutoff times, per-match prizes, and milestones."
         ],
         "result": [
-          "Result check",
-          "Add FIFA official results to admin, with source."
+          "Result source",
+          "Add FIFA official results to admin with source and timestamp."
         ],
         "draw": [
           "Draw operations",
-          "Freeze the server snapshot, then run the on-chain reveal."
+          "Freeze the snapshot, then reveal each match pool on-chain."
         ],
         "finance": [
-          "Finance export",
-          "Export CSVs for orders, tickets, votes, entries, and winners."
+          "Record export",
+          "Export tickets, votes, entries, winners, and order CSVs."
         ],
         "abuse": [
           "Abuse handling",
-          "Handle suspicious votes before snapshot; use incident flow after reveal."
+          "Review suspicious tickets before snapshot; log incidents after reveal."
         ]
       }
     },
@@ -739,7 +789,7 @@ export const enLocale = {
       "close": "Close confirm vote",
       "selectedTeam": "Selected team",
       "ticketsUsed": "Tickets used",
-      "warning": "Submitting locks this match pick. You can add tickets to the same team, but cannot switch to the other team.",
+      "warning": "Submitted tickets cannot be withdrawn. You can add tickets to the same team or the other team in this match.",
       "confirmPreview": "Confirm submit"
     },
     "data": {

@@ -11,7 +11,9 @@ import { milestones } from '../src/app/data/worldCupCampaign.js'
 import {
   buildLedgerEntryResponse,
   buildLedgerSummary,
+  buildTicketLookupResponse,
   findLedgerEntry,
+  parseTicketLookupQuery,
   parseEntryIntervalQuery,
   readLedgerPayload,
 } from './soccer-ledger-api.mjs'
@@ -29,12 +31,14 @@ const voteStatePath = process.env.SOCCER_VOTE_STATE_PATH || join(votesDir, 'vote
 const votePreviewPath = process.env.SOCCER_VOTE_PREVIEW_PATH || join(votesDir, 'vote-preview.json')
 const snapshotKeep = readIntegerEnv('LUCKY_DRAW_SNAPSHOT_KEEP', 72, 1)
 const port = Number(process.env.PORT || 3000)
-const refreshMinutes = readIntegerEnv('LUCKY_DRAW_REFRESH_MINUTES', 60, 1)
+const refreshMinutes = readIntegerEnv('LUCKY_DRAW_REFRESH_MINUTES', 10, 1)
 const refreshIntervalMs = refreshMinutes * 60 * 1000
+const refreshHistoryLimit = readIntegerEnv('LUCKY_DRAW_REFRESH_HISTORY_LIMIT', 24, 1)
 const refreshEnabled = process.env.LUCKY_DRAW_REFRESH_ENABLED !== '0'
 const refreshOnStartup = process.env.LUCKY_DRAW_REFRESH_ON_STARTUP !== '0'
 const backupIntervalMinutes = readIntegerEnv('DATA_BACKUP_INTERVAL_MINUTES', 60, 1)
 const backupIntervalMs = backupIntervalMinutes * 60 * 1000
+const backupHistoryLimit = readIntegerEnv('DATA_BACKUP_HISTORY_LIMIT', 24, 1)
 const backupRepoUrl = process.env.DATA_BACKUP_REPO_URL || ''
 const backupEnabled = Boolean(backupRepoUrl && process.env.DATA_BACKUP_GITHUB_TOKEN) && process.env.DATA_BACKUP_ENABLED !== '0'
 const blockChunk = process.env.LUCKY_DRAW_BLOCK_CHUNK || '20000'
@@ -52,18 +56,22 @@ let lastRefresh = {
   ok: false,
   startedAt: null,
   finishedAt: null,
+  durationSeconds: null,
   exitCode: null,
   error: null,
   trigger: null,
 }
+let refreshHistory = []
 let lastBackup = {
   ok: false,
   startedAt: null,
   finishedAt: null,
+  durationSeconds: null,
   exitCode: null,
   error: null,
   trigger: null,
 }
+let backupHistory = []
 
 function readIntegerEnv(name, fallback, min = 0) {
   const raw = process.env[name]
@@ -72,6 +80,70 @@ function readIntegerEnv(name, fallback, min = 0) {
   const parsed = Number(raw)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.floor(parsed))
+}
+
+function durationSeconds(startedAt, finishedAt) {
+  if (!startedAt || !finishedAt) return null
+  const started = Date.parse(startedAt)
+  const finished = Date.parse(finishedAt)
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) return null
+  return Math.round(((finished - started) / 1000) * 1000) / 1000
+}
+
+function rememberRefresh(entry) {
+  refreshHistory = [{ ...entry }, ...refreshHistory].slice(0, refreshHistoryLimit)
+}
+
+function rememberBackup(entry) {
+  backupHistory = [{ ...entry }, ...backupHistory].slice(0, backupHistoryLimit)
+}
+
+function readHealthLedgerSnapshot() {
+  if (!existsSync(ledgerPath)) {
+    return {
+      exists: false,
+      generatedAt: null,
+      generatedAtIso: null,
+      ageSeconds: null,
+      totalEntries: 0,
+      totalFinalTickets: 0,
+      ledgerHash: null,
+      error: null,
+    }
+  }
+
+  try {
+    const ledger = readLedgerPayload(ledgerPath)
+    const generatedAt = Number(ledger.generatedAt || 0)
+    const generatedAtIso = generatedAt > 0 ? new Date(generatedAt * 1000).toISOString() : null
+    const ageSeconds = generatedAt > 0 ? Math.max(0, Math.floor(Date.now() / 1000) - generatedAt) : null
+    return {
+      exists: true,
+      generatedAt: generatedAt > 0 ? generatedAt : null,
+      generatedAtIso,
+      ageSeconds,
+      totalEntries: readIntegerValue(ledger.totalEntries),
+      totalFinalTickets: readIntegerValue(ledger.totalFinalTickets),
+      ledgerHash: ledger.ledgerHash || null,
+      error: null,
+    }
+  } catch (error) {
+    return {
+      exists: true,
+      generatedAt: null,
+      generatedAtIso: null,
+      ageSeconds: null,
+      totalEntries: 0,
+      totalFinalTickets: 0,
+      ledgerHash: null,
+      error: error instanceof Error ? error.message : 'Could not read ledger.',
+    }
+  }
+}
+
+function readIntegerValue(value) {
+  const number = Number(value || 0)
+  return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0
 }
 
 function contentType(path) {
@@ -278,6 +350,7 @@ function runDataBackup(trigger) {
     ok: false,
     startedAt: new Date().toISOString(),
     finishedAt: null,
+    durationSeconds: null,
     exitCode: null,
     error: null,
     trigger,
@@ -297,24 +370,30 @@ function runDataBackup(trigger) {
   })
   child.on('close', (code) => {
     backupRunning = false
+    const finishedAt = new Date().toISOString()
     lastBackup = {
       ...lastBackup,
       ok: code === 0,
-      finishedAt: new Date().toISOString(),
+      finishedAt,
+      durationSeconds: durationSeconds(lastBackup.startedAt, finishedAt),
       exitCode: code,
       error: code === 0 ? null : `data backup exited with code ${code}`,
     }
-    console.log(`[data-backup] finish trigger=${trigger} code=${code}`)
+    rememberBackup(lastBackup)
+    console.log(`[data-backup] finish trigger=${trigger} code=${code} duration=${lastBackup.durationSeconds ?? 'n/a'}s`)
   })
   child.on('error', (error) => {
     backupRunning = false
+    const finishedAt = new Date().toISOString()
     lastBackup = {
       ...lastBackup,
       ok: false,
-      finishedAt: new Date().toISOString(),
+      finishedAt,
+      durationSeconds: durationSeconds(lastBackup.startedAt, finishedAt),
       exitCode: null,
       error: error.message,
     }
+    rememberBackup(lastBackup)
     console.error('[data-backup] failed', error)
   })
 }
@@ -326,12 +405,14 @@ function runLedgerRefresh(trigger) {
       ok: false,
       startedAt: null,
       finishedAt: new Date().toISOString(),
+      durationSeconds: null,
       exitCode: null,
       error: 'BSCSCAN_API_KEY is not configured.',
       trigger,
       skipped: true,
       reason: 'missing-bscscan-api-key',
     }
+    rememberRefresh(lastRefresh)
     console.warn('[ledger-refresh] skipped: BSCSCAN_API_KEY is not configured')
     return
   }
@@ -341,6 +422,7 @@ function runLedgerRefresh(trigger) {
     ok: false,
     startedAt: new Date().toISOString(),
     finishedAt: null,
+    durationSeconds: null,
     exitCode: null,
     error: null,
     trigger,
@@ -376,27 +458,33 @@ function runLedgerRefresh(trigger) {
     refreshRunning = false
     let snapshotPath = null
     if (code === 0) snapshotPath = snapshotLedger()
+    const finishedAt = new Date().toISOString()
     lastRefresh = {
       ...lastRefresh,
       ok: code === 0,
-      finishedAt: new Date().toISOString(),
+      finishedAt,
+      durationSeconds: durationSeconds(lastRefresh.startedAt, finishedAt),
       exitCode: code,
       error: code === 0 ? null : `ledger refresh exited with code ${code}`,
       snapshotPath,
     }
+    rememberRefresh(lastRefresh)
     if (snapshotPath) console.log(`[ledger-refresh] snapshot ${snapshotPath}`)
-    console.log(`[ledger-refresh] finish trigger=${trigger} code=${code}`)
+    console.log(`[ledger-refresh] finish trigger=${trigger} code=${code} duration=${lastRefresh.durationSeconds ?? 'n/a'}s`)
     if (code === 0) runDataBackup('ledger-refresh')
   })
   child.on('error', (error) => {
     refreshRunning = false
+    const finishedAt = new Date().toISOString()
     lastRefresh = {
       ...lastRefresh,
       ok: false,
-      finishedAt: new Date().toISOString(),
+      finishedAt,
+      durationSeconds: durationSeconds(lastRefresh.startedAt, finishedAt),
       exitCode: null,
       error: error.message,
     }
+    rememberRefresh(lastRefresh)
     console.error('[ledger-refresh] failed', error)
   })
 }
@@ -446,6 +534,7 @@ const server = createServer(async (request, response) => {
         cacheDir,
         ledgerPath,
         ledgerExists: existsSync(ledgerPath),
+        ledger: readHealthLedgerSnapshot(),
         snapshotDir,
         snapshotKeep,
         votesDir,
@@ -459,12 +548,14 @@ const server = createServer(async (request, response) => {
         refreshRunning,
         bscscanApiKeyConfigured: Boolean(process.env.BSCSCAN_API_KEY),
         lastRefresh,
+        refreshHistory,
         backupEnabled,
         backupRepoUrlConfigured: Boolean(backupRepoUrl),
         backupTokenConfigured: Boolean(process.env.DATA_BACKUP_GITHUB_TOKEN),
         backupIntervalMinutes,
         backupRunning,
         lastBackup,
+        backupHistory,
       },
       {
         'cache-control': 'no-store',
@@ -518,6 +609,24 @@ const server = createServer(async (request, response) => {
         {
           entry: buildLedgerEntryResponse(entry, parseEntryIntervalQuery(url.searchParams)),
         },
+        {
+          'cache-control': 'no-store',
+        },
+      )
+    } catch (error) {
+      sendLedgerApiError(request, response, error)
+    }
+    return
+  }
+
+  if (url.pathname === '/api/raffle-ticket-lookup') {
+    try {
+      const ledger = readLedgerPayload(ledgerPath)
+      sendJson(
+        request,
+        response,
+        200,
+        buildTicketLookupResponse(ledger, parseTicketLookupQuery(url.searchParams)),
         {
           'cache-control': 'no-store',
         },

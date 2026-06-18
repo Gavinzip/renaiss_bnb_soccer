@@ -116,7 +116,7 @@ export const zhHantLocale = {
       "vote": {
         "eyebrow": "投票房間",
         "title": "賽事投票房",
-        "body": "選擇一場比賽與一支晉級隊伍，送出後本場選隊即鎖定。"
+        "body": "選一場比賽和隊伍送票；送出不可撤回，同場兩隊都可加票。"
       },
       "draw": {
         "eyebrow": "每輪獎池",
@@ -126,7 +126,7 @@ export const zhHantLocale = {
       "rules": {
         "eyebrow": "營運規則",
         "title": "回合重置規則",
-        "body": "票數先存伺服器，截止後鎖定；抽獎快照與揭示才使用鏈上工具。"
+        "body": "票數先存伺服器；每場開賽前 1 小時截止，抽獎揭示才上鏈。"
       }
     },
     "mast": {
@@ -377,13 +377,13 @@ export const zhHantLocale = {
       "cutoffAt": "{time} HKT 截止",
       "previewStaged": "已投票",
       "allocationStagedTitle": "這場已投票",
-      "allocationStagedBody": "同場同隊可以繼續加票；送出後不能改投另一隊。",
+      "allocationStagedBody": "同場兩隊都可以加票；送出後不可撤回。",
       "closingSoon": "即將鎖定",
       "openToVote": "可投票",
       "voteBeforeCutoffTitle": "截止前投票",
       "chooseTeamTitle": "選擇一隊",
-      "closingBody": "截止前可送出票數；截止後這場比賽會停止接受投票。",
-      "openBody": "在開賽截止前選擇一隊，並從本輪餘額送出票數。",
+      "closingBody": "開賽前 1 小時截止；截止後這場比賽會停止接受投票。",
+      "openBody": "在開賽前 1 小時截止前選擇一隊，並從本輪餘額送出票數。",
       "noTicketsLeft": "本輪票數已用完",
       "noTicketsTitle": "本輪票數已用完",
       "noTicketsBody": "此錢包在目前輪次沒有剩餘票數。",
@@ -417,7 +417,7 @@ export const zhHantLocale = {
       "countryRequired": "等待選擇國家",
       "ticketsReadyDetail": "{count} 票可送出",
       "lockedStepDetail": "此賽事目前不能投票",
-      "previewOnlyBoundary": "送出後鎖定本場選隊",
+      "previewOnlyBoundary": "送出後不可撤回",
       "previewReadyDetail": "可送出票數",
       "currentRoundSummary": "目前輪次投票摘要",
       "pendingAllocationSummary": "等待投票摘要",
@@ -449,7 +449,7 @@ export const zhHantLocale = {
       "currentRoundVoteTitle": "目前輪次投票台",
       "currentRoundVoteBody": "只顯示目前輪次的賽事。完賽、開賽中與可投票三種狀態分開標示。",
       "stageDeckTitle": "{round} 投票選擇",
-      "stageDeckBody": "每一列是一場比賽；先選晉級隊伍，再用右側送出票數。送出後可同隊加票，不能改隊。",
+      "stageDeckBody": "每一列是一場比賽；先選隊伍，再用右側送出票數。同場兩隊都可以加票。",
       "groupedMatchesAria": "{round} 分場投票列表",
       "matchGroupHint": "同一條線內的兩隊屬於同一場",
       "chooseThisTeam": "選這隊",
@@ -580,131 +580,181 @@ export const zhHantLocale = {
     "rules": {
       "roomAria": "營運規則",
       "heroEyebrow": "先看這幾條",
-      "heroTitle": "投出去就鎖隊伍；中獎資格按每輪算。",
-      "heroBody": "票先記在伺服器。比賽有官方結果後，猜中的票進那一輪抽獎；真的抽獎時才走鏈上揭示。",
+      "heroTitle": "猜中晉級，進該場獎池。",
+      "heroBody": "投票在伺服器；賽果後入池；抽獎揭示才上鏈。",
       "lifecycleEyebrow": "流程",
-      "lifecycleTitle": "投票、賽果、抽獎",
-      "roundRulebook": "每輪怎麼算",
-      "eligibilityMap": "{round} 怎麼入池",
+      "lifecycleTitle": "票怎麼變成獎金",
+      "roundRulebook": "入池規則",
+      "eligibilityMap": "{round} 資格判定",
       "eligibilityAria": "投票與入池資格",
       "roundListAria": "每輪獎項與抽獎狀態",
-      "notConnected": "分工",
-      "boundaryTitle": "哪些在伺服器，哪些上鏈",
+      "roundOverviewEyebrow": "輪次總覽",
+      "roundOverviewTitle": "各輪獎池狀態",
+      "notConnected": "資料分工",
+      "boundaryTitle": "伺服器負責投票；鏈上負責揭示",
+      "proofTitle": "可查、可驗、可對獎",
       "boundaryAria": "伺服器票務與鏈上揭示分工",
-      "productionOps": "後台要做的事",
-      "adminRequirements": "上線前要有",
+      "productionOps": "正式營運",
+      "adminRequirements": "上線前檢查",
       "checklistAria": "正式營運與後台檢查清單",
       "activeRound": "目前輪次",
       "roundPrizes": "本輪獎項",
       "campaignMatches": "活動賽事",
       "totalSlots": "總名額",
-      "currentPrizeDesk": "本輪獎項清單",
+      "currentPrizeDesk": "本輪獎金",
+      "prizePitchTitle": "{round}：每場 {amount}",
+      "prizePitchBody": "猜中該場晉級隊伍，就進該場抽獎。",
+      "prizePerMatch": "每場",
       "matchPrizeTitle": "{round} 每場獎項",
-      "matchPrizeBody": "每場預設 {amount}；之後可依賽事調整。",
+      "matchPrizeBody": "每場預設 {amount}；每場可獨立調整。",
       "roundPrizeTotal": "本輪總獎項",
       "roundPrizeMatches": "本輪賽事",
       "matchCountValue": "{count} 場",
       "matchPrizeListAria": "本輪逐場獎項清單",
       "mixedPrizeTotal": "依賽事顯示",
-      "lockNoticeEyebrow": "投票鎖定規則",
-      "lockNoticeTitle": "送出就鎖隊伍；不能改隊。",
+      "lockNoticeEyebrow": "鎖定規則",
+      "lockNoticeTitle": "送出不可撤回；截止鎖賽事。",
       "lockNoticeAria": "投票鎖定、每輪結算與官方結果規則",
       "lockNotice": {
         "submit": [
-          "送出就算數",
-          "同一隊可以再加票；想改另一隊不行。"
+          "兩隊都可加",
+          "同場同隊可累加，同場不同隊也可加票。"
         ],
         "settlement": [
-          "每輪分開算",
-          "16 強、8 強、4 強各算各的，不會全部拖到最後。"
+          "每輪重新開始",
+          "16 強、8 強、4 強各自重新配置票數。"
         ],
         "fifa": [
-          "看官方賽果",
-          "晉級和勝負以 FIFA 官方結果為準。"
+          "官方結果為準",
+          "晉級資格以 FIFA 官方結果和後台確認快照為準。"
+        ]
+      },
+      "essentials": {
+        "sameTeam": [
+          "兩隊可加票",
+          "同場兩邊都可投。"
+        ],
+        "noSwitch": [
+          "不可撤回",
+          "送出後就算數。"
+        ],
+        "official": [
+          "官方結果",
+          "FIFA 結果為準。"
+        ],
+        "serverChain": [
+          "先記伺服器",
+          "抽獎揭示才上鏈。"
         ]
       },
       "flow": {
-        "source": [
-          "票從哪裡來",
-          "Pack 票數和投票紀錄先存在伺服器。"
+        "tickets": [
+          "buyback 得一票",
+          "符合條件才計入"
         ],
-        "reset": [
-          "每輪重新算",
-          "新一輪開始時，用當輪可用票數重新投。"
+        "vote": [
+          "投隊伍",
+          "兩邊可加"
         ],
         "cutoff": [
-          "開賽前關門",
-          "時間一到伺服器就不收票。"
+          "截止",
+          "前 1 小時"
         ],
         "result": [
-          "賽果確認後",
-          "官方結果確認後，猜中的票才會進入抽獎池。"
+          "賽果",
+          "FIFA"
         ],
-        "draw": [
-          "抽獎才上鏈",
-          "快照、隨機數和揭示放到鏈上處理。"
+        "pool": [
+          "入池",
+          "猜中才進"
+        ],
+        "chain": [
+          "鏈上",
+          "VRF 揭示"
+        ],
+        "winner": [
+          "發獎",
+          "票號對錢包"
+        ]
+      },
+      "proof": {
+        "server": [
+          "符合條件",
+          "活動時間內、鏈上成功、可對回錢包且未重複的 buyback 才計票。"
+        ],
+        "fifa": [
+          "官方賽果",
+          "FIFA 結果決定晉級"
+        ],
+        "chain": [
+          "鏈上揭示",
+          "ledger hash + VRF"
+        ],
+        "payout": [
+          "對獎",
+          "中獎票號對回錢包"
         ]
       },
       "eligibility": {
         "allocate": [
           "可投票",
-          "還能投",
-          "這個狀態可以送出票數，也可以同隊加票。"
+          "可送出",
+          "截止前可以任選隊伍加票。"
         ],
         "locked": [
-          "開賽中",
-          "不能再投",
-          "開賽後只保留查看，不再收票。"
+          "截止後",
+          "只可查看",
+          "到了開賽前 1 小時就停止收票，不能再新增或改隊。"
         ],
         "entry": [
-          "猜中才入池",
+          "猜中入池",
           "看官方結果",
-          "你選的隊晉級，那些票才會進抽獎池。"
+          "你選的隊晉級，該場票才進該場獎池。"
         ],
         "prize": [
-          "每輪獎池",
+          "每場獎池",
           "各抽各的",
-          "每一輪都有自己的名額，不是全部集中到最後。"
+          "每場有自己的獎項和入池票，不全部混到最後。"
         ]
       },
       "boundaries": {
         "wallet": [
           "錢包識別",
-          "用錢包知道這些票和投票紀錄屬於誰。"
+          "用錢包對應票數、投票紀錄和抽獎資格。"
         ],
         "vote": [
           "投票記錄",
-          "送出後先寫進伺服器；同場同隊可加票，不可改隊。"
+          "送出後先寫進伺服器；同場兩隊都可加票，不可撤回。"
         ],
         "voteRecord": [
           "截止快照",
-          "每輪截止後凍結一次，留下 hash 和時間。"
+          "截止後凍結賽事投票，留下 hash、時間和來源。"
         ],
         "draw": [
-          "抽獎上鏈",
+          "抽獎揭示",
           "抽獎時才把快照、隨機數和揭示交給鏈上工具。"
         ]
       },
       "ops": {
         "setup": [
           "活動設定",
-          "能改輪次、賽事、隊伍、截止時間、獎項和 milestone。"
+          "輪次、賽事、截止時間、每場獎項和 milestone。"
         ],
         "result": [
-          "賽果確認",
-          "把 FIFA 官方結果放進後台，保留來源。"
+          "賽果來源",
+          "後台寫入 FIFA 官方結果，保留來源和時間。"
         ],
         "draw": [
-          "抽獎作業",
-          "先凍結伺服器快照，再做鏈上揭示。"
+          "抽獎操作",
+          "凍結快照後，對每場獎池做鏈上揭示。"
         ],
         "finance": [
-          "財務匯出",
-          "匯出訂單、票、投票、入池票和得獎者 CSV。"
+          "匯出紀錄",
+          "票數、投票、入池票、得獎者和訂單 CSV。"
         ],
         "abuse": [
           "異常處理",
-          "快照前處理可疑票，揭示後走事件處理流程。"
+          "快照前處理可疑票；揭示後走事件紀錄。"
         ]
       }
     },
@@ -739,7 +789,7 @@ export const zhHantLocale = {
       "close": "關閉確認投票",
       "selectedTeam": "選擇隊伍",
       "ticketsUsed": "使用票數",
-      "warning": "送出後會鎖定這場選隊；同場同隊可再加票，但不能改投另一隊。",
+      "warning": "送出後不可撤回；同場同隊可累加，同場不同隊也可以加票。",
       "confirmPreview": "確認送出"
     },
     "data": {

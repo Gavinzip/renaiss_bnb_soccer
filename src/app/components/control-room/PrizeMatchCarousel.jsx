@@ -21,6 +21,10 @@ function getMatchTeams(match, teamsById) {
   return match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
 }
 
+function getTeamAllocation(roundAllocations, matchId, teamId) {
+  return roundAllocations.find((entry) => entry.matchId === matchId && entry.teamId === teamId) ?? null;
+}
+
 export function PrizeMatchCarousel({
   matches,
   teamsById,
@@ -132,8 +136,11 @@ export function PrizeMatchCarousel({
         >
           {matches.map((match, index) => {
             const teams = getMatchTeams(match, teamsById);
-            const allocation = roundAllocations.find((entry) => entry.matchId === match.id);
-            const allocationIndex = roundAllocations.findIndex((entry) => entry.matchId === match.id);
+            const matchAllocations = roundAllocations.filter((entry) => entry.matchId === match.id);
+            const matchTicketTotal = matchAllocations.reduce((total, entry) => total + entry.tickets, 0);
+            const allocationIndex = matchAllocations.length > 0
+              ? roundAllocations.findIndex((entry) => entry.id === matchAllocations[0].id)
+              : -1;
             const active = index === safeIndex;
             const canPickMatch = voteableStatuses.has(match.status) && remainingRoundTickets > 0;
             const phase = getMatchPhase(match);
@@ -144,7 +151,7 @@ export function PrizeMatchCarousel({
               <article
                 className={[
                   "prize-slide",
-                  allocation ? "has-vote-record" : "",
+                  matchAllocations.length > 0 ? "has-vote-record" : "",
                   `is-phase-${phase.id}`,
                   voteableStatuses.has(match.status) ? "is-open" : "is-closed",
                   `is-${match.status}`,
@@ -159,11 +166,11 @@ export function PrizeMatchCarousel({
                     {t("common.prizes")} {String(index + 1).padStart(2, "0")}
                   </span>
                   <strong>{match.id.toUpperCase()}</strong>
-                  {allocation ? (
+                  {matchAllocations.length > 0 ? (
                     <em className="prize-slide__vote-mark">
                       {t("vote.votedTicketBadge", {
                         index: formatNumber(allocationIndex + 1),
-                        tickets: formatNumber(allocation.tickets),
+                        tickets: formatNumber(matchTicketTotal),
                       })}
                     </em>
                   ) : null}
@@ -179,9 +186,10 @@ export function PrizeMatchCarousel({
 
                 <section className="prize-slide__match" aria-label={matchTitle}>
                   {teams.map((team, teamIndex) => {
-                    const canPickTeam = canPickMatch && (!allocation || allocation.teamId === team.id);
+                    const allocation = getTeamAllocation(roundAllocations, match.id, team.id);
+                    const canPickTeam = canPickMatch;
                     const isCurrentTeam = active && selectedMatchId === match.id && selectedTeamId === team.id;
-                    const isAllocatedTeam = allocation?.teamId === team.id;
+                    const isAllocatedTeam = Boolean(allocation);
                     const isWinner = match.advancingTeamId === team.id;
                     const isEliminated = Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);
 
