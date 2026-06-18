@@ -10,6 +10,7 @@ import {
 import heroImage from "../../assets/hero-world-cup-clean.webp";
 import heroScrollVideoMobile from "../../assets/Background.mobile.mp4";
 import renaissLogo from "../../assets/renaiss-logo-mark.webp";
+import { addPreloadHint, preloadImage } from "../../utils/preloadAssets";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { formatNumber } from "../../data/ticketMath";
@@ -18,6 +19,11 @@ import { RulesRoom } from "./RulesRoom";
 
 const HERO_SCROLL_VIDEO_URL =
   "https://pub-7230fa99c50e44e9b241e47cac526165.r2.dev/home/Background.web.2026-06-18.mp4";
+
+export function preloadHomeRoomAssets() {
+  addPreloadHint(heroImage, "image", "image/webp");
+  return preloadImage(heroImage);
+}
 
 function getMilestoneSnapshot(milestones, currentValue) {
   const sorted = [...milestones].sort((left, right) => left.threshold - right.threshold);
@@ -129,6 +135,46 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef) {
       window.removeEventListener("resize", requestSync);
     };
   }, [containerRef, videoRef]);
+}
+
+function useHomeMediaReady(videoRef) {
+  const [mediaReady, setMediaReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const video = videoRef.current;
+    let imageReady = false;
+    let videoReady = !video || video.readyState >= 1;
+
+    const resolveReady = () => {
+      if (!cancelled && imageReady && videoReady) setMediaReady(true);
+    };
+
+    const handleVideoReady = () => {
+      videoReady = true;
+      resolveReady();
+    };
+
+    if (video && !videoReady) {
+      video.addEventListener("loadedmetadata", handleVideoReady, { once: true });
+      video.addEventListener("error", handleVideoReady, { once: true });
+    }
+
+    preloadHomeRoomAssets().finally(() => {
+      imageReady = true;
+      resolveReady();
+    });
+
+    return () => {
+      cancelled = true;
+      if (video && !videoReady) {
+        video.removeEventListener("loadedmetadata", handleVideoReady);
+        video.removeEventListener("error", handleVideoReady);
+      }
+    };
+  }, [videoRef]);
+
+  return mediaReady;
 }
 
 function HeroFeaturedMatch({ match, teams, onOpenMatch, copy }) {
@@ -405,6 +451,7 @@ export function HomeRoom({
   const { t } = copy;
   const homeRoomRef = useRef(null);
   const heroVideoRef = useRef(null);
+  const mediaReady = useHomeMediaReady(heroVideoRef);
   const activeRoundMatches = matches.filter((match) => match.roundId === activeRound.id);
   const featuredMatch = getFeaturedHomeMatch(activeRoundMatches);
   const featuredTeams = featuredMatch?.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean) ?? [];
@@ -423,9 +470,20 @@ export function HomeRoom({
   useScrollScrubbedHomeVideo(homeRoomRef, heroVideoRef);
 
   return (
-    <section className="home-room" ref={homeRoomRef} aria-label={t("home.aria")}>
+    <section
+      className={["home-room", mediaReady ? "is-media-ready" : "is-media-loading"].join(" ")}
+      ref={homeRoomRef}
+      aria-label={t("home.aria")}
+    >
       <div className="home-video-backdrop" aria-hidden="true">
-        <img className="home-video-backdrop__poster" src={heroImage} alt="" />
+        <img
+          className="home-video-backdrop__poster"
+          src={heroImage}
+          alt=""
+          loading="eager"
+          decoding="async"
+          fetchpriority="high"
+        />
         <video
           className="home-video-backdrop__video"
           ref={heroVideoRef}
@@ -439,6 +497,7 @@ export function HomeRoom({
           <source src={heroScrollVideoMobile} type="video/mp4" media="(max-width: 760px)" />
           <source src={HERO_SCROLL_VIDEO_URL} type="video/mp4" />
         </video>
+        <span className="home-video-backdrop__loader" aria-hidden="true" />
       </div>
 
       <figure className="hero-stage">

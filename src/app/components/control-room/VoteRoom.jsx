@@ -13,6 +13,7 @@ import { useState } from "react";
 import { compactAddress, formatNumber, ticketRangeLabel } from "../../data/ticketMath";
 import { getPreviewNotice } from "../../data/campaignRuntime";
 import prizeBonneySlab from "../../assets/prize-bonney-slab.webp";
+import { preloadImage } from "../../utils/preloadAssets";
 import ElasticSlider from "../ElasticSlider/ElasticSlider";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
@@ -29,6 +30,10 @@ const matchPhaseOrder = {
   closing_soon: 2,
   open: 2,
 };
+
+export function preloadRoomAssets() {
+  return preloadImage(prizeBonneySlab);
+}
 
 function clampTicketAmount(value, maxTickets) {
   return Math.max(1, Math.min(Math.floor(Number(value) || 1), Math.max(1, maxTickets)));

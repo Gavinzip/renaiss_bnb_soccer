@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ControlRoom } from "./components/control-room/ControlRoom";
+import { preloadHomeRoomAssets } from "./components/control-room/HomeRoom";
 import { VoteConfirmModal } from "./components/control-room/VoteConfirmModal";
+import { InitialPageLoader } from "./components/InitialPageLoader";
 import {
   buildRealtimeRound32Preview,
   createPendingFifaQualificationSnapshot,
@@ -26,6 +28,11 @@ import {
 } from "./data/votePreviewRuntime";
 import { I18nProvider } from "./i18n/I18nProvider";
 import { useCampaignCopy } from "./i18n/useCampaignCopy";
+import renaissLogo from "./assets/renaiss-logo-mark.webp";
+import { preloadImage } from "./utils/preloadAssets";
+
+const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
+const INITIAL_LOADER_EXIT_MS = 540;
 
 const bundledMilestoneSummary = {
   milestones,
@@ -39,12 +46,20 @@ const bundledMilestoneSummary = {
 function AppContent() {
   const copy = useCampaignCopy();
   const { t } = copy;
+  const ledgerSummaryUrl = import.meta.env.VITE_LEDGER_SUMMARY_URL || (import.meta.env.PROD ? "/api/raffle-summary" : "");
+  const milestoneSummaryUrl = import.meta.env.VITE_MILESTONE_SUMMARY_URL || (import.meta.env.PROD ? "/api/milestones" : "");
+  const previewVoteUrl = import.meta.env.VITE_VOTE_PREVIEW_URL
+    || (import.meta.env.PROD ? "/api/vote-preview" : "/mock-api/vote-preview.json");
+  const voteSubmitUrl = import.meta.env.VITE_VOTE_SUBMIT_URL || (import.meta.env.PROD ? "/api/votes" : "");
   const [ledger, setLedger] = useState(verifiedLedgerSnapshot);
   const [ledgerIssue, setLedgerIssue] = useState("");
+  const [ledgerReady, setLedgerReady] = useState(!ledgerSummaryUrl);
   const [milestoneSummary, setMilestoneSummary] = useState(bundledMilestoneSummary);
   const [milestoneIssue, setMilestoneIssue] = useState("");
+  const [milestoneReady, setMilestoneReady] = useState(!milestoneSummaryUrl);
   const [previewVoteData, setPreviewVoteData] = useState(getEmptyPreviewVoteData);
   const [previewVoteIssue, setPreviewVoteIssue] = useState("");
+  const [previewVoteReady, setPreviewVoteReady] = useState(!previewVoteUrl);
   const [activeViewId, setActiveViewId] = useState(DEFAULT_VIEW_ID);
   const [simulationMode, setSimulationMode] = useState("scenario");
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
@@ -57,12 +72,21 @@ function AppContent() {
   const [selectedWallet, setSelectedWallet] = useState(verifiedLedgerSnapshot.leaderboardEntries[0].userAddress);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [pendingVoteAmount, setPendingVoteAmount] = useState(null);
+  const [initialAssetsReady, setInitialAssetsReady] = useState(false);
+  const [initialCoverPaintReady, setInitialCoverPaintReady] = useState(false);
+  const [initialLoaderVisible, setInitialLoaderVisible] = useState(true);
+  const [initialLoaderMounted, setInitialLoaderMounted] = useState(true);
+  const [initialLoaderStartedAt] = useState(() => Date.now());
 
   useEffect(() => {
-    const summaryUrl = import.meta.env.VITE_LEDGER_SUMMARY_URL;
-    if (!summaryUrl) return undefined;
+    const summaryUrl = ledgerSummaryUrl;
+    if (!summaryUrl) {
+      setLedgerReady(true);
+      return undefined;
+    }
 
     let cancelled = false;
+    setLedgerReady(false);
     fetch(summaryUrl, { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -81,18 +105,25 @@ function AppContent() {
         setLedgerIssue(
           t("data.ledgerIssue", { message: error.message }),
         );
+      })
+      .finally(() => {
+        if (!cancelled) setLedgerReady(true);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [ledgerSummaryUrl, t]);
 
   useEffect(() => {
-    const milestoneUrl = import.meta.env.VITE_MILESTONE_SUMMARY_URL;
-    if (!milestoneUrl) return undefined;
+    const milestoneUrl = milestoneSummaryUrl;
+    if (!milestoneUrl) {
+      setMilestoneReady(true);
+      return undefined;
+    }
 
     let cancelled = false;
+    setMilestoneReady(false);
     fetch(milestoneUrl, { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -111,16 +142,24 @@ function AppContent() {
         setMilestoneIssue(
           t("data.milestoneIssue", { message: error.message }),
         );
+      })
+      .finally(() => {
+        if (!cancelled) setMilestoneReady(true);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [milestoneSummaryUrl, t]);
 
   useEffect(() => {
-    const previewVoteUrl = import.meta.env.VITE_VOTE_PREVIEW_URL || "/mock-api/vote-preview.json";
+    if (!previewVoteUrl) {
+      setPreviewVoteReady(true);
+      return undefined;
+    }
+
     let cancelled = false;
+    setPreviewVoteReady(false);
 
     fetch(previewVoteUrl, { cache: "no-store" })
       .then((response) => {
@@ -139,12 +178,15 @@ function AppContent() {
         setPreviewVoteData(getEmptyPreviewVoteData());
         setPreviewAllocations([]);
         setPreviewVoteIssue(t("data.previewVoteIssue", { message: error.message }));
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewVoteReady(true);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [previewVoteUrl, t]);
 
   useEffect(() => {
     if (simulationMode !== "realtime") return undefined;
@@ -243,6 +285,79 @@ function AppContent() {
     [walletAllocations],
   );
   const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalFinalTickets ?? 0);
+  const initialDataReady = ledgerReady && milestoneReady && previewVoteReady;
+  const initialCoverAssetsReady = initialDataReady && initialAssetsReady;
+  const initialExperienceReady = initialCoverAssetsReady && initialCoverPaintReady;
+
+  useEffect(() => {
+    let alive = true;
+
+    Promise.all([
+      preloadImage(renaissLogo),
+      preloadHomeRoomAssets(),
+    ]).finally(() => {
+      if (alive) setInitialAssetsReady(true);
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!initialCoverAssetsReady) return undefined;
+
+    let alive = true;
+    let firstFrameId = 0;
+    let secondFrameId = 0;
+
+    const markAfterPaint = () => {
+      firstFrameId = window.requestAnimationFrame(() => {
+        secondFrameId = window.requestAnimationFrame(() => {
+          if (alive) setInitialCoverPaintReady(true);
+        });
+      });
+    };
+
+    if (document.fonts?.ready) {
+      document.fonts.ready.catch(() => undefined).finally(() => {
+        if (alive) markAfterPaint();
+      });
+    } else {
+      markAfterPaint();
+    }
+
+    return () => {
+      alive = false;
+      window.cancelAnimationFrame(firstFrameId);
+      window.cancelAnimationFrame(secondFrameId);
+    };
+  }, [initialCoverAssetsReady]);
+
+  useEffect(() => {
+    if (!initialExperienceReady) return undefined;
+
+    const elapsed = Date.now() - initialLoaderStartedAt;
+    const timeoutId = window.setTimeout(() => {
+      setInitialLoaderVisible(false);
+    }, Math.max(0, INITIAL_LOADER_MIN_VISIBLE_MS - elapsed));
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [initialExperienceReady, initialLoaderStartedAt]);
+
+  useEffect(() => {
+    if (initialLoaderVisible) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setInitialLoaderMounted(false);
+    }, INITIAL_LOADER_EXIT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [initialLoaderVisible]);
 
   useEffect(() => {
     setTicketAmount((current) => Math.max(1, Math.min(current, Math.max(1, visibleRemainingRoundTickets))));
@@ -306,9 +421,7 @@ function AppContent() {
     setPendingVoteAmount(Math.max(1, Math.min(Math.floor(amount || 0), remainingRoundTickets)));
   }
 
-  function handleConfirmPreviewVote(amount) {
-    if (!selectedTeamId || remainingRoundTickets <= 0) return;
-    const tickets = Math.max(1, Math.min(Math.floor(amount || 0), remainingRoundTickets));
+  function applyLocalPreviewVote({ tickets }) {
     setPreviewAllocations((current) => {
       const existingIndex = current.findIndex((allocation) => (
         allocation.walletAddress === selectedWallet
@@ -341,6 +454,40 @@ function AppContent() {
         },
       ];
     });
+  }
+
+  async function handleConfirmPreviewVote(amount) {
+    if (!selectedTeamId || remainingRoundTickets <= 0) return;
+    const tickets = Math.max(1, Math.min(Math.floor(amount || 0), remainingRoundTickets));
+
+    if (voteSubmitUrl) {
+      try {
+        const response = await fetch(voteSubmitUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            walletAddress: selectedWallet,
+            roundId: activeRoundId,
+            matchId: selectedMatch.id,
+            teamId: selectedTeamId,
+            tickets,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        const normalized = normalizePreviewVotePayload(payload.preview);
+        setPreviewVoteData(normalized);
+        setPreviewAllocations(normalized.allocations);
+        setPreviewVoteIssue("");
+      } catch (error) {
+        setPreviewVoteIssue(t("data.previewVoteIssue", { message: error.message }));
+        setPendingVoteAmount(null);
+        return;
+      }
+    } else {
+      applyLocalPreviewVote({ tickets });
+    }
+
     setSelectedTeamId(null);
     setTicketAmount(DEFAULT_TICKET_AMOUNT);
     setPendingVoteAmount(null);
@@ -348,6 +495,7 @@ function AppContent() {
 
   return (
     <>
+      {initialLoaderMounted ? <InitialPageLoader isLeaving={!initialLoaderVisible} /> : null}
       <ControlRoom
         activeViewId={activeViewId}
         mobileNavOpen={mobileNavOpen}

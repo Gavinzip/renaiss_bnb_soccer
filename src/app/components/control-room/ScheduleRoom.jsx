@@ -1,4 +1,8 @@
-import { TournamentArena } from "./TournamentArena";
+import { TournamentArena, preloadTournamentArenaAssets } from "./TournamentArena";
+
+export function preloadRoomAssets() {
+  return preloadTournamentArenaAssets();
+}
 
 export function ScheduleRoom({
   activeRound,

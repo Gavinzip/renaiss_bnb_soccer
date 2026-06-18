@@ -13,6 +13,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import trophyImage from "../../assets/championship-trophy-renaiss-mark.webp";
 import { formatNumber } from "../../data/ticketMath";
+import { preloadImage } from "../../utils/preloadAssets";
 import { useBorderGlow } from "../BorderGlow";
 import LightRays from "../LightRays/LightRays";
 import { Magnet } from "../Magnet";
@@ -29,6 +30,10 @@ const trophyVisibleBounds = {
   right: 321 / 1122,
 };
 const routeLaneCurve = 0.82;
+
+export function preloadTournamentArenaAssets() {
+  return preloadImage(trophyImage);
+}
 
 function clampPercent(value) {
   return Math.max(8, Math.min(92, value));

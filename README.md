@@ -16,7 +16,58 @@ npm run build
 npm run preview
 ```
 
-The voting screen is frontend-only for now. Vote credits, selected teams, confirmation, and success states are local UI state until the real voting source is defined.
+Production builds read the server APIs by default:
+
+- `/api/raffle-summary`
+- `/api/milestones`
+- `/api/vote-preview`
+- `POST /api/votes`
+
+Local dev still uses the mock vote preview unless `VITE_VOTE_PREVIEW_URL` and `VITE_VOTE_SUBMIT_URL` are set.
+
+## Production Data Service
+
+Run the production server after building:
+
+```sh
+npm run build
+npm start
+```
+
+On Zeabur, mount the persistent disk at `/data` and use `/data/soccer` for this project. The server keeps all ticket and vote data there:
+
+```text
+/data/soccer/
+  lucky-draw-ledger.json        confirmed ticket ledger
+  cache/                        BscScan and wallet-resolution scan cache
+  snapshots/                    generated ledger snapshots
+  votes/
+    vote-events.jsonl           append-only user vote submissions
+    vote-state.json             current vote allocation state
+    vote-preview.json           frontend-compatible vote preview payload
+```
+
+The hourly Git backup target is `https://github.com/Gavinzip/renaiss_bnb_soccer_data.git`. Add these environment variables in Zeabur:
+
+```sh
+SOCCER_DATA_DIR=/data/soccer
+LUCKY_DRAW_DATA_DIR=/data/soccer
+LUCKY_DRAW_CACHE_DIR=/data/soccer/cache
+LUCKY_DRAW_LEDGER_PATH=/data/soccer/lucky-draw-ledger.json
+SOCCER_VOTES_DIR=/data/soccer/votes
+
+DATA_BACKUP_REPO_URL=https://github.com/Gavinzip/renaiss_bnb_soccer_data.git
+DATA_BACKUP_GITHUB_TOKEN=github_pat_...
+DATA_BACKUP_INTERVAL_MINUTES=60
+DATA_BACKUP_BRANCH=main
+
+LUCKY_DRAW_REFRESH_MINUTES=60
+LUCKY_DRAW_CAMPAIGN_START=1781422200
+LUCKY_DRAW_CAMPAIGN_END=1784469600
+BSCSCAN_API_KEY=...
+```
+
+`DATA_BACKUP_GITHUB_TOKEN` is the PAT token variable name. Do not commit the token.
 
 ## Lucky Draw Tickets And Contract
 

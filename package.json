@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "start": "node scripts/production-server.mjs",
     "i18n:check": "node scripts/check-i18n.mjs",
     "preview": "vite preview",
     "fetch:ledger": "node scripts/fetch-lucky-draw-ledger.mjs",
+    "backup:data": "node scripts/backup-soccer-data.mjs",
     "fetch:ledger:local": "node scripts/fetch-lucky-draw-ledger.mjs --env-file config/lucky-draw.env.local",
     "bench:ledger:local": "node scripts/fetch-lucky-draw-ledger.mjs --env-file config/lucky-draw.env.local --dry-run --progress --cache-dir /tmp/renaiss-football-lucky-draw-benchmark",
     "contract:compile": "hardhat compile",

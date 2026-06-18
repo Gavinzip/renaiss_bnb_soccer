@@ -11,18 +11,64 @@ import {
   Vote,
   WalletCards,
 } from "lucide-react";
+import { lazy, Suspense, useEffect } from "react";
 import { flushSync } from "react-dom";
 import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { commandViews } from "../../data/campaignRuntime";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
+import { scheduleIdleWork } from "../../utils/preloadAssets";
 import { AnimatedContent } from "../AnimatedContent";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
-import { DrawRoom } from "./DrawRoom";
 import { HomeRoom } from "./HomeRoom";
-import { ScheduleRoom } from "./ScheduleRoom";
-import { VoteRoom } from "./VoteRoom";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+
+function lazyNamed(loader, exportName) {
+  return lazy(() => loader().then((module) => ({ default: module[exportName] })));
+}
+
+const roomLoaders = {
+  schedule: () => import("./ScheduleRoom"),
+  vote: () => import("./VoteRoom"),
+  draw: () => import("./DrawRoom"),
+};
+
+const LazyScheduleRoom = lazyNamed(roomLoaders.schedule, "ScheduleRoom");
+const LazyVoteRoom = lazyNamed(roomLoaders.vote, "VoteRoom");
+const LazyDrawRoom = lazyNamed(roomLoaders.draw, "DrawRoom");
+
+function preloadRoom(viewId) {
+  const loader = roomLoaders[viewId];
+  if (!loader) return Promise.resolve();
+
+  return loader().then((module) => {
+    if (typeof module.preloadRoomAssets === "function") return module.preloadRoomAssets();
+    return undefined;
+  });
+}
+
+function preloadInactiveRooms(activeViewId) {
+  const order = activeViewId === "home"
+    ? ["vote", "schedule", "draw"]
+    : [activeViewId, "vote", "schedule", "draw"];
+  const uniqueOrder = [...new Set(order)].filter((viewId) => viewId !== "home");
+
+  const cancelJobs = uniqueOrder.map((viewId, index) => (
+    scheduleIdleWork(() => {
+      preloadRoom(viewId).catch(() => undefined);
+    }, 650 + index * 450)
+  ));
+
+  return () => cancelJobs.forEach((cancel) => cancel());
+}
+
+function RoomLoadingShell({ t }) {
+  return (
+    <section className="room-loading-shell" aria-live="polite" aria-label={t("common.loading")}>
+      <span aria-hidden="true" />
+    </section>
+  );
+}
 
 const viewIcons = {
   home: Home,
@@ -344,6 +390,12 @@ function RoomCommandMast({
 function ViewMenu({ activeViewId, onSelectView, t }) {
   const activeIndex = Math.max(0, commandViews.findIndex((view) => view.id === activeViewId));
 
+  function handlePreload(viewId) {
+    if (viewId !== "home") {
+      preloadRoom(viewId).catch(() => undefined);
+    }
+  }
+
   return (
     <menu className="command-menu pill-nav" aria-label={t("nav.aria")} data-active-index={activeIndex}>
       <span className="command-menu__indicator" aria-hidden="true" />
@@ -357,6 +409,8 @@ function ViewMenu({ activeViewId, onSelectView, t }) {
               type="button"
               strength={72}
               aria-current={activeViewId === view.id ? "page" : undefined}
+              onPointerEnter={() => handlePreload(view.id)}
+              onFocus={() => handlePreload(view.id)}
               onClick={() => onSelectView(view.id)}
             >
               <Icon size={15} strokeWidth={2.1} />
@@ -434,6 +488,18 @@ export function ControlRoom({
   const compactWorkViews = new Set(["schedule", "vote", "draw"]);
   const showRoomMast = activeViewId !== "home" && !compactWorkViews.has(activeViewId);
 
+  useEffect(() => {
+    let cancelPreloadJobs = () => {};
+    const cancelStart = scheduleIdleWork(() => {
+      cancelPreloadJobs = preloadInactiveRooms(activeViewId);
+    }, 900);
+
+    return () => {
+      cancelStart();
+      cancelPreloadJobs();
+    };
+  }, [activeViewId]);
+
   return (
     <main className="control-room" data-view={activeViewId} data-simulation={simulationMode}>
       <header className="control-header" aria-label={t("nav.aria")}>
@@ -498,62 +564,64 @@ export function ControlRoom({
           </>
         )}
 
-        {activeViewId === "schedule" ? (
-          <ScheduleRoom
-            activeRound={activeRound}
-            activeRoundId={activeRoundId}
-            simulatedRound={simulatedRound}
-            simulatedRoundId={simulatedRoundId}
-            rounds={rounds}
-            matches={matches}
-            teamsById={teamsById}
-            selectedMatch={selectedMatch}
-            roundAllocations={roundAllocations}
-            onSelectRound={onSelectRound}
-            onSelectMatch={onSelectMatch}
-            onSelectTeam={onSelectTeam}
-            onSelectView={onSelectView}
-          />
-        ) : null}
+        <Suspense fallback={<RoomLoadingShell t={t} />}>
+          {activeViewId === "schedule" ? (
+            <LazyScheduleRoom
+              activeRound={activeRound}
+              activeRoundId={activeRoundId}
+              simulatedRound={simulatedRound}
+              simulatedRoundId={simulatedRoundId}
+              rounds={rounds}
+              matches={matches}
+              teamsById={teamsById}
+              selectedMatch={selectedMatch}
+              roundAllocations={roundAllocations}
+              onSelectRound={onSelectRound}
+              onSelectMatch={onSelectMatch}
+              onSelectTeam={onSelectTeam}
+              onSelectView={onSelectView}
+            />
+          ) : null}
 
-        {activeViewId === "vote" ? (
-          <VoteRoom
-            ledger={ledger}
-            ledgerIssue={ledgerIssue}
-            activeEntry={activeEntry}
-            selectedWallet={selectedWallet}
-            activeRound={activeRound}
-            activeRoundId={activeRoundId}
-            matches={matches}
-            teamsById={teamsById}
-            selectedMatch={selectedMatch}
-            selectedTeamId={selectedTeamId}
-            ticketAmount={ticketAmount}
-            remainingRoundTickets={remainingRoundTickets}
-            usedRoundTickets={usedRoundTickets}
-            roundAllocations={roundAllocations}
-            roundVoteOutcomes={roundVoteOutcomes}
-            roundOutcomeSummary={roundOutcomeSummary}
-            previewVoteIssue={previewVoteIssue}
-            onSelectWallet={onSelectWallet}
-            onSelectMatch={onSelectMatch}
-            onSelectTeam={onSelectTeam}
-            onSetTicketAmount={onSetTicketAmount}
-            onConfirmPreviewVote={onConfirmPreviewVote}
-          />
-        ) : null}
+          {activeViewId === "vote" ? (
+            <LazyVoteRoom
+              ledger={ledger}
+              ledgerIssue={ledgerIssue}
+              activeEntry={activeEntry}
+              selectedWallet={selectedWallet}
+              activeRound={activeRound}
+              activeRoundId={activeRoundId}
+              matches={matches}
+              teamsById={teamsById}
+              selectedMatch={selectedMatch}
+              selectedTeamId={selectedTeamId}
+              ticketAmount={ticketAmount}
+              remainingRoundTickets={remainingRoundTickets}
+              usedRoundTickets={usedRoundTickets}
+              roundAllocations={roundAllocations}
+              roundVoteOutcomes={roundVoteOutcomes}
+              roundOutcomeSummary={roundOutcomeSummary}
+              previewVoteIssue={previewVoteIssue}
+              onSelectWallet={onSelectWallet}
+              onSelectMatch={onSelectMatch}
+              onSelectTeam={onSelectTeam}
+              onSetTicketAmount={onSetTicketAmount}
+              onConfirmPreviewVote={onConfirmPreviewVote}
+            />
+          ) : null}
 
-        {activeViewId === "draw" ? (
-          <DrawRoom
-            activeRound={activeRound}
-            rounds={rounds}
-            simulatedRoundId={simulatedRoundId}
-            drawStats={drawStats}
-            matches={matches}
-            teamsById={teamsById}
-            onSelectRound={onSelectRound}
-          />
-        ) : null}
+          {activeViewId === "draw" ? (
+            <LazyDrawRoom
+              activeRound={activeRound}
+              rounds={rounds}
+              simulatedRoundId={simulatedRoundId}
+              drawStats={drawStats}
+              matches={matches}
+              teamsById={teamsById}
+              onSelectRound={onSelectRound}
+            />
+          ) : null}
+        </Suspense>
       </section>
     </main>
   );

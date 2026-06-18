@@ -46,6 +46,7 @@ export const enLocale = {
       "final": "Final",
       "hkt": "HKT",
       "kickoff": "Kickoff",
+      "loading": "Loading",
       "match": "Match",
       "matches": "matches",
       "max": "Max",

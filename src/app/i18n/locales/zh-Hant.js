@@ -46,6 +46,7 @@ export const zhHantLocale = {
       "final": "已完賽",
       "hkt": "HKT",
       "kickoff": "開賽",
+      "loading": "載入中",
       "match": "賽事",
       "matches": "場賽事",
       "max": "最大",

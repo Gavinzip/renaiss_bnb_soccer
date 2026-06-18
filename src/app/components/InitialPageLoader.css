@@ -1,0 +1,89 @@
+.initial-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  min-height: 100svh;
+  padding: clamp(1.5rem, 6vw, 4rem);
+  overflow: hidden;
+  color: rgba(245, 246, 241, 0.9);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(240, 209, 139, 0.13), transparent 29%),
+    radial-gradient(circle at 52% 58%, rgba(95, 245, 212, 0.085), transparent 31%),
+    linear-gradient(180deg, #080a0a 0%, #020303 100%);
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity 520ms ease,
+    visibility 520ms ease;
+}
+
+.initial-loader::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(245, 246, 241, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245, 246, 241, 0.055) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at 50% 48%, black 0%, transparent 72%);
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.initial-loader.is-leaving {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.initial-loader__mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: clamp(184px, 44vw, 252px);
+  aspect-ratio: 1;
+}
+
+.initial-loader__circular {
+  --circular-text-size: clamp(180px, 44vw, 248px);
+  --circular-text-font-size: clamp(16px, 3.4vw, 21px);
+
+  color: rgba(245, 246, 241, 0.9);
+  filter:
+    drop-shadow(0 14px 32px rgba(0, 0, 0, 0.4))
+    drop-shadow(0 0 20px rgba(240, 209, 139, 0.16));
+}
+
+.initial-loader__logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: clamp(66px, 15vw, 92px);
+  height: clamp(66px, 15vw, 92px);
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+  filter:
+    drop-shadow(0 18px 34px rgba(0, 0, 0, 0.42))
+    drop-shadow(0 8px 18px rgba(240, 209, 139, 0.16));
+}
+
+.initial-loader__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .initial-loader,
+  .circular-text span {
+    transition-duration: 1ms;
+  }
+}

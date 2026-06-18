@@ -21204,6 +21204,42 @@ body {
 .control-room[data-view="home"] .home-video-backdrop__video {
   z-index: 1;
   background: #070808;
+  opacity: 1;
+  transition: opacity 260ms ease;
+}
+
+.control-room[data-view="home"] .home-room.is-media-loading .home-video-backdrop__video {
+  opacity: 0;
+}
+
+.control-room[data-view="home"] .home-video-backdrop__loader {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(22px, 4.5vh, 44px);
+  z-index: 4;
+  width: min(168px, 38vw);
+  height: 2px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(245, 246, 241, 0.12);
+  opacity: 0.78;
+  transform: translateX(-50%);
+  transition: opacity 220ms ease;
+}
+
+.control-room[data-view="home"] .home-video-backdrop__loader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(240, 209, 139, 0.92), rgba(245, 246, 241, 0.84), transparent);
+  transform: translateX(-100%);
+  animation: home-media-loader 1.25s ease-in-out infinite;
+}
+
+.control-room[data-view="home"] .home-room.is-media-ready .home-video-backdrop__loader {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .control-room[data-view="home"] .hero-stage,
@@ -21216,9 +21252,66 @@ body {
   background: transparent !important;
 }
 
+.control-room[data-view="home"] .home-scroll-sections {
+  content-visibility: auto;
+  contain-intrinsic-size: 1600px;
+}
+
+.room-loading-shell {
+  min-height: min(52vh, 520px);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(245, 246, 241, 0.1);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(245, 246, 241, 0.045), rgba(245, 246, 241, 0.012)),
+    rgba(5, 6, 6, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 60px rgba(0, 0, 0, 0.22);
+  contain: layout paint;
+}
+
+.room-loading-shell > span {
+  position: relative;
+  display: block;
+  width: min(172px, 42vw);
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(245, 246, 241, 0.12);
+}
+
+.room-loading-shell > span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(240, 209, 139, 0.92), rgba(245, 246, 241, 0.86), transparent);
+  transform: translateX(-100%);
+  animation: home-media-loader 1.1s ease-in-out infinite;
+}
+
+@keyframes home-media-loader {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  55%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .control-room[data-view="home"] .home-video-backdrop__video {
     display: none;
+  }
+
+  .control-room[data-view="home"] .home-video-backdrop__loader::after,
+  .room-loading-shell > span::after {
+    animation: none;
+    transform: translateX(0);
   }
 }
 

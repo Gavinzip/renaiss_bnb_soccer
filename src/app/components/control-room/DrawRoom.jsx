@@ -16,6 +16,10 @@ import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 
 const drawStepIds = ["results", "eligible", "snapshot", "reveal"];
 
+export function preloadRoomAssets() {
+  return Promise.resolve();
+}
+
 function getActiveDrawStep(status) {
   if (status === "revealed") return 3;
   if (status === "snapshot_ready") return 2;
