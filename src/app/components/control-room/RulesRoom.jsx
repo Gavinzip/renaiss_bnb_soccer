@@ -68,14 +68,6 @@ const proofLaneBlueprint = [
 const DEFAULT_MATCH_PRIZE_AMOUNT = 1000;
 const DEFAULT_PRIZE_CURRENCY = "USDT";
 
-function getDrawLabel(draw, t) {
-  if (!draw) return t("roundStatus.not_started");
-  if (draw.drawStatusResolved === "eligible_ready") return t("roundStatus.eligible_ready");
-  if (draw.drawStatusResolved === "pending_results") return t("roundStatus.pending_results");
-  if (draw.drawStatusResolved === "not_started") return t("roundStatus.not_started");
-  return draw.drawStatusResolved;
-}
-
 function getMatchPrize(match, round) {
   const amount = Number(match?.prizeAmount ?? round?.matchPrizeAmount ?? DEFAULT_MATCH_PRIZE_AMOUNT);
   return {
@@ -120,7 +112,7 @@ function RulesFlowChart({ copy }) {
   );
 }
 
-function RulesRewardMap({ activeRound, matches, totalPrizeSlots, activeDraw, copy }) {
+function RulesRewardMap({ activeRound, matches, totalPrizeSlots, copy }) {
   const { number, roundLabel, t } = copy;
   const prizeRows = matches.map((match) => ({
     id: match.id,
@@ -138,7 +130,6 @@ function RulesRewardMap({ activeRound, matches, totalPrizeSlots, activeDraw, cop
   );
   const matchCountLabel = t("rules.matchCountValue", { count: number(prizeRows.length) });
   const roundLabelText = activeRound ? roundLabel(activeRound) : "-";
-  const drawLabel = getDrawLabel(activeDraw, t);
 
   return (
     <GlareHover as="article" className="rules-reward-map">
@@ -174,11 +165,6 @@ function RulesRewardMap({ activeRound, matches, totalPrizeSlots, activeDraw, cop
           <span>{t("rules.totalSlots")}</span>
           <strong>{formatNumber(totalPrizeSlots)}</strong>
         </article>
-        <article className="is-state">
-          <Database size={17} strokeWidth={2.15} />
-          <span>{t("common.drawState")}</span>
-          <strong>{drawLabel}</strong>
-        </article>
       </section>
     </GlareHover>
   );
@@ -211,12 +197,10 @@ function RulesProofLanes({ copy }) {
   );
 }
 
-export function RulesRoom({ activeRound, activeRoundMatches = [], rounds = [], drawStats = [], className = "" }) {
+export function RulesRoom({ activeRound, activeRoundMatches = [], rounds = [], className = "" }) {
   const copy = useCampaignCopy();
   const { t } = copy;
-  const drawById = new Map(drawStats.map((round) => [round.id, round]));
   const totalPrizeSlots = rounds.reduce((total, round) => total + (round.prizeCount || 0), 0);
-  const activeDraw = activeRound ? drawById.get(activeRound.id) : null;
 
   return (
     <section className={["rules-room", className].filter(Boolean).join(" ")} aria-label={t("rules.roomAria")}>
@@ -224,7 +208,6 @@ export function RulesRoom({ activeRound, activeRoundMatches = [], rounds = [], d
         activeRound={activeRound}
         matches={activeRoundMatches}
         totalPrizeSlots={totalPrizeSlots}
-        activeDraw={activeDraw}
         copy={copy}
       />
 

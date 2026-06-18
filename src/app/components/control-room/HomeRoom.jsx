@@ -3,13 +3,10 @@ import {
   ArrowRight,
   Clock3,
   Gem,
-  LockKeyhole,
-  ShieldCheck,
   Ticket,
 } from "lucide-react";
 import heroImage from "../../assets/hero-world-cup-clean.webp";
 import heroScrollVideoMobile from "../../assets/Background.mobile.mp4";
-import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { addPreloadHint, preloadImage } from "../../utils/preloadAssets";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
@@ -57,29 +54,6 @@ function getMilestoneSnapshot(milestones, currentValue) {
     remaining: Math.max(0, next.threshold - currentValue),
     complete: !nextOpen,
   };
-}
-
-function getFeaturedHomeMatch(matches) {
-  return matches.find((match) => match.status === "closing_soon")
-    ?? matches.find((match) => match.status === "open")
-    ?? matches.find((match) => match.status === "locked")
-    ?? matches.find((match) => match.status === "official_final")
-    ?? matches.find((match) => match.status === "scheduled")
-    ?? matches[0]
-    ?? null;
-}
-
-function getFeaturedStatusTone(status) {
-  if (["open", "closing_soon"].includes(status)) return "voteable";
-  if (status === "locked") return "locked";
-  if (status === "official_final") return "final";
-  return "scheduled";
-}
-
-function getFeaturedStatusIcon(status) {
-  if (["open", "closing_soon"].includes(status)) return Ticket;
-  if (status === "official_final") return ShieldCheck;
-  return LockKeyhole;
 }
 
 function useScrollScrubbedHomeVideo(containerRef, videoRef) {
@@ -175,86 +149,6 @@ function useHomeMediaReady(videoRef) {
   }, [videoRef]);
 
   return mediaReady;
-}
-
-function HeroFeaturedMatch({ match, teams, onOpenMatch, copy }) {
-  if (!match || teams.length < 2) return null;
-
-  const { compactVotes, dateTime, matchStatus, teamName, venueName, t } = copy;
-  const [left, right] = teams;
-  const canVote = ["open", "closing_soon"].includes(match.status);
-  const tone = getFeaturedStatusTone(match.status);
-  const StatusIcon = getFeaturedStatusIcon(match.status);
-
-  return (
-    <section className={`hero-featured-match is-${tone}`} aria-label={t("home.featuredMatchAria")}>
-      <header>
-        <span>
-          <StatusIcon size={15} strokeWidth={2.25} />
-          {canVote ? t("home.heroVoteCue") : t("home.heroReadOnlyCue")}
-        </span>
-        <strong>{match.id.toUpperCase()} · {matchStatus(match.status)}</strong>
-      </header>
-
-      <section className="hero-featured-match__teams" aria-label={t("home.featuredTeamsAria")}>
-        {[left, right].map((team) => (
-          <article className="hero-featured-team" key={team.id}>
-            <img src={team.flagSrc} alt="" aria-hidden="true" />
-            <span>
-              <strong>{teamName(team)}</strong>
-              <small>{t("home.votePool", { votes: compactVotes(team.votes) })}</small>
-            </span>
-          </article>
-        ))}
-        <em>{t("vote.versusShort")}</em>
-      </section>
-
-      <dl className="hero-featured-meta" aria-label={t("home.featuredMetaAria")}>
-        <div>
-          <dt>{t("common.cutoff")}</dt>
-          <dd>{dateTime(match.cutoffAt)} {t("common.hkt")}</dd>
-        </div>
-        <div>
-          <dt>{t("common.venue")}</dt>
-          <dd>{venueName(match.venue)}</dd>
-        </div>
-      </dl>
-
-      <Magnet as="button" className="hero-featured-action" type="button" strength={60} onClick={onOpenMatch}>
-        {canVote ? t("home.openFeaturedVote") : t("home.inspectFeaturedMatch")}
-        <ArrowRight size={16} strokeWidth={2.3} />
-      </Magnet>
-    </section>
-  );
-}
-
-function HeroCommandDeck({
-  activeRound,
-  featuredMatch,
-  featuredTeams,
-  onOpenFeaturedMatch,
-  copy,
-}) {
-  const { roundLabel, t } = copy;
-
-  return (
-    <section className="hero-match-capsule" aria-label={t("home.heroConsole")}>
-      <header className="hero-command-card__head">
-        <span>
-          <img src={renaissLogo} alt="" aria-hidden="true" />
-          {t("home.campaignDesk")}
-        </span>
-        <strong>{roundLabel(activeRound, "englishLabel")}</strong>
-      </header>
-
-      <HeroFeaturedMatch
-        match={featuredMatch}
-        teams={featuredTeams}
-        onOpenMatch={onOpenFeaturedMatch}
-        copy={copy}
-      />
-    </section>
-  );
 }
 
 function formatMilestoneReward(milestone) {
@@ -439,13 +333,10 @@ function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTi
 export function HomeRoom({
   activeRound,
   matches,
-  teamsById,
   milestones,
   currentMilestoneValue,
   rounds,
-  drawStats,
   onSelectView,
-  onSelectMatch,
 }) {
   const copy = useCampaignCopy();
   const { t } = copy;
@@ -453,8 +344,6 @@ export function HomeRoom({
   const heroVideoRef = useRef(null);
   const mediaReady = useHomeMediaReady(heroVideoRef);
   const activeRoundMatches = matches.filter((match) => match.roundId === activeRound.id);
-  const featuredMatch = getFeaturedHomeMatch(activeRoundMatches);
-  const featuredTeams = featuredMatch?.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean) ?? [];
   const milestoneSnapshot = getMilestoneSnapshot(milestones, currentMilestoneValue);
   const heroMilestoneTitle = milestoneSnapshot.complete
     ? t("home.allMilestonesOpen")
@@ -462,10 +351,6 @@ export function HomeRoom({
   const heroMilestoneDetail = milestoneSnapshot.complete
     ? t("home.allMilestonesDetail")
     : t("home.ticketsToTarget", { remaining: formatNumber(milestoneSnapshot.remaining), target: formatNumber(milestoneSnapshot.next.threshold) });
-  const handleOpenFeaturedMatch = () => {
-    if (featuredMatch) onSelectMatch(featuredMatch.id);
-    onSelectView("vote");
-  };
 
   useScrollScrubbedHomeVideo(homeRoomRef, heroVideoRef);
 
@@ -532,13 +417,6 @@ export function HomeRoom({
             </menu>
           </section>
 
-          <HeroCommandDeck
-            activeRound={activeRound}
-            featuredMatch={featuredMatch}
-            featuredTeams={featuredTeams}
-            onOpenFeaturedMatch={handleOpenFeaturedMatch}
-            copy={copy}
-          />
         </figcaption>
       </figure>
 
@@ -555,8 +433,6 @@ export function HomeRoom({
           activeRound={activeRound}
           activeRoundMatches={activeRoundMatches}
           rounds={rounds}
-          drawStats={drawStats}
-          teamsById={teamsById}
           className="home-rules-panel"
         />
       </section>

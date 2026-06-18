@@ -570,13 +570,10 @@ export function ControlRoom({
           <HomeRoom
             activeRound={activeRound}
             matches={matches}
-            teamsById={teamsById}
             milestones={milestones}
             currentMilestoneValue={currentMilestoneValue}
             rounds={rounds}
-            drawStats={drawStats}
             onSelectView={onSelectView}
-            onSelectMatch={onSelectMatch}
           />
         ) : (
           <>
