@@ -23,6 +23,7 @@ import { AnimatedContent } from "../AnimatedContent";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { HomeRoom } from "./HomeRoom";
+import { XFollowGate } from "./XFollowGate";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 
 function lazyNamed(loader, exportName) {
@@ -518,6 +519,7 @@ export function ControlRoom({
   const showRoomMast = activeViewId !== "home" && !compactWorkViews.has(activeViewId);
   const authWalletLinked = Boolean(authSession?.walletAddress);
   const showAuthState = Boolean(authEndpointReady);
+  const voteRequiresXFollow = authEndpointReady && !authSession?.xFollow?.gatePassed;
 
   async function handleLogout() {
     try {
@@ -638,7 +640,16 @@ export function ControlRoom({
             />
           ) : null}
 
-          {activeViewId === "vote" ? (
+          {activeViewId === "vote" && voteRequiresXFollow ? (
+            <XFollowGate
+              authSession={authSession}
+              authConfig={authConfig}
+              authEndpointReady={authEndpointReady}
+              onRefreshAuth={onRefreshAuth}
+            />
+          ) : null}
+
+          {activeViewId === "vote" && !voteRequiresXFollow ? (
             <LazyVoteRoom
               ledger={ledger}
               ledgerIssue={ledgerIssue}

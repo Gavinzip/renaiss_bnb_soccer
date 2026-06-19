@@ -18,6 +18,7 @@ import {
   DEFAULT_ROUND_ID,
   DEFAULT_TICKET_AMOUNT,
   DEFAULT_VIEW_ID,
+  commandViews,
   getRoundById,
   normalizeLedgerSummary,
   normalizeMilestoneSummary,
@@ -59,6 +60,12 @@ function normalizeWalletAddress(value) {
 function readInitialWalletAddress() {
   if (typeof window === "undefined") return "";
   return normalizeWalletAddress(new URLSearchParams(window.location.search).get("wallet"));
+}
+
+function readInitialViewId() {
+  if (typeof window === "undefined") return DEFAULT_VIEW_ID;
+  const viewId = new URLSearchParams(window.location.search).get("view");
+  return commandViews.some((view) => view.id === viewId) ? viewId : DEFAULT_VIEW_ID;
 }
 
 function urlWithWalletQuery(baseUrl, walletAddress) {
@@ -122,7 +129,7 @@ function AppContent() {
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [activeViewId, setActiveViewId] = useState(DEFAULT_VIEW_ID);
+  const [activeViewId, setActiveViewId] = useState(readInitialViewId);
   const [simulationMode, setSimulationMode] = useState("scenario");
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
   const [simulatedRoundId, setSimulatedRoundId] = useState(DEFAULT_ROUND_ID);

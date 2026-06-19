@@ -27,6 +27,18 @@ import {
   hasSessionSecret,
   readSession,
 } from './session-store.mjs'
+import {
+  clearOAuthTokensForSession,
+  createOAuthTokenConfig,
+  saveOAuthToken,
+} from './oauth-token-store.mjs'
+import {
+  clearXFollowSkipCookie,
+  createXFollowGateConfig,
+  getXFollowStatus,
+  skipXFollow,
+  verifyXFollow,
+} from './x-follow-gate.mjs'
 
 const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -85,6 +97,17 @@ function authErrorRedirect(env, reason, details = {}) {
   return `${url.pathname}${url.search}${url.hash}`
 }
 
+function safeReturnTo(value) {
+  const raw = String(value || '').trim()
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return ''
+  try {
+    const parsed = new URL(raw, 'https://renaiss.local')
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return ''
+  }
+}
+
 function sanitizeAuthError(error) {
   const message = error instanceof Error ? error.message : String(error || 'Unknown OAuth failure')
   return message
@@ -141,7 +164,7 @@ function buildProviderConfig(env) {
       authUrl: 'https://x.com/i/oauth2/authorize',
       tokenUrl: 'https://api.x.com/2/oauth2/token',
       userInfoUrl: 'https://api.x.com/2/users/me?user.fields=profile_image_url,verified',
-      scope: String(env.X_OAUTH_SCOPE || 'users.read').trim(),
+      scope: String(env.X_OAUTH_SCOPE || 'users.read follows.read offline.access').trim(),
       requiresClientSecret: true,
       tokenAuthMethod: 'basic',
     },
@@ -310,6 +333,8 @@ export function createAuthContext({ dataDir, env = process.env }) {
 
   const sessionConfig = createSessionConfig({ authDir, sessionSecret, secureCookies })
   const stateConfig = createAuthStateConfig({ authDir, sessionSecret })
+  const oauthTokenConfig = createOAuthTokenConfig({ authDir, sessionSecret })
+  const xFollowGateConfig = createXFollowGateConfig({ authDir, env })
   const providerConfig = buildProviderConfig(env)
   const identityResolverConfig = createIdentityResolverConfig(env)
   const emailConfig = createEmailConfig(env)
@@ -319,6 +344,8 @@ export function createAuthContext({ dataDir, env = process.env }) {
     env,
     sessionConfig,
     stateConfig,
+    oauthTokenConfig,
+    xFollowGateConfig,
     providerConfig,
     identityResolverConfig,
     emailConfig,
@@ -343,6 +370,12 @@ export function getAuthPublicStatus(auth) {
     sessionConfigured: auth.sessionConfigured,
     identityResolverConfigured: auth.identityResolverConfigured,
     providers: auth.providers,
+    xFollowGate: {
+      targetHandle: auth.xFollowGateConfig.targetHandle,
+      targetUrl: auth.xFollowGateConfig.targetUrl,
+      retrySeconds: auth.xFollowGateConfig.retrySeconds,
+      skipEnabled: auth.xFollowGateConfig.skipEnabled,
+    },
   }
 }
 
@@ -363,9 +396,73 @@ export async function handleAuthRoute({
       identity: session?.identity || null,
       walletAddress: session?.walletAddress || null,
       resolver: session?.resolver || null,
+      xFollow: getXFollowStatus(auth, session, request),
       requiresWalletLink: Boolean(session && !session.walletAddress),
       config: getAuthPublicStatus(auth),
     })
+    return true
+  }
+
+  if (url.pathname === '/api/auth/x-follow/status') {
+    const session = readAuthSession(auth, request)
+    sendJsonResponse(sendJson, request, response, 200, getXFollowStatus(auth, session, request))
+    return true
+  }
+
+  if (url.pathname === '/api/auth/x-follow/verify') {
+    if (request.method !== 'POST') {
+      sendJsonResponse(sendJson, request, response, 405, { ok: false, error: 'POST required.' })
+      return true
+    }
+
+    const session = readAuthSession(auth, request)
+    try {
+      const status = await verifyXFollow(auth, session, request)
+      sendJsonResponse(sendJson, request, response, 200, { ok: true, ...status })
+    } catch (error) {
+      sendJsonResponse(
+        sendJson,
+        request,
+        response,
+        Number(error?.statusCode || 500),
+        {
+          ok: false,
+          code: error?.code || 'verify_failed',
+          error: error instanceof Error ? error.message : 'X follow verification failed.',
+          retryAfterSeconds: error?.retryAfterSeconds || error?.status?.retryAfterSeconds || 0,
+          status: error?.status || getXFollowStatus(auth, session, request),
+        },
+      )
+    }
+    return true
+  }
+
+  if (url.pathname === '/api/auth/x-follow/skip') {
+    if (request.method !== 'POST') {
+      sendJsonResponse(sendJson, request, response, 405, { ok: false, error: 'POST required.' })
+      return true
+    }
+
+    const session = readAuthSession(auth, request)
+    try {
+      const result = skipXFollow(auth, session, request)
+      sendJsonResponse(sendJson, request, response, 200, { ok: true, ...result.status }, {
+        'set-cookie': result.cookie,
+      })
+    } catch (error) {
+      sendJsonResponse(
+        sendJson,
+        request,
+        response,
+        Number(error?.statusCode || 500),
+        {
+          ok: false,
+          code: error?.code || 'skip_failed',
+          error: error instanceof Error ? error.message : 'X follow test bypass failed.',
+          status: error?.status || getXFollowStatus(auth, session, request),
+        },
+      )
+    }
     return true
   }
 
@@ -374,8 +471,12 @@ export async function handleAuthRoute({
       sendJsonResponse(sendJson, request, response, 405, { error: 'POST required.' })
       return true
     }
+    const session = readAuthSession(auth, request)
     clearSession(auth.sessionConfig, request, response)
-    sendJsonResponse(sendJson, request, response, 200, { ok: true })
+    clearOAuthTokensForSession(auth.oauthTokenConfig, session?.id)
+    const currentSetCookie = response.getHeader('set-cookie')
+    const headers = appendSetCookie({ 'set-cookie': currentSetCookie }, clearXFollowSkipCookie(auth))
+    sendJsonResponse(sendJson, request, response, 200, { ok: true }, headers)
     return true
   }
 
@@ -397,6 +498,7 @@ export async function handleAuthRoute({
     const stateToken = createOauthChallenge(auth.stateConfig, provider, {
       codeVerifier: verifier,
       redirectUri,
+      returnTo: safeReturnTo(url.searchParams.get('return_to')),
     })
 
     const config = auth.providerConfig[provider]
@@ -449,10 +551,13 @@ export async function handleAuthRoute({
       const identity = await fetchOAuthIdentity(provider, auth.providerConfig, token.access_token)
       if (!identity.providerUserId) throw new Error('OAuth identity missing stable user id.')
       failureStage = 'session_create'
-      await createSessionForIdentity({ auth, request, response, identity })
+      const { session } = await createSessionForIdentity({ auth, request, response, identity })
+      if (provider === 'x') {
+        saveOAuthToken(auth.oauthTokenConfig, session, provider, token)
+      }
       const currentSetCookie = response.getHeader('set-cookie')
       const headers = appendSetCookie({ 'set-cookie': currentSetCookie }, clearStateHeader)
-      redirect(response, authSuccessRedirect(auth.env), headers)
+      redirect(response, challenge.returnTo || authSuccessRedirect(auth.env), headers)
     } catch (error) {
       logOAuthCallbackFailure(provider, failureStage, error)
       response.setHeader('set-cookie', clearStateHeader)

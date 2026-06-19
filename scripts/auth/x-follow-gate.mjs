@@ -1,0 +1,503 @@
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { join } from 'node:path'
+
+import { parseCookies, serializeCookie } from './cookies.mjs'
+import { readJsonFile, writeJsonFileAtomic } from './json-store.mjs'
+import { readOAuthToken, saveOAuthToken } from './oauth-token-store.mjs'
+
+const DEFAULT_TARGET_HANDLE = 'thefireflyapp'
+const DEFAULT_RETRY_SECONDS = 60
+const SKIP_COOKIE = 'renaiss_x_follow_skip'
+const SKIP_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+function nowIso() {
+  return new Date().toISOString()
+}
+
+function normalizeHandle(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase()
+}
+
+function envFlag(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase())
+}
+
+function hasSigningSecret(config) {
+  return Boolean(config?.sessionSecret && config.sessionSecret.length >= 32)
+}
+
+function signValue(secret, value) {
+  return createHmac('sha256', secret).update(String(value)).digest('base64url')
+}
+
+function hashValue(secret, value) {
+  return createHmac('sha256', secret).update(String(value)).digest('hex')
+}
+
+function safeEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''))
+  const rightBuffer = Buffer.from(String(right || ''))
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
+}
+
+function skipCookieValue(config, token) {
+  return `${token}.${signValue(config.sessionSecret, token)}`
+}
+
+function readSkipCookieToken(config, request) {
+  if (!config.skipEnabled || !hasSigningSecret(config) || !request) return ''
+  const cookies = parseCookies(request.headers.cookie || '')
+  const [token, signature] = String(cookies[config.skipCookieName] || '').split('.')
+  if (!token || !signature) return ''
+  return safeEqual(signature, signValue(config.sessionSecret, token)) ? token : ''
+}
+
+function emptyVerificationState() {
+  return {
+    version: 1,
+    updatedAt: null,
+    verifications: {},
+  }
+}
+
+function verificationKey(providerUserId, targetHandle) {
+  return `${targetHandle}:${providerUserId}`
+}
+
+function sessionVerificationKeys(session, targetHandle) {
+  const identity = session?.identity || null
+  if (!identity?.provider || !identity?.providerUserId) return []
+  const current = `${targetHandle}:${identity.provider}:${identity.providerUserId}`
+  const legacy = identity.provider === 'x' ? verificationKey(identity.providerUserId, targetHandle) : ''
+  return [...new Set([current, legacy].filter(Boolean))]
+}
+
+function skipCookieRecordKey(config, token) {
+  return `${config.targetHandle}:skip-cookie:${hashValue(config.sessionSecret, token)}`
+}
+
+function readSessionRecord(state, session, targetHandle) {
+  const records = sessionVerificationKeys(session, targetHandle)
+    .map((key) => state.verifications[key])
+    .filter(Boolean)
+  return records.find((record) => record.status === 'verified')
+    || records.find((record) => record.status === 'skipped')
+    || records[0]
+    || null
+}
+
+function readCookieSkipRecord(config, state, request) {
+  const token = readSkipCookieToken(config, request)
+  if (!token) return null
+  const record = state.verifications[skipCookieRecordKey(config, token)] || null
+  return record?.status === 'skipped' ? record : null
+}
+
+function createSkipCookie(config, token, maxAgeSeconds = Math.floor(SKIP_TTL_MS / 1000)) {
+  return serializeCookie(config.skipCookieName, skipCookieValue(config, token), {
+    maxAge: maxAgeSeconds,
+    httpOnly: true,
+    secure: config.secureCookies,
+    sameSite: 'Lax',
+  })
+}
+
+function readState(path) {
+  const state = readJsonFile(path, emptyVerificationState())
+  return {
+    ...emptyVerificationState(),
+    ...state,
+    verifications: Object.fromEntries(
+      Object.entries(state.verifications || {}).filter(([, record]) => (
+        record && typeof record === 'object'
+      )),
+    ),
+  }
+}
+
+function writeState(path, state) {
+  writeJsonFileAtomic(path, {
+    ...state,
+    version: 1,
+    updatedAt: nowIso(),
+  })
+}
+
+function retryAfterSeconds(record, retrySeconds) {
+  if (['verified', 'skipped'].includes(record?.status)) return 0
+  const lastCheckedAt = Date.parse(record?.lastCheckedAt || '')
+  if (!Number.isFinite(lastCheckedAt)) return 0
+  const retryAt = lastCheckedAt + retrySeconds * 1000
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000))
+}
+
+function statusForSession(config, session, request) {
+  const identity = session?.identity || null
+  const target = {
+    handle: config.targetHandle,
+    url: config.targetUrl,
+  }
+  const state = readState(config.path)
+  const cookieRecord = readCookieSkipRecord(config, state, request)
+  const cookieBypassed = config.skipEnabled && cookieRecord?.status === 'skipped'
+  const cookieBypassStatus = {
+    target,
+    authenticated: Boolean(session),
+    xConnected: false,
+    verified: false,
+    gatePassed: true,
+    bypassed: true,
+    skipEnabled: config.skipEnabled,
+    status: 'skipped',
+    verifiedAt: null,
+    bypassedAt: cookieRecord?.bypassedAt || null,
+    lastCheckedAt: cookieRecord?.lastCheckedAt || null,
+    retryAfterSeconds: 0,
+    connectionStatus: [],
+  }
+
+  if (!session) {
+    if (cookieBypassed) return cookieBypassStatus
+    return {
+      target,
+      authenticated: false,
+      xConnected: false,
+      verified: false,
+      gatePassed: false,
+      bypassed: false,
+      skipEnabled: config.skipEnabled,
+      status: 'login_required',
+      verifiedAt: null,
+      bypassedAt: null,
+      lastCheckedAt: null,
+      retryAfterSeconds: 0,
+      connectionStatus: [],
+    }
+  }
+
+  const rawRecord = readSessionRecord(state, session, config.targetHandle) || cookieRecord || null
+  const record = rawRecord?.status === 'skipped' && !config.skipEnabled ? null : rawRecord
+  const verified = record?.status === 'verified'
+  const bypassed = config.skipEnabled && record?.status === 'skipped'
+  const common = {
+    target,
+    authenticated: true,
+    verified,
+    gatePassed: verified || bypassed,
+    bypassed,
+    skipEnabled: config.skipEnabled,
+    status: record?.status || null,
+    verifiedAt: record?.verifiedAt || null,
+    bypassedAt: bypassed ? (record?.bypassedAt || null) : null,
+    lastCheckedAt: record?.lastCheckedAt || null,
+    retryAfterSeconds: retryAfterSeconds(record, config.retrySeconds),
+    connectionStatus: Array.isArray(record?.connectionStatus) ? record.connectionStatus : [],
+  }
+
+  if (identity?.provider !== 'x' || !identity?.providerUserId) {
+    return {
+      ...common,
+      xConnected: false,
+      status: common.status || 'x_login_required',
+    }
+  }
+
+  return {
+    ...common,
+    xConnected: true,
+    xUserId: identity.providerUserId,
+    username: identity.username || null,
+    status: common.status || 'unverified',
+  }
+}
+
+async function refreshXToken(auth, session, token) {
+  const refreshToken = token?.refresh_token
+  if (!refreshToken) return token
+
+  const config = auth.providerConfig.x
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+  })
+  const headers = { 'content-type': 'application/x-www-form-urlencoded' }
+
+  if (config.tokenAuthMethod === 'basic' && config.clientSecret) {
+    headers.authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`
+  } else {
+    body.set('client_id', config.clientId)
+    if (config.clientSecret) body.set('client_secret', config.clientSecret)
+  }
+
+  const response = await fetch(config.tokenUrl, {
+    method: 'POST',
+    headers,
+    body,
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || !payload?.access_token) return token
+  if (!payload.refresh_token && refreshToken) {
+    payload.refresh_token = refreshToken
+  }
+  saveOAuthToken(auth.oauthTokenConfig, session, 'x', payload)
+  return payload
+}
+
+async function readUsableXToken(auth, session) {
+  let token = readOAuthToken(auth.oauthTokenConfig, session, 'x')
+  if (!token?.access_token) return null
+
+  const expiresAt = Date.parse(token.accessTokenExpiresAt || '')
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now() + 30_000) {
+    token = await refreshXToken(auth, session, token)
+  }
+
+  return token?.access_token ? token : null
+}
+
+async function fetchConnectionStatus(auth, config, session, accessToken) {
+  const url = new URL(`${config.apiBaseUrl}/users/by/username/${encodeURIComponent(config.targetHandle)}`)
+  url.searchParams.set('user.fields', 'connection_status,username,name')
+
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'user-agent': 'renaiss-x-follow-gate/0.1.0',
+    },
+  })
+  const payload = await response.json().catch(() => ({}))
+
+  if ((response.status === 401 || response.status === 403) && session) {
+    const token = readOAuthToken(auth.oauthTokenConfig, session, 'x')
+    const refreshed = await refreshXToken(auth, session, token)
+    if (refreshed?.access_token && refreshed.access_token !== accessToken) {
+      return fetchConnectionStatus(auth, config, null, refreshed.access_token)
+    }
+  }
+
+  if (!response.ok) {
+    const error = new Error(payload?.detail || payload?.title || payload?.error || `X API returned HTTP ${response.status}`)
+    error.statusCode = response.status === 429 ? 429 : 502
+    error.xStatus = response.status
+    error.payload = payload
+    error.rateLimit = {
+      limit: response.headers.get('x-rate-limit-limit'),
+      remaining: response.headers.get('x-rate-limit-remaining'),
+      reset: response.headers.get('x-rate-limit-reset'),
+    }
+    throw error
+  }
+
+  return {
+    targetUser: payload?.data || null,
+    connectionStatus: Array.isArray(payload?.data?.connection_status) ? payload.data.connection_status : [],
+    rateLimit: {
+      limit: response.headers.get('x-rate-limit-limit'),
+      remaining: response.headers.get('x-rate-limit-remaining'),
+      reset: response.headers.get('x-rate-limit-reset'),
+    },
+  }
+}
+
+function saveVerificationResult(config, session, result) {
+  const identity = session.identity
+  const checkedAt = nowIso()
+  const connectionStatus = Array.isArray(result.connectionStatus) ? result.connectionStatus : []
+  const verified = connectionStatus.includes('following')
+  const state = readState(config.path)
+  const key = sessionVerificationKeys(session, config.targetHandle)[0] || verificationKey(identity.providerUserId, config.targetHandle)
+  const existing = state.verifications[key] || {}
+
+  state.verifications[key] = {
+    ...existing,
+    provider: 'x',
+    providerUserId: identity.providerUserId,
+    username: identity.username || null,
+    targetHandle: config.targetHandle,
+    targetUserId: result.targetUser?.id || existing.targetUserId || null,
+    connectionStatus,
+    status: verified ? 'verified' : 'not_following',
+    verifiedAt: verified ? (existing.verifiedAt || checkedAt) : null,
+    lastCheckedAt: checkedAt,
+    updatedAt: checkedAt,
+  }
+  writeState(config.path, state)
+  return statusForSession(config, session)
+}
+
+function saveVerificationFailure(config, session, status, error) {
+  const identity = session?.identity
+  if (identity?.provider !== 'x' || !identity.providerUserId) return
+
+  const checkedAt = nowIso()
+  const state = readState(config.path)
+  const key = sessionVerificationKeys(session, config.targetHandle)[0] || verificationKey(identity.providerUserId, config.targetHandle)
+  const existing = state.verifications[key] || {}
+  state.verifications[key] = {
+    ...existing,
+    provider: 'x',
+    providerUserId: identity.providerUserId,
+    username: identity.username || null,
+    targetHandle: config.targetHandle,
+    status,
+    lastCheckedAt: checkedAt,
+    updatedAt: checkedAt,
+    lastError: error instanceof Error ? error.message : String(error || ''),
+  }
+  writeState(config.path, state)
+}
+
+export function createXFollowGateConfig({ authDir, env = process.env }) {
+  const targetHandle = normalizeHandle(env.X_FOLLOW_GATE_HANDLE || env.X_REQUIRED_FOLLOW_HANDLE || DEFAULT_TARGET_HANDLE)
+  const retrySeconds = Math.max(10, Math.floor(Number(env.X_FOLLOW_VERIFY_RETRY_SECONDS || DEFAULT_RETRY_SECONDS) || DEFAULT_RETRY_SECONDS))
+
+  return {
+    path: join(authDir, 'x-follow-verifications.json'),
+    targetHandle,
+    targetUrl: `https://x.com/${targetHandle}`,
+    retrySeconds,
+    skipEnabled: envFlag(env.X_FOLLOW_SKIP_ENABLED || env.X_FOLLOW_GATE_SKIP_ENABLED),
+    skipCookieName: SKIP_COOKIE,
+    sessionSecret: String(env.AUTH_SESSION_SECRET || env.SESSION_SECRET || ''),
+    secureCookies: (env.AUTH_COOKIE_SECURE || '').trim()
+      ? env.AUTH_COOKIE_SECURE !== '0'
+      : String(env.PUBLIC_APP_ORIGIN || env.AUTH_PUBLIC_ORIGIN || '').startsWith('https://'),
+    apiBaseUrl: String(env.X_API_BASE_URL || 'https://api.x.com/2').replace(/\/$/, ''),
+  }
+}
+
+export function getXFollowStatus(auth, session, request) {
+  return statusForSession(auth.xFollowGateConfig, session, request)
+}
+
+export function clearXFollowSkipCookie(auth) {
+  return createSkipCookie(auth.xFollowGateConfig, '', 0)
+}
+
+export function skipXFollow(auth, session, request) {
+  const config = auth.xFollowGateConfig
+  const status = statusForSession(config, session, request)
+  if (!config.skipEnabled) {
+    throw Object.assign(new Error('X follow test bypass is disabled.'), {
+      statusCode: 404,
+      code: 'skip_disabled',
+      status,
+    })
+  }
+  if (!hasSigningSecret(config)) {
+    throw Object.assign(new Error('AUTH_SESSION_SECRET must be configured before test bypass can be used.'), {
+      statusCode: 503,
+      code: 'session_secret_missing',
+      status,
+    })
+  }
+
+  const checkedAt = nowIso()
+  const state = readState(config.path)
+  const cookieToken = readSkipCookieToken(config, request) || randomBytes(32).toString('base64url')
+  const cookieKey = skipCookieRecordKey(config, cookieToken)
+  const cookieExisting = state.verifications[cookieKey] || {}
+
+  state.verifications[cookieKey] = {
+    ...cookieExisting,
+    provider: 'test-skip-cookie',
+    targetHandle: config.targetHandle,
+    status: 'skipped',
+    bypassedAt: cookieExisting.bypassedAt || checkedAt,
+    lastCheckedAt: checkedAt,
+    updatedAt: checkedAt,
+  }
+
+  const identity = session?.identity || null
+  const sessionKey = sessionVerificationKeys(session, config.targetHandle)[0]
+  if (sessionKey && identity?.provider && identity?.providerUserId) {
+    const existing = state.verifications[sessionKey] || {}
+    state.verifications[sessionKey] = {
+      ...existing,
+      provider: identity.provider,
+      providerUserId: identity.providerUserId,
+      username: identity.username || null,
+      targetHandle: config.targetHandle,
+      status: 'skipped',
+      bypassedAt: existing.bypassedAt || checkedAt,
+      lastCheckedAt: checkedAt,
+      updatedAt: checkedAt,
+    }
+  }
+
+  writeState(config.path, state)
+
+  const nextStatus = session
+    ? statusForSession(config, session, request)
+    : {
+      target: {
+        handle: config.targetHandle,
+        url: config.targetUrl,
+      },
+      authenticated: false,
+      xConnected: false,
+      verified: false,
+      gatePassed: true,
+      bypassed: true,
+      skipEnabled: true,
+      status: 'skipped',
+      verifiedAt: null,
+      bypassedAt: cookieExisting.bypassedAt || checkedAt,
+      lastCheckedAt: checkedAt,
+      retryAfterSeconds: 0,
+      connectionStatus: [],
+    }
+
+  return {
+    status: nextStatus,
+    cookie: createSkipCookie(config, cookieToken),
+  }
+}
+
+export async function verifyXFollow(auth, session, request) {
+  const status = statusForSession(auth.xFollowGateConfig, session, request)
+  if (!session) {
+    throw Object.assign(new Error('X login is required before verification.'), {
+      statusCode: 401,
+      code: 'login_required',
+      status,
+    })
+  }
+  if (status.gatePassed) return status
+  if (!status.xConnected) {
+    throw Object.assign(new Error('Connect X before verifying follow status.'), {
+      statusCode: 403,
+      code: 'x_login_required',
+      status,
+    })
+  }
+  if (status.retryAfterSeconds > 0) {
+    throw Object.assign(new Error('Please wait before verifying again.'), {
+      statusCode: 429,
+      code: 'retry_later',
+      retryAfterSeconds: status.retryAfterSeconds,
+      status,
+    })
+  }
+
+  const token = await readUsableXToken(auth, session)
+  if (!token?.access_token) {
+    throw Object.assign(new Error('Reconnect X to grant follow verification access.'), {
+      statusCode: 409,
+      code: 'x_token_missing',
+      status,
+    })
+  }
+
+  try {
+    const result = await fetchConnectionStatus(auth, auth.xFollowGateConfig, session, token.access_token)
+    return saveVerificationResult(auth.xFollowGateConfig, session, result)
+  } catch (error) {
+    const failureStatus = error?.statusCode === 429 ? 'rate_limited' : 'api_error'
+    saveVerificationFailure(auth.xFollowGateConfig, session, failureStatus, error)
+    throw Object.assign(error, {
+      code: failureStatus,
+      status: statusForSession(auth.xFollowGateConfig, session, request),
+    })
+  }
+}
