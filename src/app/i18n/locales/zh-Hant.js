@@ -114,6 +114,7 @@ export const zhHantLocale = {
       "back": "上一步",
       "body": "投票前需要完成一次 {handle} 追蹤驗證。資格未完成前仍可查看賽程。",
       "checking": "正在檢查 X 追蹤狀態",
+      "close": "關閉 X 驗證",
       "connectBody": "請用 X 登入，後端會用你的 X access token 查追蹤關係。",
       "connectTitle": "連接 X",
       "connectX": "連接 X",

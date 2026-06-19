@@ -114,6 +114,7 @@ export const enLocale = {
       "back": "Back",
       "body": "Vote access requires one verified follow of {handle}. Schedule remains open while eligibility is pending.",
       "checking": "Checking X follow status",
+      "close": "Close X verification",
       "connectBody": "Use X login so the server can verify the follow relationship with your own X access token.",
       "connectTitle": "Connect X",
       "connectX": "Connect X",

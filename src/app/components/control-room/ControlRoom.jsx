@@ -523,6 +523,9 @@ export function ControlRoom({
   const xFollowGateRequired = authConfig?.xFollowGate?.required !== false;
   const voteRequiresXFollow = authEndpointReady && xFollowGateRequired && !authSession?.xFollow?.gatePassed;
   const showOptionalXFollowButton = authEndpointReady && !xFollowGateRequired && activeViewId === "vote";
+  const showXFollowOverlay = activeViewId === "vote"
+    && !authSession?.xFollow?.gatePassed
+    && (voteRequiresXFollow || (showOptionalXFollowButton && xFollowPanelOpen));
 
   async function handleLogout() {
     try {
@@ -546,6 +549,23 @@ export function ControlRoom({
       cancelPreloadJobs();
     };
   }, [activeViewId]);
+
+  useEffect(() => {
+    if (activeViewId !== "vote" || authSession?.xFollow?.gatePassed) {
+      setXFollowPanelOpen(false);
+    }
+  }, [activeViewId, authSession?.xFollow?.gatePassed]);
+
+  useEffect(() => {
+    if (!showXFollowOverlay || voteRequiresXFollow) return undefined;
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") setXFollowPanelOpen(false);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showXFollowOverlay, voteRequiresXFollow]);
 
   return (
     <main className="control-room" data-view={activeViewId} data-simulation={simulationMode}>
@@ -654,25 +674,7 @@ export function ControlRoom({
             />
           ) : null}
 
-          {activeViewId === "vote" && voteRequiresXFollow ? (
-            <XFollowGate
-              authSession={authSession}
-              authConfig={authConfig}
-              authEndpointReady={authEndpointReady}
-              onRefreshAuth={onRefreshAuth}
-            />
-          ) : null}
-
-          {activeViewId === "vote" && showOptionalXFollowButton && xFollowPanelOpen && !authSession?.xFollow?.gatePassed ? (
-            <XFollowGate
-              authSession={authSession}
-              authConfig={authConfig}
-              authEndpointReady={authEndpointReady}
-              onRefreshAuth={onRefreshAuth}
-            />
-          ) : null}
-
-          {activeViewId === "vote" && !voteRequiresXFollow ? (
+          {activeViewId === "vote" ? (
             <LazyVoteRoom
               ledger={ledger}
               ledgerIssue={ledgerIssue}
@@ -700,6 +702,33 @@ export function ControlRoom({
               onSetTicketAmount={onSetTicketAmount}
               onConfirmPreviewVote={onConfirmPreviewVote}
             />
+          ) : null}
+
+          {showXFollowOverlay ? (
+            <section
+              className={voteRequiresXFollow ? "x-follow-gate-overlay is-required" : "x-follow-gate-overlay is-optional"}
+              aria-label={t("xFollowGate.aria")}
+            >
+              {voteRequiresXFollow ? (
+                <div className="x-follow-gate-overlay__scrim" aria-hidden="true" />
+              ) : (
+                <button
+                  type="button"
+                  className="x-follow-gate-overlay__scrim"
+                  aria-label={t("xFollowGate.close")}
+                  onClick={() => setXFollowPanelOpen(false)}
+                />
+              )}
+              <div className="x-follow-gate-overlay__sheet" role="dialog" aria-modal="true" aria-label={t("xFollowGate.aria")}>
+                <XFollowGate
+                  authSession={authSession}
+                  authConfig={authConfig}
+                  authEndpointReady={authEndpointReady}
+                  onRefreshAuth={onRefreshAuth}
+                  onRequestClose={voteRequiresXFollow ? undefined : () => setXFollowPanelOpen(false)}
+                />
+              </div>
+            </section>
           ) : null}
 
           {activeViewId === "draw" ? (

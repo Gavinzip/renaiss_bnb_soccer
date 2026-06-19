@@ -1,27 +1,95 @@
+.x-follow-gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 46px);
+  overflow: auto;
+  pointer-events: auto;
+  overscroll-behavior: contain;
+}
+
+.x-follow-gate-overlay__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  background:
+    radial-gradient(circle at 50% 36%, rgba(155, 244, 208, 0.12), transparent 28%),
+    rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+  backdrop-filter: blur(12px) saturate(108%);
+  -webkit-backdrop-filter: blur(12px) saturate(108%);
+}
+
+.x-follow-gate-overlay__scrim:disabled {
+  cursor: default;
+}
+
+.x-follow-gate-overlay__sheet {
+  position: relative;
+  z-index: 1;
+  width: min(720px, 100%);
+  max-height: min(780px, calc(100dvh - 44px));
+  display: grid;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
 .x-follow-gate {
   position: relative;
-  width: min(880px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   display: grid;
-  gap: 24px;
-  padding: 30px;
+  gap: 18px;
+  padding: 24px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(245, 246, 241, 0.18);
   border-radius: 8px;
-  background: rgba(6, 12, 18, 0.9);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.014)),
+    rgba(8, 10, 10, 0.96);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 22px 50px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    0 28px 80px rgba(0, 0, 0, 0.48);
+}
+
+.x-follow-gate__close {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(245, 246, 241, 0.14);
+  border-radius: 8px;
+  background: rgba(245, 246, 241, 0.055);
+  color: rgba(245, 246, 241, 0.72);
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.x-follow-gate__close:hover,
+.x-follow-gate__close:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(245, 246, 241, 0.26);
+  background: rgba(245, 246, 241, 0.1);
+  color: #fff;
 }
 
 .x-follow-gate__head,
 .x-follow-gate__step {
   display: grid;
-  gap: 13px;
+  gap: 11px;
 }
 
 .x-follow-gate__head {
-  padding-bottom: 2px;
+  padding: 0 44px 0 0;
 }
 
 .x-follow-gate__head span,
@@ -32,7 +100,7 @@
   gap: 8px;
   width: fit-content;
   min-width: 0;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(245, 246, 241, 0.7);
   font-size: 12px;
   font-weight: 820;
   letter-spacing: 0;
@@ -46,26 +114,26 @@
 }
 
 .x-follow-gate__head h1 {
-  max-width: 760px;
-  font-size: 38px;
-  line-height: 1.02;
+  max-width: 620px;
+  font-size: clamp(28px, 3.2vw, 34px);
+  line-height: 1.04;
 }
 
 .x-follow-gate__step h2 {
-  font-size: 28px;
-  line-height: 1.08;
+  font-size: clamp(21px, 2.2vw, 25px);
+  line-height: 1.12;
 }
 
 .x-follow-gate__head p,
 .x-follow-gate__step p {
   max-width: 62ch;
   margin: 0;
-  color: rgba(255, 255, 255, 0.68);
-  line-height: 1.6;
+  color: rgba(245, 246, 241, 0.66);
+  line-height: 1.52;
 }
 
 .x-follow-gate__step-tabs {
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .x-follow-gate__step-tab {
@@ -83,10 +151,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(245, 246, 241, 0.14);
   border-radius: 7px;
-  background: rgba(255, 255, 255, 0.045);
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(245, 246, 241, 0.045);
+  color: rgba(245, 246, 241, 0.7);
   font-size: 12px;
   font-weight: 860;
   font-variant-numeric: tabular-nums;
@@ -95,7 +163,7 @@
 .x-follow-gate__step-label {
   min-width: 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(245, 246, 241, 0.82);
   font-size: 13px;
   font-weight: 840;
   text-overflow: ellipsis;
@@ -103,7 +171,7 @@
 }
 
 .x-follow-gate__step-state {
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(245, 246, 241, 0.42);
   font-size: 11px;
   font-weight: 760;
   white-space: nowrap;
@@ -122,7 +190,38 @@
 }
 
 .x-follow-gate__step-content {
-  padding: 4px 2px 0;
+  padding: 0;
+}
+
+.x-follow-gate .rb-stepper {
+  gap: 14px;
+}
+
+.x-follow-gate .rb-stepper__steps {
+  border-color: rgba(245, 246, 241, 0.12);
+  background: rgba(245, 246, 241, 0.045);
+}
+
+.x-follow-gate .rb-stepper__item button {
+  min-height: 52px;
+}
+
+.x-follow-gate .rb-stepper__content {
+  min-height: 150px;
+}
+
+.x-follow-gate .rb-stepper__footer {
+  padding-top: 0;
+}
+
+.x-follow-gate .rb-stepper__footer button:disabled,
+.x-follow-gate .rb-stepper__footer button:last-child:disabled {
+  border-color: rgba(245, 246, 241, 0.1);
+  background: rgba(245, 246, 241, 0.04);
+  color: rgba(245, 246, 241, 0.38);
+  box-shadow: none;
+  opacity: 1;
+  transform: none;
 }
 
 .x-follow-gate__step > span.is-complete {
@@ -135,9 +234,9 @@
 
 .x-follow-gate__step > span {
   padding: 7px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(245, 246, 241, 0.1);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(245, 246, 241, 0.045);
 }
 
 .x-follow-gate__action,
@@ -150,7 +249,7 @@
   gap: 9px;
   padding: 0 17px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(245, 246, 241, 0.16);
   color: #f8fafc;
   text-decoration: none;
   font-size: 13px;
@@ -159,13 +258,13 @@
 }
 
 .x-follow-gate__action {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(245, 246, 241, 0.07);
 }
 
 .x-follow-gate__follow-link {
-  border-color: rgba(155, 244, 208, 0.36);
-  background: rgba(155, 244, 208, 0.1);
-  color: #eafff6;
+  border-color: rgba(240, 209, 139, 0.36);
+  background: rgba(240, 209, 139, 0.1);
+  color: #fff4d5;
 }
 
 .x-follow-gate__action:hover,
@@ -173,14 +272,14 @@
 .x-follow-gate__follow-link:hover,
 .x-follow-gate__follow-link:focus-visible {
   transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(245, 246, 241, 0.24);
+  background: rgba(245, 246, 241, 0.1);
 }
 
 .x-follow-gate__follow-link:hover,
 .x-follow-gate__follow-link:focus-visible {
-  border-color: rgba(155, 244, 208, 0.58);
-  background: rgba(155, 244, 208, 0.15);
+  border-color: rgba(240, 209, 139, 0.58);
+  background: rgba(240, 209, 139, 0.15);
 }
 
 .x-follow-gate__action.is-disabled {
@@ -204,17 +303,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 13px 14px;
+  gap: 12px;
+  padding: 10px 12px;
   border: 1px solid rgba(251, 191, 36, 0.18);
   border-radius: 8px;
-  background: rgba(251, 191, 36, 0.06);
+  background: rgba(251, 191, 36, 0.045);
 }
 
 .x-follow-gate__test-skip p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 13px;
+  color: rgba(245, 246, 241, 0.54);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -249,17 +348,26 @@
 }
 
 @media (max-width: 740px) {
+  .x-follow-gate-overlay {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .x-follow-gate-overlay__sheet {
+    max-height: calc(100dvh - 24px);
+  }
+
   .x-follow-gate {
     padding: 20px;
-    gap: 18px;
+    gap: 16px;
   }
 
   .x-follow-gate__head h1 {
-    font-size: 30px;
+    font-size: 27px;
   }
 
   .x-follow-gate__step h2 {
-    font-size: 24px;
+    font-size: 22px;
   }
 
   .x-follow-gate__step-state {
@@ -273,6 +381,10 @@
   .x-follow-gate__action,
   .x-follow-gate__follow-link {
     width: 100%;
+  }
+
+  .x-follow-gate .rb-stepper__content {
+    min-height: 0;
   }
 
   .x-follow-gate__test-skip {

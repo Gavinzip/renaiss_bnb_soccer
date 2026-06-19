@@ -27,6 +27,7 @@ export function XFollowGate({
   authConfig,
   authEndpointReady,
   onRefreshAuth,
+  onRequestClose,
 }) {
   const { t } = useCampaignCopy();
   const [activeStep, setActiveStep] = useState(authSession?.xFollow?.xConnected ? 2 : 1);
@@ -46,6 +47,7 @@ export function XFollowGate({
   const canContinueToVerify = authEndpointReady && xConnected;
   const canVerify = authEndpointReady && xConnected && xProviderReady && !verifying && !skipping && retryAfterSeconds <= 0;
   const canSkip = authEndpointReady && skipEnabled && !verifying && !skipping;
+  const canClose = typeof onRequestClose === "function";
 
   useEffect(() => {
     setLocalStatus(authSession?.xFollow || null);
@@ -125,6 +127,11 @@ export function XFollowGate({
 
   return (
     <section className="x-follow-gate" aria-label={t("xFollowGate.aria")}>
+      {canClose ? (
+        <button type="button" className="x-follow-gate__close" onClick={onRequestClose} aria-label={t("xFollowGate.close")}>
+          <X size={16} strokeWidth={2.35} />
+        </button>
+      ) : null}
       <header className="x-follow-gate__head">
         <span>
           <LockKeyhole size={16} strokeWidth={2.35} />
