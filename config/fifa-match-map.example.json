@@ -1,0 +1,11 @@
+{
+  "matches": [
+    {
+      "matchId": "m73",
+      "fifaMatchId": "400000000",
+      "teamIds": ["italy", "united-states"],
+      "enforceTeamMatch": true,
+      "note": "Replace fifaMatchId with the official FIFA IdMatch for this local match before production sync."
+    }
+  ]
+}

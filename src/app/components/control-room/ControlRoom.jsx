@@ -2,6 +2,7 @@ import {
   CalendarClock,
   Clock3,
   Database,
+  Medal,
   Home,
   Landmark,
   LogOut,
@@ -32,11 +33,13 @@ const roomLoaders = {
   schedule: () => import("./ScheduleRoom"),
   vote: () => import("./VoteRoom"),
   draw: () => import("./DrawRoom"),
+  winners: () => import("./WinnersRoom"),
 };
 
 const LazyScheduleRoom = lazyNamed(roomLoaders.schedule, "ScheduleRoom");
 const LazyVoteRoom = lazyNamed(roomLoaders.vote, "VoteRoom");
 const LazyDrawRoom = lazyNamed(roomLoaders.draw, "DrawRoom");
+const LazyWinnersRoom = lazyNamed(roomLoaders.winners, "WinnersRoom");
 const roomPreloadCache = new Map();
 
 function preloadRoom(viewId) {
@@ -59,8 +62,8 @@ function preloadRoom(viewId) {
 
 function preloadInactiveRooms(activeViewId) {
   const order = activeViewId === "home"
-    ? ["schedule", "vote", "draw"]
-    : [activeViewId, "schedule", "vote", "draw"];
+    ? ["schedule", "vote", "draw", "winners"]
+    : [activeViewId, "schedule", "vote", "draw", "winners"];
   const uniqueOrder = [...new Set(order)].filter((viewId) => viewId !== "home");
 
   const cancelJobs = uniqueOrder.map((viewId, index) => (
@@ -85,6 +88,7 @@ const viewIcons = {
   schedule: CalendarClock,
   vote: Vote,
   draw: Trophy,
+  winners: Medal,
   rules: ShieldCheck,
 };
 
@@ -107,6 +111,12 @@ function getRoomMeta(viewId, t) {
       eyebrow: t("views.draw.eyebrow"),
       title: t("views.draw.title"),
       body: t("views.draw.body"),
+    },
+    winners: {
+      Icon: Medal,
+      eyebrow: t("views.winners.eyebrow"),
+      title: t("views.winners.title"),
+      body: t("views.winners.body"),
     },
     rules: {
       Icon: ShieldCheck,
@@ -474,6 +484,8 @@ export function ControlRoom({
   roundVoteOutcomes,
   roundOutcomeSummary,
   previewVoteIssue,
+  winnerRevealData,
+  winnerRevealIssue,
   drawStats,
   milestones,
   currentMilestoneValue,
@@ -502,7 +514,7 @@ export function ControlRoom({
   const activeDraw = drawStats.find((round) => round.id === activeRound.id) ?? drawStats[0];
   const accumulatedDrawEntries = (activeDraw?.eligibleEntries ?? 0) + (activeDraw?.pendingEntries ?? 0);
   const matchStateCounts = countMatchStates(matches, activeRoundId);
-  const compactWorkViews = new Set(["schedule", "vote", "draw"]);
+  const compactWorkViews = new Set(["schedule", "vote", "draw", "winners"]);
   const showRoomMast = activeViewId !== "home" && !compactWorkViews.has(activeViewId);
   const authWalletLinked = Boolean(authSession?.walletAddress);
   const showAuthState = Boolean(authEndpointReady);
@@ -589,7 +601,7 @@ export function ControlRoom({
               />
             ) : null}
 
-            {activeViewId !== "draw" ? (
+            {!["draw", "winners"].includes(activeViewId) ? (
               <RoundSwitch
                 rounds={rounds}
                 activeRoundId={activeRoundId}
@@ -665,6 +677,13 @@ export function ControlRoom({
               matches={matches}
               teamsById={teamsById}
               onSelectRound={onSelectRound}
+            />
+          ) : null}
+
+          {activeViewId === "winners" ? (
+            <LazyWinnersRoom
+              winnerRevealData={winnerRevealData}
+              winnerRevealIssue={winnerRevealIssue}
             />
           ) : null}
         </Suspense>

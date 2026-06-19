@@ -28,6 +28,11 @@ import {
   getRoundOutcomeSummary,
   normalizePreviewVotePayload,
 } from "./data/votePreviewRuntime";
+import {
+  DEFAULT_WINNER_REVEAL_VIDEO_URL,
+  getEmptyWinnerRevealData,
+  normalizeWinnerRevealPayload,
+} from "./data/winnerRevealRuntime";
 import { I18nProvider } from "./i18n/I18nProvider";
 import { useCampaignCopy } from "./i18n/useCampaignCopy";
 import renaissLogo from "./assets/renaiss-logo-mark.webp";
@@ -97,6 +102,8 @@ function AppContent() {
   const previewVoteUrl = import.meta.env.VITE_VOTE_PREVIEW_URL
     || (import.meta.env.PROD ? "/api/vote-preview" : "/mock-api/vote-preview.json");
   const voteSubmitUrl = import.meta.env.VITE_VOTE_SUBMIT_URL || (import.meta.env.PROD ? "/api/votes" : "");
+  const winnerRevealVideoUrl = import.meta.env.VITE_WINNER_REVEAL_VIDEO_URL || DEFAULT_WINNER_REVEAL_VIDEO_URL;
+  const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL || (import.meta.env.PROD ? "/api/draw-winners" : "");
   const authMeUrl = import.meta.env.VITE_AUTH_ME_URL || (import.meta.env.PROD ? "/api/auth/me" : "");
   const [ledger, setLedger] = useState(verifiedLedgerSnapshot);
   const [selectedLedgerEntry, setSelectedLedgerEntry] = useState(null);
@@ -108,6 +115,9 @@ function AppContent() {
   const [previewVoteData, setPreviewVoteData] = useState(getEmptyPreviewVoteData);
   const [previewVoteIssue, setPreviewVoteIssue] = useState("");
   const [previewVoteReady, setPreviewVoteReady] = useState(!previewVoteUrl);
+  const [winnerRevealData, setWinnerRevealData] = useState(() => getEmptyWinnerRevealData(winnerRevealVideoUrl));
+  const [winnerRevealIssue, setWinnerRevealIssue] = useState("");
+  const [winnerRevealReady, setWinnerRevealReady] = useState(!drawWinnersUrl);
   const [authSession, setAuthSession] = useState({ authenticated: false, config: null });
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
@@ -308,6 +318,40 @@ function AppContent() {
   }, [previewVoteUrl, selectedWallet, t]);
 
   useEffect(() => {
+    if (!drawWinnersUrl) {
+      setWinnerRevealData(getEmptyWinnerRevealData(winnerRevealVideoUrl));
+      setWinnerRevealReady(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setWinnerRevealReady(false);
+
+    fetch(drawWinnersUrl, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setWinnerRevealData(normalizeWinnerRevealPayload(payload, winnerRevealVideoUrl));
+        setWinnerRevealIssue("");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setWinnerRevealData(getEmptyWinnerRevealData(winnerRevealVideoUrl));
+        setWinnerRevealIssue(t("winnerReveal.dataIssue", { message: error.message }));
+      })
+      .finally(() => {
+        if (!cancelled) setWinnerRevealReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [drawWinnersUrl, t, winnerRevealVideoUrl]);
+
+  useEffect(() => {
     if (simulationMode !== "realtime") return undefined;
 
     let cancelled = false;
@@ -406,11 +450,15 @@ function AppContent() {
     ? { lostTickets: 0, winnerTickets: 0, pendingTickets: 0 }
     : roundOutcomeSummary;
   const drawStats = useMemo(
-    () => roundDefinitions.map((round) => summarizeRoundDraw(round, walletAllocations)),
-    [walletAllocations],
+    () => roundDefinitions.map((round) => summarizeRoundDraw(
+      round,
+      walletAllocations,
+      getRoundOutcomeSummary(previewVoteData, round.id),
+    )),
+    [previewVoteData, walletAllocations],
   );
   const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalFinalTickets ?? 0);
-  const initialDataReady = ledgerReady && milestoneReady && previewVoteReady && authReady;
+  const initialDataReady = ledgerReady && milestoneReady && previewVoteReady && winnerRevealReady && authReady;
   const initialCoverAssetsReady = initialDataReady && initialAssetsReady;
   const initialExperienceReady = initialCoverAssetsReady && initialCoverPaintReady;
 
@@ -609,6 +657,7 @@ function AppContent() {
             matchId: selectedMatch.id,
             teamId: selectedTeamId,
             tickets,
+            requestId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           }),
         });
         const payload = await response.json().catch(() => ({}));
@@ -658,6 +707,8 @@ function AppContent() {
         roundVoteOutcomes={visibleRoundVoteOutcomes}
         roundOutcomeSummary={visibleRoundOutcomeSummary}
         previewVoteIssue={previewVoteIssue}
+        winnerRevealData={winnerRevealData}
+        winnerRevealIssue={winnerRevealIssue}
         drawStats={drawStats}
         milestones={milestoneSummary.milestones}
         currentMilestoneValue={milestoneCurrentValue}

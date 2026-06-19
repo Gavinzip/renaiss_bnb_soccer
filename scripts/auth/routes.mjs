@@ -31,6 +31,7 @@ import {
 const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const AUTH_STATE_COOKIE_PREFIX = 'renaiss_auth_state_'
+const OAUTH_PROVIDER_IDS = ['google', 'x', 'discord']
 
 function normalizeAddress(value) {
   const address = String(value || '').trim()
@@ -111,31 +112,66 @@ function sendJsonResponse(sendJson, request, response, status, payload, headers 
   })
 }
 
+function readEnvString(env, names) {
+  for (const name of names) {
+    const value = String(env[name] || '').trim()
+    if (value) return value
+  }
+  return ''
+}
+
 function buildProviderConfig(env) {
   return {
     google: {
-      clientId: String(env.GOOGLE_CLIENT_ID || '').trim(),
-      clientSecret: String(env.GOOGLE_CLIENT_SECRET || '').trim(),
+      clientId: readEnvString(env, ['GOOGLE_CLIENT_ID']),
+      clientSecret: readEnvString(env, ['GOOGLE_CLIENT_SECRET']),
       authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
       tokenUrl: 'https://oauth2.googleapis.com/token',
       userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
       scope: 'openid email profile',
+      authParams: {
+        prompt: 'select_account',
+      },
+      requiresClientSecret: true,
+      tokenAuthMethod: 'body',
     },
     x: {
-      clientId: String(env.X_CLIENT_ID || env.TWITTER_CLIENT_ID || '').trim(),
-      clientSecret: String(env.X_CLIENT_SECRET || env.TWITTER_CLIENT_SECRET || '').trim(),
+      clientId: readEnvString(env, ['X_CLIENT_ID', 'TWITTER_CLIENT_ID']),
+      clientSecret: readEnvString(env, ['X_CLIENT_SECRET', 'TWITTER_CLIENT_SECRET']),
       authUrl: 'https://x.com/i/oauth2/authorize',
       tokenUrl: 'https://api.x.com/2/oauth2/token',
       userInfoUrl: 'https://api.x.com/2/users/me?user.fields=profile_image_url,verified',
       scope: String(env.X_OAUTH_SCOPE || 'users.read').trim(),
+      requiresClientSecret: true,
+      tokenAuthMethod: 'basic',
+    },
+    discord: {
+      clientId: readEnvString(env, ['DISCORD_CLIENT_ID']),
+      clientSecret: readEnvString(env, ['DISCORD_CLIENT_SECRET']),
+      authUrl: 'https://discord.com/oauth2/authorize',
+      tokenUrl: 'https://discord.com/api/oauth2/token',
+      userInfoUrl: 'https://discord.com/api/users/@me',
+      scope: String(env.DISCORD_OAUTH_SCOPE || 'identify email').trim(),
+      authParams: {
+        prompt: String(env.DISCORD_OAUTH_PROMPT || 'consent').trim(),
+      },
+      requiresClientSecret: true,
+      tokenAuthMethod: 'body',
     },
   }
 }
 
 function providerConfigured(providerConfig, provider) {
   const config = providerConfig[provider]
-  const requiresSecret = provider === 'google' || provider === 'x'
-  return Boolean(config?.clientId && (!requiresSecret || config.clientSecret))
+  return Boolean(config?.clientId && (!config.requiresClientSecret || config.clientSecret))
+}
+
+function parseOAuthRoute(pathname) {
+  const match = /^\/api\/auth\/([^/]+)\/(start|callback)$/.exec(pathname)
+  if (!match) return null
+  const provider = match[1]
+  if (!OAUTH_PROVIDER_IDS.includes(provider)) return null
+  return { provider, action: match[2] }
 }
 
 function oauthStateCookieName(provider) {
@@ -161,15 +197,11 @@ async function exchangeOAuthCode(provider, providerConfig, { code, codeVerifier,
   })
 
   const headers = { 'content-type': 'application/x-www-form-urlencoded' }
-  if (provider === 'x') {
-    if (config.clientSecret) {
-      headers.authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`
-    } else {
-      body.set('client_id', config.clientId)
-    }
+  if (config.tokenAuthMethod === 'basic' && config.clientSecret) {
+    headers.authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`
   } else {
     body.set('client_id', config.clientId)
-    body.set('client_secret', config.clientSecret)
+    if (config.clientSecret) body.set('client_secret', config.clientSecret)
   }
 
   const response = await fetch(config.tokenUrl, {
@@ -200,6 +232,19 @@ async function fetchOAuthIdentity(provider, providerConfig, accessToken) {
       emailVerified: Boolean(payload.email_verified),
       name: payload.name || null,
       picture: payload.picture || null,
+    }
+  }
+
+  if (provider === 'discord') {
+    return {
+      provider: 'discord',
+      providerUserId: String(payload.id || ''),
+      username: payload.username || null,
+      globalName: payload.global_name || null,
+      discriminator: payload.discriminator || null,
+      email: String(payload.email || '').toLowerCase() || null,
+      emailVerified: Boolean(payload.verified),
+      picture: payload.avatar ? `https://cdn.discordapp.com/avatars/${payload.id}/${payload.avatar}.png` : null,
     }
   }
 
@@ -280,6 +325,7 @@ export function createAuthContext({ dataDir, env = process.env }) {
     providers: {
       google: providerConfigured(providerConfig, 'google'),
       x: providerConfigured(providerConfig, 'x'),
+      discord: providerConfigured(providerConfig, 'discord'),
       wallet: true,
       email: emailSenderConfigured(emailConfig),
     },
@@ -333,8 +379,10 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/google/start' || url.pathname === '/api/auth/x/start') {
-    const provider = url.pathname.includes('/google/') ? 'google' : 'x'
+  const oauthRoute = parseOAuthRoute(url.pathname)
+
+  if (oauthRoute?.action === 'start') {
+    const provider = oauthRoute.provider
     if (!providerConfigured(auth.providerConfig, provider)) {
       sendJsonResponse(sendJson, request, response, 503, { error: `${provider} OAuth is not configured.` })
       return true
@@ -360,7 +408,9 @@ export async function handleAuthRoute({
     authorizeUrl.searchParams.set('state', stateToken)
     authorizeUrl.searchParams.set('code_challenge', challenge)
     authorizeUrl.searchParams.set('code_challenge_method', 'S256')
-    if (provider === 'google') authorizeUrl.searchParams.set('prompt', 'select_account')
+    for (const [key, value] of Object.entries(config.authParams || {})) {
+      if (value) authorizeUrl.searchParams.set(key, value)
+    }
 
     redirect(response, authorizeUrl.toString(), {
       'set-cookie': stateCookie(provider, stateToken, auth.sessionConfig.secureCookies),
@@ -368,8 +418,8 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/google/callback' || url.pathname === '/api/auth/x/callback') {
-    const provider = url.pathname.includes('/google/') ? 'google' : 'x'
+  if (oauthRoute?.action === 'callback') {
+    const provider = oauthRoute.provider
     const stateToken = url.searchParams.get('state') || ''
     const code = url.searchParams.get('code') || ''
     const oauthError = url.searchParams.get('error') || ''

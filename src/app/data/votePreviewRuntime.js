@@ -64,10 +64,13 @@ function normalizeRoundSummary(row) {
 
   return {
     roundId,
+    matchCount: normalizeTickets(row.matchCount ?? row.match_count),
+    officialFinalCount: normalizeTickets(row.officialFinalCount ?? row.official_final_count),
     submittedTickets: normalizeTickets(row.submittedTickets ?? row.submitted_tickets),
     settledTickets: normalizeTickets(row.settledTickets ?? row.settled_tickets),
     wonTickets: normalizeTickets(row.wonTickets ?? row.won_tickets),
     lostTickets: normalizeTickets(row.lostTickets ?? row.lost_tickets),
+    pendingTickets: normalizeTickets(row.pendingTickets ?? row.pending_tickets),
   };
 }
 
@@ -97,9 +100,12 @@ export function getEmptyPreviewVoteData() {
 export function getRoundOutcomeSummary(previewVoteData, roundId) {
   return previewVoteData?.roundSummaries?.find((entry) => entry.roundId === roundId) ?? {
     roundId,
+    matchCount: 0,
+    officialFinalCount: 0,
     submittedTickets: 0,
     settledTickets: 0,
     wonTickets: 0,
     lostTickets: 0,
+    pendingTickets: 0,
   };
 }

@@ -12,6 +12,7 @@ export const commandViews = [
   { id: "schedule" },
   { id: "vote" },
   { id: "draw" },
+  { id: "winners" },
 ];
 
 export function normalizeLedgerSummary(payload) {
@@ -139,43 +140,26 @@ export function getMatchById(matchId) {
   return campaignMatches.find((match) => match.id === matchId) ?? campaignMatches[0];
 }
 
-export function summarizeRoundDraw(round, allocations) {
+export function summarizeRoundDraw(round, allocations, outcomeSummary = null) {
   const matches = getMatchesForRound(round.id);
-  const officialMatches = matches.filter((match) => match.status === "official_final");
-  const totalPoolEntries = Math.max(
-    officialMatches.reduce((total, match) => total + (match.poolEntries || 0), 0),
-    0,
-  );
   const roundAllocations = allocations.filter((allocation) => allocation.roundId === round.id);
-
-  const eligibleEntries = roundAllocations.reduce((total, allocation) => {
-    const match = matches.find((entry) => entry.id === allocation.matchId);
-    if (match?.status !== "official_final" || allocation.teamId !== match.advancingTeamId) return total;
-    return total + allocation.tickets * round.multiplier;
-  }, 0);
-
-  const lostEntries = roundAllocations.reduce((total, allocation) => {
-    const match = matches.find((entry) => entry.id === allocation.matchId);
-    if (match?.status !== "official_final" || allocation.teamId === match.advancingTeamId) return total;
-    return total + allocation.tickets;
-  }, 0);
-
-  const pendingEntries = roundAllocations.reduce((total, allocation) => {
-    const match = matches.find((entry) => entry.id === allocation.matchId);
-    return match?.status === "official_final" ? total : total + allocation.tickets;
-  }, 0);
+  const submittedTickets = outcomeSummary?.submittedTickets
+    ?? roundAllocations.reduce((total, allocation) => total + allocation.tickets, 0);
+  const settledTickets = outcomeSummary?.settledTickets ?? 0;
+  const eligibleEntries = Math.max(0, Math.floor(Number(outcomeSummary?.wonTickets ?? 0) || 0)) * round.multiplier;
+  const lostEntries = Math.max(0, Math.floor(Number(outcomeSummary?.lostTickets ?? 0) || 0));
+  const pendingEntries = outcomeSummary?.pendingTickets ?? Math.max(0, submittedTickets - settledTickets);
+  const totalPoolEntries = Math.max(eligibleEntries + pendingEntries, eligibleEntries);
 
   const drawStatusResolved =
-    officialMatches.length === matches.length && matches.length > 0
-      ? "eligible_ready"
-      : eligibleEntries > 0
+    eligibleEntries > 0
         ? "eligible_ready"
         : round.drawStatus;
 
   return {
     ...round,
-    matchCount: matches.length,
-    officialFinalCount: officialMatches.length,
+    matchCount: outcomeSummary?.matchCount ?? matches.length,
+    officialFinalCount: outcomeSummary?.officialFinalCount ?? 0,
     totalPoolEntries,
     eligibleEntries,
     lostEntries,

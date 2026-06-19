@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFileSync, createReadStream, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { extname, join, normalize, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -23,11 +23,17 @@ import {
   parseEntryIntervalQuery,
   readLedgerPayload,
 } from './soccer-ledger-api.mjs'
-import { readVotePreview, submitVote } from './soccer-vote-store.mjs'
+import { readMatchResultsSnapshot, summarizeMatchResults } from './soccer-match-results.mjs'
+import { readVotePreview, readVoteState, submitVote } from './soccer-vote-store.mjs'
+import { createSqliteVoteStore } from './soccer-vote-store-sqlite.mjs'
 import { loadLocalEnvFiles } from './env-loader.mjs'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 loadLocalEnvFiles(repoRoot)
+
+const port = Number(process.env.PORT || 3000)
+const runtimeTarget = normalizeRuntimeTarget(process.env.SOCCER_RUNTIME_TARGET || process.env.RENAISS_RUNTIME_TARGET || 'server')
+applyRuntimeDefaults({ runtimeTarget, repoRoot, port })
 
 const distDir = resolve(repoRoot, 'dist')
 const dataDir = process.env.SOCCER_DATA_DIR || process.env.LUCKY_DRAW_DATA_DIR || '/data/soccer'
@@ -38,14 +44,25 @@ const votesDir = process.env.SOCCER_VOTES_DIR || join(dataDir, 'votes')
 const voteEventsPath = process.env.SOCCER_VOTE_EVENTS_PATH || join(votesDir, 'vote-events.jsonl')
 const voteStatePath = process.env.SOCCER_VOTE_STATE_PATH || join(votesDir, 'vote-state.json')
 const votePreviewPath = process.env.SOCCER_VOTE_PREVIEW_PATH || join(votesDir, 'vote-preview.json')
+const voteStoreMode = normalizeVoteStoreMode(process.env.SOCCER_VOTE_STORE || 'json')
+const voteDbPath = process.env.SOCCER_VOTE_DB_PATH || join(votesDir, 'vote-store.sqlite')
+const matchResultsPath = process.env.SOCCER_MATCH_RESULTS_PATH || join(dataDir, 'match-results.json')
+const matchDrawLedgerPath = process.env.SOCCER_MATCH_DRAW_LEDGER_PATH || join(dataDir, 'match-draw-ledger.json')
+const drawWinnersPath = process.env.SOCCER_DRAW_WINNERS_PATH || join(dataDir, 'draw-winners.json')
+const winnerRevealVideoUrl = process.env.WINNER_REVEAL_VIDEO_URL || process.env.VITE_WINNER_REVEAL_VIDEO_URL || ''
+const fifaSourceMapPath = process.env.FIFA_RESULTS_SOURCE_MAP_PATH || join(dataDir, 'fifa-match-map.json')
 const auth = createAuthContext({ dataDir })
 const snapshotKeep = readIntegerEnv('LUCKY_DRAW_SNAPSHOT_KEEP', 72, 1)
-const port = Number(process.env.PORT || 3000)
 const refreshMinutes = readIntegerEnv('LUCKY_DRAW_REFRESH_MINUTES', 10, 1)
 const refreshIntervalMs = refreshMinutes * 60 * 1000
 const refreshHistoryLimit = readIntegerEnv('LUCKY_DRAW_REFRESH_HISTORY_LIMIT', 24, 1)
 const refreshEnabled = process.env.LUCKY_DRAW_REFRESH_ENABLED !== '0'
 const refreshOnStartup = process.env.LUCKY_DRAW_REFRESH_ON_STARTUP !== '0'
+const fifaResultSyncMinutes = readIntegerEnv('FIFA_RESULT_SYNC_MINUTES', 10, 1)
+const fifaResultSyncIntervalMs = fifaResultSyncMinutes * 60 * 1000
+const fifaResultSyncHistoryLimit = readIntegerEnv('FIFA_RESULT_SYNC_HISTORY_LIMIT', 24, 1)
+const fifaResultSyncEnabled = process.env.FIFA_RESULT_SYNC_ENABLED !== '0'
+const fifaResultSyncOnStartup = process.env.FIFA_RESULT_SYNC_ON_STARTUP !== '0'
 const backupIntervalMinutes = readIntegerEnv('DATA_BACKUP_INTERVAL_MINUTES', 60, 1)
 const backupIntervalMs = backupIntervalMinutes * 60 * 1000
 const backupHistoryLimit = readIntegerEnv('DATA_BACKUP_HISTORY_LIMIT', 24, 1)
@@ -62,6 +79,112 @@ const backoffMs = process.env.LUCKY_DRAW_BACKOFF_MS || '1000'
 const requestBodyLimitBytes = readIntegerEnv('HTTP_JSON_BODY_LIMIT_BYTES', 64 * 1024, 1024)
 const authRequiredForVotes = process.env.AUTH_REQUIRE_SESSION_FOR_VOTES !== '0'
 
+function normalizeVoteStoreMode(value) {
+  const mode = String(value || '').trim().toLowerCase()
+  if (!mode || mode === 'json') return 'json'
+  if (mode === 'sqlite') return 'sqlite'
+  throw new Error(`Unsupported SOCCER_VOTE_STORE=${value}. Use json or sqlite.`)
+}
+
+function normalizeRuntimeTarget(value) {
+  const target = String(value || '').trim().toLowerCase()
+  if (!target || ['server', 'production', 'prod'].includes(target)) return 'server'
+  if (['local', 'dev', 'development'].includes(target)) return 'local'
+  throw new Error(`Unsupported SOCCER_RUNTIME_TARGET=${value}. Use server or local.`)
+}
+
+function resolveRuntimePath(rootDir, value) {
+  const path = String(value || '').trim()
+  if (!path) return ''
+  return path.startsWith('/') ? path : resolve(rootDir, path)
+}
+
+function applyDefaultEnv(name, value, { replace = [] } = {}) {
+  const current = process.env[name]
+  if (current === undefined || current === '' || replace.includes(current)) {
+    process.env[name] = value
+  }
+}
+
+function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
+  if (runtimeTarget !== 'local') return
+
+  const localDataDir = resolveRuntimePath(repoRoot, process.env.SOCCER_LOCAL_DATA_DIR || '.local-data/soccer')
+  const localOrigin = process.env.SOCCER_LOCAL_APP_ORIGIN || `http://127.0.0.1:${port}`
+  const serverDataDir = '/data/soccer'
+  const serverOrigin = 'https://renaiss-worldcup.zeabur.app'
+  const localDefaultDirs = [
+    '.local-data/soccer',
+    '.local-data/soccer-production',
+    '.local-data/soccer-test-batch',
+  ]
+  const localDataReplacements = [
+    serverDataDir,
+    ...localDefaultDirs,
+    ...localDefaultDirs.map((path) => resolve(repoRoot, path)),
+  ]
+  const localPathReplacements = (...suffixes) => [
+    ...suffixes.map((suffix) => `${serverDataDir}/${suffix}`),
+    ...localDefaultDirs.flatMap((dir) => suffixes.map((suffix) => `${dir}/${suffix}`)),
+    ...localDefaultDirs.flatMap((dir) => suffixes.map((suffix) => join(resolve(repoRoot, dir), suffix))),
+  ]
+
+  applyDefaultEnv('SOCCER_DATA_DIR', localDataDir, { replace: localDataReplacements })
+  applyDefaultEnv('LUCKY_DRAW_DATA_DIR', localDataDir, { replace: localDataReplacements })
+  applyDefaultEnv('LUCKY_DRAW_CACHE_DIR', join(localDataDir, 'cache'), { replace: localPathReplacements('cache') })
+  applyDefaultEnv('LUCKY_DRAW_LEDGER_PATH', join(localDataDir, 'lucky-draw-ledger.json'), {
+    replace: localPathReplacements('lucky-draw-ledger.json'),
+  })
+  applyDefaultEnv('LUCKY_DRAW_SNAPSHOT_DIR', join(localDataDir, 'snapshots'), {
+    replace: localPathReplacements('snapshots'),
+  })
+  applyDefaultEnv('SOCCER_VOTES_DIR', join(localDataDir, 'votes'), { replace: localPathReplacements('votes') })
+  applyDefaultEnv('SOCCER_VOTE_STORE', 'sqlite')
+  applyDefaultEnv('SOCCER_VOTE_DB_PATH', join(localDataDir, 'votes/vote-store.sqlite'), {
+    replace: localPathReplacements('votes/vote-store.sqlite'),
+  })
+  applyDefaultEnv('SOCCER_VOTE_STATE_PATH', join(localDataDir, 'votes/vote-state.json'), {
+    replace: localPathReplacements('votes/vote-state.json'),
+  })
+  applyDefaultEnv('SOCCER_VOTE_PREVIEW_PATH', join(localDataDir, 'votes/vote-preview.json'), {
+    replace: localPathReplacements('votes/vote-preview.json'),
+  })
+  applyDefaultEnv('SOCCER_MATCH_RESULTS_PATH', join(localDataDir, 'match-results.json'), {
+    replace: localPathReplacements('match-results.json'),
+  })
+  applyDefaultEnv('SOCCER_MATCH_DRAW_LEDGER_PATH', join(localDataDir, 'match-draw-ledger.json'), {
+    replace: localPathReplacements('match-draw-ledger.json'),
+  })
+  applyDefaultEnv('SOCCER_DRAW_WINNERS_PATH', join(localDataDir, 'draw-winners.json'), {
+    replace: localPathReplacements('draw-winners.json'),
+  })
+  applyDefaultEnv('FIFA_RESULTS_SOURCE_MAP_PATH', join(localDataDir, 'fifa-match-map.json'), {
+    replace: localPathReplacements('fifa-match-map.json'),
+  })
+
+  applyDefaultEnv('PUBLIC_APP_ORIGIN', localOrigin, { replace: [serverOrigin] })
+  applyDefaultEnv('AUTH_PUBLIC_ORIGIN', localOrigin, { replace: [serverOrigin] })
+  applyDefaultEnv('GOOGLE_REDIRECT_URI', `${localOrigin}/api/auth/google/callback`, {
+    replace: [`${serverOrigin}/api/auth/google/callback`],
+  })
+  applyDefaultEnv('DISCORD_REDIRECT_URI', `${localOrigin}/api/auth/discord/callback`, {
+    replace: [`${serverOrigin}/api/auth/discord/callback`],
+  })
+  applyDefaultEnv('X_REDIRECT_URI', `${localOrigin}/api/auth/x/callback`, {
+    replace: [`${serverOrigin}/api/auth/x/callback`],
+  })
+  applyDefaultEnv('SIWE_DOMAIN', new URL(localOrigin).host, { replace: ['renaiss-worldcup.zeabur.app'] })
+  applyDefaultEnv('AUTH_COOKIE_SECURE', '0', { replace: ['1'] })
+  applyDefaultEnv('AUTH_REQUIRE_SESSION_FOR_VOTES', '0', { replace: ['1'] })
+
+  applyDefaultEnv('LUCKY_DRAW_REFRESH_ENABLED', '0')
+  applyDefaultEnv('LUCKY_DRAW_REFRESH_ON_STARTUP', '0')
+  applyDefaultEnv('FIFA_RESULT_SYNC_ENABLED', '0')
+  applyDefaultEnv('FIFA_RESULT_SYNC_ON_STARTUP', '0')
+  applyDefaultEnv('DATA_BACKUP_ENABLED', '0')
+  applyDefaultEnv('DATA_BACKUP_RESTORE_ON_STARTUP', '0')
+}
+
 let refreshRunning = false
 let refreshTimer = null
 let backupRunning = false
@@ -77,6 +200,18 @@ let lastRefresh = {
   trigger: null,
 }
 let refreshHistory = []
+let fifaResultSyncRunning = false
+let fifaResultSyncTimer = null
+let lastFifaResultSync = {
+  ok: false,
+  startedAt: null,
+  finishedAt: null,
+  durationSeconds: null,
+  exitCode: null,
+  error: null,
+  trigger: null,
+}
+let fifaResultSyncHistory = []
 let lastBackup = {
   ok: false,
   startedAt: null,
@@ -117,6 +252,10 @@ function durationSeconds(startedAt, finishedAt) {
 
 function rememberRefresh(entry) {
   refreshHistory = [{ ...entry }, ...refreshHistory].slice(0, refreshHistoryLimit)
+}
+
+function rememberFifaResultSync(entry) {
+  fifaResultSyncHistory = [{ ...entry }, ...fifaResultSyncHistory].slice(0, fifaResultSyncHistoryLimit)
 }
 
 function rememberBackup(entry) {
@@ -170,9 +309,99 @@ function readHealthLedgerSnapshot() {
   }
 }
 
+function readHealthMatchResultsSnapshot() {
+  if (!existsSync(matchResultsPath)) {
+    return {
+      exists: false,
+      generatedAt: null,
+      sourceStatus: 'missing',
+      hash: null,
+      summary: summarizeMatchResults(null),
+      error: null,
+    }
+  }
+
+  try {
+    const snapshot = readMatchResultsSnapshot(matchResultsPath)
+    return {
+      exists: true,
+      generatedAt: snapshot.generatedAt || null,
+      sourceStatus: snapshot.sourceStatus || null,
+      hash: snapshot.hash || null,
+      summary: summarizeMatchResults(snapshot),
+      error: null,
+    }
+  } catch (error) {
+    return {
+      exists: true,
+      generatedAt: null,
+      sourceStatus: 'error',
+      hash: null,
+      summary: summarizeMatchResults(null),
+      error: error instanceof Error ? error.message : 'Could not read match results.',
+    }
+  }
+}
+
+function readDrawWinnersSnapshot() {
+  if (!existsSync(drawWinnersPath)) {
+    return {
+      version: 1,
+      mode: 'draw-winners',
+      sourceLabel: 'on-chain-reveal',
+      sourceStatus: 'pending',
+      generatedAt: null,
+      videoUrl: winnerRevealVideoUrl,
+      winners: [],
+      winnersBySlot: [],
+    }
+  }
+
+  const payload = JSON.parse(readFileSync(drawWinnersPath, 'utf8'))
+  return {
+    videoUrl: payload.videoUrl || winnerRevealVideoUrl,
+    winners: Array.isArray(payload.winners) ? payload.winners : [],
+    winnersBySlot: Array.isArray(payload.winnersBySlot) ? payload.winnersBySlot : [],
+    ...payload,
+    videoUrl: payload.videoUrl || winnerRevealVideoUrl,
+  }
+}
+
 function readIntegerValue(value) {
   const number = Number(value || 0)
   return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0
+}
+
+function summarizeVoteState(state) {
+  const allocations = Array.isArray(state?.allocations) ? state.allocations : []
+  const voters = new Set()
+  const ticketsByRound = new Map()
+  const ticketsByMatch = new Map()
+  let submittedTickets = 0
+
+  for (const allocation of allocations) {
+    const walletAddress = String(allocation.walletAddress || '').toLowerCase()
+    if (walletAddress) voters.add(walletAddress)
+    const tickets = readIntegerValue(allocation.tickets)
+    submittedTickets += tickets
+    const roundId = String(allocation.roundId || '')
+    const matchId = String(allocation.matchId || '')
+    if (roundId) ticketsByRound.set(roundId, (ticketsByRound.get(roundId) || 0) + tickets)
+    if (matchId) ticketsByMatch.set(matchId, (ticketsByMatch.get(matchId) || 0) + tickets)
+  }
+
+  return {
+    sourceLabel: state?.sourceLabel || null,
+    sourceStatus: state?.sourceStatus || null,
+    syncedFromProductionAt: state?.syncedFromProductionAt || null,
+    productionOrigin: state?.productionOrigin || null,
+    allocationCount: allocations.length,
+    voterCount: voters.size,
+    submittedTickets,
+    eventCount: readIntegerValue(state?.eventCount),
+    ticketsByRound: Object.fromEntries([...ticketsByRound.entries()].sort(([left], [right]) => left.localeCompare(right))),
+    ticketsByMatch: Object.fromEntries([...ticketsByMatch.entries()].sort(([left], [right]) => left.localeCompare(right))),
+  }
 }
 
 function contentType(path) {
@@ -317,6 +546,61 @@ function buildMilestoneSummary(ledger) {
     sourceStatus: 'live',
     generatedAt: ledger.generatedAt || null,
   }
+}
+
+function createJsonVoteStore() {
+  return {
+    mode: 'json',
+    statePath: voteStatePath,
+    eventsPath: voteEventsPath,
+    previewPath: votePreviewPath,
+    readState() {
+      return readVoteState(voteStatePath)
+    },
+    readPreview({ walletAddress = '', matchResults = null } = {}) {
+      return readVotePreview({
+        statePath: voteStatePath,
+        walletAddress,
+        matchResults,
+      })
+    },
+    submitVote({ ledger, input, matchResults = null }) {
+      return submitVote({
+        statePath: voteStatePath,
+        eventsPath: voteEventsPath,
+        previewPath: votePreviewPath,
+        ledger,
+        matchResults,
+        input,
+      })
+    },
+    health() {
+      const state = this.readState()
+      return {
+        mode: 'json',
+        statePath: voteStatePath,
+        eventsPath: voteEventsPath,
+        previewPath: votePreviewPath,
+        stateExists: existsSync(voteStatePath),
+        allocationCount: Array.isArray(state.allocations) ? state.allocations.length : 0,
+        eventCount: state.eventCount || 0,
+        generatedAt: state.generatedAt || null,
+        updatedAt: state.updatedAt || null,
+      }
+    },
+    close() {},
+  }
+}
+
+function createConfiguredVoteStore() {
+  if (voteStoreMode === 'sqlite') {
+    return createSqliteVoteStore({
+      dbPath: voteDbPath,
+      statePath: voteStatePath,
+      previewPath: votePreviewPath,
+    })
+  }
+  return createJsonVoteStore()
 }
 
 function snapshotLedger() {
@@ -579,6 +863,91 @@ function runLedgerRefresh(trigger) {
   })
 }
 
+function runFifaResultSync(trigger) {
+  if (!fifaResultSyncEnabled || fifaResultSyncRunning) return
+  if (!existsSync(fifaSourceMapPath)) {
+    lastFifaResultSync = {
+      ok: false,
+      startedAt: null,
+      finishedAt: new Date().toISOString(),
+      durationSeconds: null,
+      exitCode: null,
+      error: `FIFA source map is not configured: ${fifaSourceMapPath}`,
+      trigger,
+      skipped: true,
+      reason: 'missing-fifa-source-map',
+    }
+    rememberFifaResultSync(lastFifaResultSync)
+    console.warn(`[fifa-result-sync] skipped: source map missing ${fifaSourceMapPath}`)
+    return
+  }
+
+  fifaResultSyncRunning = true
+  lastFifaResultSync = {
+    ok: false,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    durationSeconds: null,
+    exitCode: null,
+    error: null,
+    trigger,
+  }
+  mkdirSync(dataDir, { recursive: true })
+
+  const args = [
+    fileURLToPath(new URL('./sync-fifa-results.mjs', import.meta.url)),
+    '--source-map',
+    fifaSourceMapPath,
+    '--out',
+    matchResultsPath,
+  ]
+
+  if (process.env.FIFA_RESULTS_FROM) args.push('--from', process.env.FIFA_RESULTS_FROM)
+  if (process.env.FIFA_RESULTS_TO) args.push('--to', process.env.FIFA_RESULTS_TO)
+  if (process.env.FIFA_API_BASE_URL) args.push('--base-url', process.env.FIFA_API_BASE_URL)
+  if (process.env.FIFA_RESULTS_REQUEST_TIMEOUT_MS) {
+    args.push('--timeout-ms', process.env.FIFA_RESULTS_REQUEST_TIMEOUT_MS)
+  }
+
+  console.log(`[fifa-result-sync] start trigger=${trigger} sourceMap=${fifaSourceMapPath}`)
+  const child = spawn(process.execPath, args, {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: 'inherit',
+  })
+  child.on('close', (code) => {
+    fifaResultSyncRunning = false
+    const finishedAt = new Date().toISOString()
+    lastFifaResultSync = {
+      ...lastFifaResultSync,
+      ok: code === 0,
+      finishedAt,
+      durationSeconds: durationSeconds(lastFifaResultSync.startedAt, finishedAt),
+      exitCode: code,
+      error: code === 0 ? null : `FIFA result sync exited with code ${code}`,
+    }
+    rememberFifaResultSync(lastFifaResultSync)
+    console.log(
+      `[fifa-result-sync] finish trigger=${trigger} code=${code} duration=${lastFifaResultSync.durationSeconds ?? 'n/a'}s`,
+    )
+    if (code === 0) runDataBackup('fifa-result-sync')
+  })
+  child.on('error', (error) => {
+    fifaResultSyncRunning = false
+    const finishedAt = new Date().toISOString()
+    lastFifaResultSync = {
+      ...lastFifaResultSync,
+      ok: false,
+      finishedAt,
+      durationSeconds: durationSeconds(lastFifaResultSync.startedAt, finishedAt),
+      exitCode: null,
+      error: error.message,
+    }
+    rememberFifaResultSync(lastFifaResultSync)
+    console.error('[fifa-result-sync] failed', error)
+  })
+}
+
 async function readJsonBody(request) {
   let body = ''
   for await (const chunk of request) {
@@ -620,6 +989,7 @@ const server = createServer(async (request, response) => {
       200,
       {
         ok: true,
+        runtimeTarget,
         dataDir,
         cacheDir,
         ledgerPath,
@@ -631,7 +1001,18 @@ const server = createServer(async (request, response) => {
         voteEventsPath,
         voteStatePath,
         votePreviewPath,
+        voteStoreMode,
+        voteDbPath: voteStoreMode === 'sqlite' ? voteDbPath : null,
         voteStateExists: existsSync(voteStatePath),
+        voteStore: voteStore.health(),
+        votes: summarizeVoteState(voteStore.readState()),
+        matchResultsPath,
+        matchResults: readHealthMatchResultsSnapshot(),
+        matchDrawLedgerPath,
+        matchDrawLedgerExists: existsSync(matchDrawLedgerPath),
+        drawWinnersPath,
+        drawWinnersExists: existsSync(drawWinnersPath),
+        winnerRevealVideoUrlConfigured: Boolean(winnerRevealVideoUrl),
         authDir: auth.authDir,
         auth: {
           ...getAuthPublicStatus(auth),
@@ -644,6 +1025,14 @@ const server = createServer(async (request, response) => {
         bscscanApiKeyConfigured: Boolean(process.env.BSCSCAN_API_KEY),
         lastRefresh,
         refreshHistory,
+        fifaResultSyncEnabled,
+        fifaResultSyncOnStartup,
+        fifaResultSyncMinutes,
+        fifaResultSyncRunning,
+        fifaSourceMapPath,
+        fifaSourceMapExists: existsSync(fifaSourceMapPath),
+        lastFifaResultSync,
+        fifaResultSyncHistory,
         backupEnabled,
         backupRepoUrlConfigured: Boolean(backupRepoUrl),
         backupTokenConfigured: Boolean(process.env.DATA_BACKUP_GITHUB_TOKEN),
@@ -742,16 +1131,52 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  if (url.pathname === '/api/match-results') {
+    try {
+      const snapshot = readMatchResultsSnapshot(matchResultsPath)
+      sendJson(request, response, 200, snapshot, {
+        'cache-control': 'no-store',
+      })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        503,
+        { error: error instanceof Error ? error.message : 'Could not read match results.' },
+        { 'cache-control': 'no-store' },
+      )
+    }
+    return
+  }
+
+  if (url.pathname === '/api/draw-winners') {
+    try {
+      sendJson(request, response, 200, readDrawWinnersSnapshot(), {
+        'cache-control': 'no-store',
+      })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        503,
+        { error: error instanceof Error ? error.message : 'Could not read draw winners.' },
+        { 'cache-control': 'no-store' },
+      )
+    }
+    return
+  }
+
   if (url.pathname === '/api/vote-preview') {
     try {
       const session = readAuthSession(auth, request)
+      const matchResults = readMatchResultsSnapshot(matchResultsPath)
       sendJson(
         request,
         response,
         200,
-        readVotePreview({
-          statePath: voteStatePath,
+        voteStore.readPreview({
           walletAddress: url.searchParams.get('wallet') || session?.walletAddress || '',
+          matchResults,
         }),
         { 'cache-control': 'no-store' },
       )
@@ -785,11 +1210,10 @@ const server = createServer(async (request, response) => {
         return
       }
       const ledger = readLedgerPayload(ledgerPath)
-      const result = submitVote({
-        statePath: voteStatePath,
-        eventsPath: voteEventsPath,
-        previewPath: votePreviewPath,
+      const matchResults = readMatchResultsSnapshot(matchResultsPath)
+      const result = voteStore.submitVote({
         ledger,
+        matchResults,
         input: {
           ...body,
           ...(session?.walletAddress ? { walletAddress: session.walletAddress } : {}),
@@ -832,6 +1256,22 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  if (url.pathname === '/match-draw-ledger.json') {
+    sendFile(request, response, matchDrawLedgerPath, {
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*',
+    })
+    return
+  }
+
+  if (url.pathname === '/draw-winners.json') {
+    sendJson(request, response, 200, readDrawWinnersSnapshot(), {
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*',
+    })
+    return
+  }
+
   if (url.pathname === '/vote-preview.json') {
     if (existsSync(votePreviewPath)) {
       sendFile(request, response, votePreviewPath, {
@@ -840,7 +1280,9 @@ const server = createServer(async (request, response) => {
       })
       return
     }
-    sendJson(request, response, 200, readVotePreview({ statePath: voteStatePath }), {
+    sendJson(request, response, 200, voteStore.readPreview({
+      matchResults: readMatchResultsSnapshot(matchResultsPath),
+    }), {
       'cache-control': 'no-store',
     })
     return
@@ -869,9 +1311,15 @@ mkdirSync(cacheDir, { recursive: true })
 mkdirSync(votesDir, { recursive: true })
 mkdirSync(auth.authDir, { recursive: true })
 
+const voteStore = createConfiguredVoteStore()
+
 function startBackgroundJobs() {
   if (refreshEnabled && refreshOnStartup) runLedgerRefresh('startup')
   if (refreshEnabled) refreshTimer = setInterval(() => runLedgerRefresh('interval'), refreshIntervalMs)
+  if (fifaResultSyncEnabled && fifaResultSyncOnStartup) runFifaResultSync('startup')
+  if (fifaResultSyncEnabled) {
+    fifaResultSyncTimer = setInterval(() => runFifaResultSync('interval'), fifaResultSyncIntervalMs)
+  }
   if (backupEnabled) {
     backupTimer = setInterval(() => runDataBackup('interval'), backupIntervalMs)
   } else {
@@ -883,7 +1331,11 @@ server.listen(port, () => {
   console.log(`[server] listening on ${port}`)
   console.log(`[server] dataDir=${dataDir}`)
   console.log(`[server] ledgerPath=${ledgerPath}`)
+  console.log(`[server] voteStore=${voteStore.mode}`)
   console.log(`[server] voteStatePath=${voteStatePath}`)
+  if (voteStore.mode === 'sqlite') console.log(`[server] voteDbPath=${voteDbPath}`)
+  console.log(`[server] matchResultsPath=${matchResultsPath}`)
+  console.log(`[server] matchDrawLedgerPath=${matchDrawLedgerPath}`)
   if (restoreEnabled) {
     runDataRestore('startup', startBackgroundJobs)
   } else {
@@ -896,7 +1348,9 @@ server.listen(port, () => {
 function shutdown(signal) {
   console.log(`[server] shutdown signal=${signal}`)
   if (refreshTimer) clearInterval(refreshTimer)
+  if (fifaResultSyncTimer) clearInterval(fifaResultSyncTimer)
   if (backupTimer) clearInterval(backupTimer)
+  voteStore.close?.()
   server.close(() => process.exit(0))
 }
 

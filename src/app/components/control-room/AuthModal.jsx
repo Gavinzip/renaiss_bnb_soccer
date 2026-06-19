@@ -1,4 +1,4 @@
-import { AtSign, Chrome, Loader2, Mail, ShieldCheck, WalletCards, X } from "lucide-react";
+import { AtSign, Chrome, Loader2, Mail, MessageCircle, ShieldCheck, WalletCards, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { compactAddress } from "../../data/ticketMath";
 import { Magnet } from "../Magnet";
@@ -49,6 +49,13 @@ export function AuthModal({
       label: t("auth.x"),
       enabled: hasBackend && providerEnabled(authConfig, "x"),
       href: providerHref("x"),
+    },
+    {
+      id: "discord",
+      Icon: MessageCircle,
+      label: t("auth.discord"),
+      enabled: hasBackend && providerEnabled(authConfig, "discord"),
+      href: providerHref("discord"),
     },
   ]), [authConfig, hasBackend, t]);
 

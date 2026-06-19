@@ -24,6 +24,7 @@ export const enLocale = {
       "schedule": "Schedule",
       "vote": "Vote",
       "draw": "Draw",
+      "winners": "Winners",
       "rules": "Rules"
     },
     "common": {
@@ -152,6 +153,11 @@ export const enLocale = {
         "eyebrow": "Round prize desk",
         "title": "Per-Round Draw Desk",
         "body": "Each round uses its configured prize slots. Only correct picks from that round enter that pool."
+      },
+      "winners": {
+        "eyebrow": "Reveal desk",
+        "title": "Winner List",
+        "body": "The reveal video plays first, then official on-chain winners appear in reveal order."
       },
       "rules": {
         "eyebrow": "Operating rulebook",
@@ -588,6 +594,43 @@ export const enLocale = {
         "snapshot": "Snapshot",
         "reveal": "Reveal"
       }
+    },
+    "winnerReveal": {
+      "roomAria": "Winner reveal room",
+      "eyebrow": "Draw reveal",
+      "title": "Winner List",
+      "body": "Official winners appear only after the on-chain reveal snapshot is available.",
+      "videoAria": "Winner reveal video",
+      "controlsAria": "Winner reveal controls",
+      "skipVideo": "Reveal list",
+      "replay": "Replay",
+      "videoIssue": "Reveal video could not load.",
+      "dataIssue": "Winner API failed ({message}).",
+      "boardEyebrow": "Official order",
+      "boardTitle": "Revealed winners",
+      "boardBody": "Rows enter in the same order as the on-chain reveal events.",
+      "pendingTitle": "Waiting for official reveal",
+      "pendingBody": "The list opens after finalize, request, VRF fulfillment, and prize-slot reveal are verified.",
+      "metaAria": "Winner reveal metadata",
+      "revealState": "Reveal state",
+      "revealed": "Revealed",
+      "pending": "Pending",
+      "revealedCount": "Rows shown",
+      "drawRef": "Draw ref",
+      "generatedAt": "Generated",
+      "listAria": "Official winners in reveal order",
+      "currentWinnerAria": "Current winner being revealed",
+      "currentWinner": "Now revealing",
+      "revealComplete": "Reveal complete",
+      "waitingReveal": "Waiting",
+      "prize": "Prize",
+      "ticket": "Ticket",
+      "walletPending": "Wallet pending",
+      "prizeSlot": "Prize slot {slot}",
+      "ticketNumber": "Ticket #{ticket}",
+      "pendingAria": "Pending official winners",
+      "noOfficialWinners": "No official winner snapshot yet",
+      "noOfficialWinnersBody": "This page will not show placeholder winners."
     },
     "rules": {
       "roomAria": "Operating rules",

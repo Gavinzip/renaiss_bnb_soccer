@@ -24,6 +24,7 @@ export const zhHantLocale = {
       "schedule": "賽程",
       "vote": "投票",
       "draw": "抽獎",
+      "winners": "中獎名單",
       "rules": "規則"
     },
     "common": {
@@ -152,6 +153,11 @@ export const zhHantLocale = {
         "eyebrow": "每輪獎池",
         "title": "每輪抽獎台",
         "body": "每一輪都使用該輪設定的獎項名額；只有該輪猜中的票會進入該輪獎池。"
+      },
+      "winners": {
+        "eyebrow": "開獎台",
+        "title": "中獎名單",
+        "body": "先播放開獎影片，正式鏈上中獎者再依揭示順序進場。"
       },
       "rules": {
         "eyebrow": "營運規則",
@@ -588,6 +594,43 @@ export const zhHantLocale = {
         "snapshot": "快照",
         "reveal": "揭示"
       }
+    },
+    "winnerReveal": {
+      "roomAria": "中獎揭示頁",
+      "eyebrow": "開獎揭示",
+      "title": "中獎名單",
+      "body": "只有正式鏈上揭示快照可用後，才會顯示中獎者。",
+      "videoAria": "中獎開獎影片",
+      "controlsAria": "開獎影片控制",
+      "skipVideo": "揭示名單",
+      "replay": "重播",
+      "videoIssue": "開獎影片載入失敗。",
+      "dataIssue": "中獎 API 讀取失敗（{message}）。",
+      "boardEyebrow": "正式順序",
+      "boardTitle": "已揭示中獎者",
+      "boardBody": "名單會依鏈上 reveal event 的順序逐筆進場。",
+      "pendingTitle": "等待正式揭示",
+      "pendingBody": "finalize、request、VRF fulfillment 與 prize-slot reveal 都確認後才會開啟名單。",
+      "metaAria": "中獎揭示資料",
+      "revealState": "揭示狀態",
+      "revealed": "已揭示",
+      "pending": "等待中",
+      "revealedCount": "已顯示",
+      "drawRef": "抽獎參照",
+      "generatedAt": "產生時間",
+      "listAria": "依揭示順序排列的正式中獎者",
+      "currentWinnerAria": "目前揭示中的中獎者",
+      "currentWinner": "正在揭示",
+      "revealComplete": "揭示完成",
+      "waitingReveal": "等待揭示",
+      "prize": "獎項",
+      "ticket": "票券",
+      "walletPending": "錢包待確認",
+      "prizeSlot": "獎項名額 {slot}",
+      "ticketNumber": "票號 #{ticket}",
+      "pendingAria": "等待正式中獎名單",
+      "noOfficialWinners": "尚未有正式中獎快照",
+      "noOfficialWinnersBody": "這一頁不會顯示 placeholder 中獎者。"
     },
     "rules": {
       "roomAria": "營運規則",

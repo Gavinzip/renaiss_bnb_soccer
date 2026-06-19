@@ -36,6 +36,41 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         uint256 computedPrizeSlotCount;
     }
 
+    struct RoundMatchInput {
+        bytes32 matchId;
+        bytes32 ledgerHash;
+        uint256 totalTickets;
+        uint256 prizeSlotCount;
+        uint256 alternateCount;
+        string ledgerUri;
+    }
+
+    struct RoundMatchDraw {
+        bytes32 ledgerHash;
+        string ledgerUri;
+        uint256 totalTickets;
+        uint256 prizeSlotCount;
+        uint256 alternateCount;
+        bool revealed;
+        uint256[] winnerTicketsBySlot;
+        uint256[][] alternateTicketsBySlot;
+        uint256[] allComputedTickets;
+    }
+
+    struct RoundDraw {
+        bytes32 ledgerHash;
+        string ledgerUri;
+        uint256 requestId;
+        uint256 randomWord;
+        DrawState state;
+        bytes32[] matchIds;
+        uint256 revealedMatchCount;
+        mapping(bytes32 => bool) knownMatches;
+        mapping(bytes32 => RoundMatchDraw) matches;
+    }
+
+    uint256 public constant MIN_ALTERNATE_COUNT = 2;
+    uint256 public constant MAX_ALTERNATE_COUNT = 16;
     address public drawOperator;
     address public immutable vrfCoordinatorAddress;
     address private s_owner;
@@ -48,6 +83,10 @@ contract RenaissLuckyDraw is VRFConsumerBase {
     mapping(bytes32 => bool) private s_knownDrawIds;
     bytes32[] private s_drawIds;
     mapping(uint256 => bytes32) private s_drawIdByRequestId;
+    mapping(bytes32 => RoundDraw) private s_rounds;
+    mapping(bytes32 => bool) private s_knownRoundIds;
+    bytes32[] private s_roundIds;
+    mapping(uint256 => bytes32) private s_roundIdByRequestId;
 
     event DrawOperatorChanged(address indexed operator);
     event DrawAdminChanged(address indexed admin, bool allowed);
@@ -76,6 +115,32 @@ contract RenaissLuckyDraw is VRFConsumerBase {
     );
     event DrawFulfilled(bytes32 indexed drawId, uint256 indexed requestId, uint256 randomWord, uint256[] winnerTickets);
     event RoundReset(bytes32 indexed drawId);
+    event RoundLedgerFinalized(
+        bytes32 indexed roundId,
+        bytes32 indexed ledgerHash,
+        uint256 matchCount,
+        string ledgerUri
+    );
+    event RoundDrawRequested(bytes32 indexed roundId, uint256 indexed requestId, address indexed caller);
+    event RoundRandomnessFulfilled(bytes32 indexed roundId, uint256 indexed requestId, uint256 randomWord);
+    event RoundMatchPrizeWinnerDrawn(
+        bytes32 indexed roundId,
+        bytes32 indexed matchId,
+        uint256 indexed revealIndex,
+        uint256 prizeSlotIndex,
+        uint256 ticketNumber
+    );
+    event RoundMatchPrizeAlternateDrawn(
+        bytes32 indexed roundId,
+        bytes32 indexed matchId,
+        uint256 indexed revealIndex,
+        uint256 prizeSlotIndex,
+        uint256 alternateIndex,
+        uint256 ticketNumber
+    );
+    event RoundMatchRevealed(bytes32 indexed roundId, bytes32 indexed matchId, uint256 revealIndex);
+    event RoundDrawFulfilled(bytes32 indexed roundId, uint256 indexed requestId, uint256 randomWord);
+    event RoundDrawReset(bytes32 indexed roundId);
     event OwnershipTransferRequested(address indexed from, address indexed to);
     event OwnershipTransferred(address indexed from, address indexed to);
 
@@ -131,6 +196,14 @@ contract RenaissLuckyDraw is VRFConsumerBase {
 
     function drawIds() external view returns (bytes32[] memory) {
         return s_drawIds;
+    }
+
+    function roundIds() external view returns (bytes32[] memory) {
+        return s_roundIds;
+    }
+
+    function roundMatchIds(bytes32 roundId) external view returns (bytes32[] memory) {
+        return s_rounds[roundId].matchIds;
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
@@ -213,6 +286,60 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         emit RoundReset(drawId);
     }
 
+    function finalizeRoundLedger(
+        bytes32 roundId,
+        bytes32 newRoundLedgerHash,
+        RoundMatchInput[] calldata matchInputs,
+        string calldata newRoundLedgerUri
+    ) external onlyDrawAdmin {
+        _validateDrawId(roundId);
+        if (newRoundLedgerHash == bytes32(0) || matchInputs.length == 0) revert InvalidLedger();
+
+        RoundDraw storage round = s_rounds[roundId];
+        if (round.state != DrawState.Draft && round.state != DrawState.LedgerFinalized) revert InvalidState();
+
+        _rememberRoundId(roundId);
+        _resetRoundStorage(round);
+        round.ledgerHash = newRoundLedgerHash;
+        round.ledgerUri = newRoundLedgerUri;
+        round.randomWord = 0;
+        round.requestId = 0;
+        round.revealedMatchCount = 0;
+
+        for (uint256 index = 0; index < matchInputs.length; index++) {
+            RoundMatchInput calldata input = matchInputs[index];
+            _validateRoundMatchInput(round, input);
+
+            round.knownMatches[input.matchId] = true;
+            round.matchIds.push(input.matchId);
+
+            RoundMatchDraw storage matchDraw = round.matches[input.matchId];
+            matchDraw.ledgerHash = input.ledgerHash;
+            matchDraw.ledgerUri = input.ledgerUri;
+            matchDraw.totalTickets = input.totalTickets;
+            matchDraw.prizeSlotCount = input.prizeSlotCount;
+            matchDraw.alternateCount = input.alternateCount;
+            matchDraw.revealed = false;
+        }
+
+        round.state = DrawState.LedgerFinalized;
+        emit RoundLedgerFinalized(roundId, newRoundLedgerHash, matchInputs.length, newRoundLedgerUri);
+    }
+
+    function resetRoundDraft(bytes32 roundId) external onlyDrawAdmin {
+        _validateDrawId(roundId);
+        RoundDraw storage round = s_rounds[roundId];
+        if (round.state == DrawState.RandomnessRequested) revert InvalidState();
+        _resetRoundStorage(round);
+        round.ledgerHash = bytes32(0);
+        round.ledgerUri = "";
+        round.requestId = 0;
+        round.randomWord = 0;
+        round.revealedMatchCount = 0;
+        round.state = DrawState.Draft;
+        emit RoundDrawReset(roundId);
+    }
+
     function requestDraw(bytes32 drawId) external onlyDrawAdmin returns (uint256 newRequestId) {
         _validateDrawId(drawId);
         Draw storage draw = s_draws[drawId];
@@ -235,7 +362,46 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         emit DrawRequested(drawId, newRequestId, msg.sender);
     }
 
+    function requestRoundDraw(bytes32 roundId) external onlyDrawAdmin returns (uint256 newRequestId) {
+        _validateDrawId(roundId);
+        RoundDraw storage round = s_rounds[roundId];
+        if (round.state != DrawState.LedgerFinalized) revert InvalidState();
+        if (round.matchIds.length == 0 || round.ledgerHash == bytes32(0)) revert InvalidLedger();
+        VrfConfig memory config = vrfConfig;
+        if (config.keyHash == bytes32(0) || config.subscriptionId == 0 || config.callbackGasLimit == 0) {
+            revert InvalidVrfConfig();
+        }
+
+        newRequestId = VRFCoordinatorInterface(vrfCoordinatorAddress).requestRandomWords(
+            config.keyHash,
+            config.subscriptionId,
+            config.requestConfirmations,
+            config.callbackGasLimit,
+            1
+        );
+        round.requestId = newRequestId;
+        round.state = DrawState.RandomnessRequested;
+        s_roundIdByRequestId[newRequestId] = roundId;
+        emit RoundDrawRequested(roundId, newRequestId, msg.sender);
+    }
+
     function fulfillRandomWords(uint256 fulfilledRequestId, uint256[] memory randomWords) internal override {
+        bytes32 roundId = s_roundIdByRequestId[fulfilledRequestId];
+        if (roundId != bytes32(0)) {
+            RoundDraw storage round = s_rounds[roundId];
+            if (round.state != DrawState.RandomnessRequested || fulfilledRequestId != round.requestId) {
+                revert InvalidRequest();
+            }
+            if (randomWords.length == 0) revert InvalidRequest();
+
+            _resetRoundRevealStorage(round);
+            round.randomWord = randomWords[0];
+            round.revealedMatchCount = 0;
+            round.state = DrawState.RandomnessReady;
+            emit RoundRandomnessFulfilled(roundId, fulfilledRequestId, randomWords[0]);
+            return;
+        }
+
         bytes32 drawId = s_drawIdByRequestId[fulfilledRequestId];
         if (drawId == bytes32(0)) revert InvalidRequest();
         Draw storage draw = s_draws[drawId];
@@ -303,6 +469,19 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         prizeSlotIndex = _randomUnrevealedPrizeSlot(drawId, draw);
         ticketNumber = _drawPrizeSlot(drawId, draw, prizeSlotIndex);
         _completeIfFulfilled(drawId, draw);
+    }
+
+    function revealRoundMatch(bytes32 roundId, bytes32 matchId) external onlyDrawAdmin {
+        RoundDraw storage round = _readyRound(roundId);
+        _revealRoundMatch(roundId, round, matchId);
+    }
+
+    function revealRoundMatches(bytes32 roundId, bytes32[] calldata matchIds) external onlyDrawAdmin {
+        RoundDraw storage round = _readyRound(roundId);
+        if (matchIds.length == 0) revert InvalidLedger();
+        for (uint256 index = 0; index < matchIds.length; index++) {
+            _revealRoundMatch(roundId, round, matchIds[index]);
+        }
     }
 
     function state(bytes32 drawId) external view returns (DrawState) {
@@ -393,10 +572,143 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         );
     }
 
+    function roundDrawStatus(bytes32 roundId)
+        external
+        view
+        returns (
+            bool finalized,
+            bool requested,
+            bool randomnessReady,
+            bool fulfilled,
+            bytes32 currentLedgerHash,
+            uint256 requestIdValue,
+            uint256 matchCount,
+            uint256 revealedMatchCount
+        )
+    {
+        RoundDraw storage round = s_rounds[roundId];
+        return (
+            round.state >= DrawState.LedgerFinalized,
+            round.state >= DrawState.RandomnessRequested,
+            round.state >= DrawState.RandomnessReady,
+            round.state == DrawState.Fulfilled,
+            round.ledgerHash,
+            round.requestId,
+            round.matchIds.length,
+            round.revealedMatchCount
+        );
+    }
+
+    function roundMatchStatus(bytes32 roundId, bytes32 matchId)
+        external
+        view
+        returns (
+            bytes32 currentLedgerHash,
+            string memory currentLedgerUri,
+            uint256 currentTotalTickets,
+            uint256 currentPrizeSlotCount,
+            uint256 currentAlternateCount,
+            bool revealed
+        )
+    {
+        RoundMatchDraw storage matchDraw = s_rounds[roundId].matches[matchId];
+        return (
+            matchDraw.ledgerHash,
+            matchDraw.ledgerUri,
+            matchDraw.totalTickets,
+            matchDraw.prizeSlotCount,
+            matchDraw.alternateCount,
+            matchDraw.revealed
+        );
+    }
+
+    function roundMatchWinnerTicketsBySlot(bytes32 roundId, bytes32 matchId)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        return s_rounds[roundId].matches[matchId].winnerTicketsBySlot;
+    }
+
+    function roundMatchAlternateTicketsBySlot(bytes32 roundId, bytes32 matchId, uint256 prizeSlotIndex)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        RoundMatchDraw storage matchDraw = s_rounds[roundId].matches[matchId];
+        if (prizeSlotIndex >= matchDraw.alternateTicketsBySlot.length) revert InvalidPrizeSlots();
+        return matchDraw.alternateTicketsBySlot[prizeSlotIndex];
+    }
+
+    function roundMatchAlternateTicketsFlat(bytes32 roundId, bytes32 matchId)
+        external
+        view
+        returns (uint256[] memory tickets)
+    {
+        RoundMatchDraw storage matchDraw = s_rounds[roundId].matches[matchId];
+        uint256 totalAlternates = matchDraw.prizeSlotCount * matchDraw.alternateCount;
+        tickets = new uint256[](totalAlternates);
+        uint256 cursor = 0;
+        for (uint256 slotIndex = 0; slotIndex < matchDraw.alternateTicketsBySlot.length; slotIndex++) {
+            for (
+                uint256 alternateIndex = 0;
+                alternateIndex < matchDraw.alternateTicketsBySlot[slotIndex].length;
+                alternateIndex++
+            ) {
+                tickets[cursor] = matchDraw.alternateTicketsBySlot[slotIndex][alternateIndex];
+                cursor++;
+            }
+        }
+    }
+
     function _readyDraw(bytes32 drawId) internal view returns (Draw storage draw) {
         _validateDrawId(drawId);
         draw = s_draws[drawId];
         if (draw.state != DrawState.RandomnessReady) revert InvalidState();
+    }
+
+    function _readyRound(bytes32 roundId) internal view returns (RoundDraw storage round) {
+        _validateDrawId(roundId);
+        round = s_rounds[roundId];
+        if (round.state != DrawState.RandomnessReady) revert InvalidState();
+    }
+
+    function _revealRoundMatch(bytes32 roundId, RoundDraw storage round, bytes32 matchId) internal {
+        if (!round.knownMatches[matchId]) revert InvalidLedger();
+        RoundMatchDraw storage matchDraw = round.matches[matchId];
+        if (matchDraw.revealed) revert InvalidState();
+
+        uint256 revealIndex = round.revealedMatchCount;
+        _computeRoundMatchTickets(roundId, round, matchId, matchDraw);
+
+        matchDraw.revealed = true;
+        round.revealedMatchCount++;
+
+        for (uint256 slotIndex = 0; slotIndex < matchDraw.prizeSlotCount; slotIndex++) {
+            emit RoundMatchPrizeWinnerDrawn(
+                roundId,
+                matchId,
+                revealIndex,
+                slotIndex,
+                matchDraw.winnerTicketsBySlot[slotIndex]
+            );
+            for (uint256 alternateIndex = 0; alternateIndex < matchDraw.alternateCount; alternateIndex++) {
+                emit RoundMatchPrizeAlternateDrawn(
+                    roundId,
+                    matchId,
+                    revealIndex,
+                    slotIndex,
+                    alternateIndex,
+                    matchDraw.alternateTicketsBySlot[slotIndex][alternateIndex]
+                );
+            }
+        }
+
+        emit RoundMatchRevealed(roundId, matchId, revealIndex);
+        if (round.revealedMatchCount == round.matchIds.length) {
+            round.state = DrawState.Fulfilled;
+            emit RoundDrawFulfilled(roundId, round.requestId, round.randomWord);
+        }
     }
 
     function _drawPrizeSlot(bytes32 drawId, Draw storage draw, uint256 prizeSlotIndex)
@@ -459,12 +771,33 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         s_drawIds.push(drawId);
     }
 
+    function _rememberRoundId(bytes32 roundId) internal {
+        if (s_knownRoundIds[roundId]) return;
+        s_knownRoundIds[roundId] = true;
+        s_roundIds.push(roundId);
+    }
+
     function _validateDrawId(bytes32 drawId) internal pure {
         if (drawId == bytes32(0)) revert InvalidDrawId();
     }
 
     function _validatePrizeSlotCount(uint256 newPrizeSlotCount) internal pure {
         if (newPrizeSlotCount == 0 || newPrizeSlotCount > 256) revert InvalidPrizeSlots();
+    }
+
+    function _validateAlternateCount(uint256 alternateCount) internal pure {
+        if (alternateCount < MIN_ALTERNATE_COUNT || alternateCount > MAX_ALTERNATE_COUNT) revert InvalidPrizeSlots();
+    }
+
+    function _validateRoundMatchInput(RoundDraw storage round, RoundMatchInput calldata input) internal view {
+        if (input.matchId == bytes32(0) || input.ledgerHash == bytes32(0) || input.totalTickets == 0) {
+            revert InvalidLedger();
+        }
+        if (round.knownMatches[input.matchId]) revert InvalidLedger();
+        _validatePrizeSlotCount(input.prizeSlotCount);
+        _validateAlternateCount(input.alternateCount);
+        uint256 requiredTickets = input.prizeSlotCount * (input.alternateCount + 1);
+        if (input.totalTickets < requiredTickets) revert InvalidPrizeSlots();
     }
 
     function _resetWinnerStorage(Draw storage draw) internal {
@@ -474,6 +807,25 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         delete draw.allComputedTickets;
         delete draw.prizeSlotRevealed;
         draw.computedPrizeSlotCount = 0;
+    }
+
+    function _resetRoundStorage(RoundDraw storage round) internal {
+        for (uint256 index = 0; index < round.matchIds.length; index++) {
+            bytes32 matchId = round.matchIds[index];
+            delete round.matches[matchId];
+            delete round.knownMatches[matchId];
+        }
+        delete round.matchIds;
+    }
+
+    function _resetRoundRevealStorage(RoundDraw storage round) internal {
+        for (uint256 index = 0; index < round.matchIds.length; index++) {
+            RoundMatchDraw storage matchDraw = round.matches[round.matchIds[index]];
+            matchDraw.revealed = false;
+            delete matchDraw.winnerTicketsBySlot;
+            delete matchDraw.alternateTicketsBySlot;
+            delete matchDraw.allComputedTickets;
+        }
     }
 
     function _preparePrizeSlotStorage(Draw storage draw) internal {
@@ -495,6 +847,33 @@ contract RenaissLuckyDraw is VRFConsumerBase {
             draw.winnerTicketsBySlot[computedSlotIndex] = primaryTicket;
             draw.allComputedTickets.push(primaryTicket);
             draw.computedPrizeSlotCount++;
+        }
+    }
+
+    function _computeRoundMatchTickets(
+        bytes32 roundId,
+        RoundDraw storage round,
+        bytes32 matchId,
+        RoundMatchDraw storage matchDraw
+    ) internal {
+        if (matchDraw.winnerTicketsBySlot.length > 0) return;
+
+        uint256 seed = uint256(keccak256(abi.encode(round.randomWord, roundId, matchId, matchDraw.ledgerHash)));
+        uint256 pickIndex = 0;
+        for (uint256 slotIndex = 0; slotIndex < matchDraw.prizeSlotCount; slotIndex++) {
+            uint256 primaryTicket = _drawUniqueRoundTicket(matchDraw, seed, pickIndex);
+            matchDraw.winnerTicketsBySlot.push(primaryTicket);
+            matchDraw.allComputedTickets.push(primaryTicket);
+            pickIndex++;
+
+            matchDraw.alternateTicketsBySlot.push();
+            uint256[] storage alternates = matchDraw.alternateTicketsBySlot[slotIndex];
+            for (uint256 alternateIndex = 0; alternateIndex < matchDraw.alternateCount; alternateIndex++) {
+                uint256 alternateTicket = _drawUniqueRoundTicket(matchDraw, seed, pickIndex);
+                alternates.push(alternateTicket);
+                matchDraw.allComputedTickets.push(alternateTicket);
+                pickIndex++;
+            }
         }
     }
 
@@ -523,6 +902,27 @@ contract RenaissLuckyDraw is VRFConsumerBase {
             seenUnrevealed++;
         }
         revert InvalidState();
+    }
+
+    function _drawUniqueRoundTicket(RoundMatchDraw storage matchDraw, uint256 seed, uint256 pickIndex)
+        internal
+        view
+        returns (uint256)
+    {
+        uint256 nonce = 0;
+        while (nonce < matchDraw.totalTickets) {
+            uint256 candidate = (uint256(keccak256(abi.encode(seed, pickIndex, nonce))) % matchDraw.totalTickets) + 1;
+            bool duplicate = false;
+            for (uint256 existingIndex = 0; existingIndex < matchDraw.allComputedTickets.length; existingIndex++) {
+                if (matchDraw.allComputedTickets[existingIndex] == candidate) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) return candidate;
+            nonce++;
+        }
+        revert InvalidPrizeSlots();
     }
 
     function _drawUniqueTicket(bytes32 drawId, Draw storage draw, uint256 seed, uint256 pickIndex)

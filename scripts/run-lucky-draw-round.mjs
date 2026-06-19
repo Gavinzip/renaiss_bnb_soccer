@@ -1,7 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Contract, JsonRpcProvider, Wallet, ethers } from 'ethers'
 
+import { writeJsonAtomic } from './soccer-match-results.mjs'
+
 const ARTIFACT_FILE = new URL('../artifacts/contracts/RenaissLuckyDraw.sol/RenaissLuckyDraw.json', import.meta.url)
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 function argValue(name) {
   const index = process.argv.indexOf(name)
@@ -44,6 +49,20 @@ function parseRoundStatus(status) {
     prizeSlotCount: status.currentPrizeSlotCount,
     winnerCount: status.winnerCount,
   }
+}
+
+function jsonStringify(value) {
+  return JSON.stringify(
+    value,
+    (_, item) => (typeof item === 'bigint' ? item.toString() : item),
+    2,
+  )
+}
+
+function resolveOutputPath(path) {
+  const value = String(path || '').trim()
+  if (!value) return ''
+  return value.startsWith('/') ? value : resolve(repoRoot, value)
 }
 
 function parseRevealOrder(rawValue, prizeSlotCount) {
@@ -136,14 +155,9 @@ function readFirstDefined(source, keys) {
 
 function normalizeDrawLedger({ ledger, matchId, drawId, env, ledgerPath }) {
   const row = findLedgerDraw(ledger, matchId, drawId)
-  const allowGlobalLedger = hasFlag('--allow-global-ledger')
-  if (!row && !allowGlobalLedger) {
-    throw new Error(
-      'Ledger must contain a per-match draw row matching this drawId/matchId. Use --allow-global-ledger only for legacy diagnostics.',
-    )
-  }
+  if (!row) throw new Error('Ledger must contain a per-match draw row matching this drawId/matchId.')
 
-  const source = row || ledger
+  const source = row
   const ledgerHash = String(readFirstDefined(source, ['ledgerHash', 'ledger_hash', 'hash']) || '')
   const totalTickets = BigInt(readFirstDefined(source, [
     'totalTickets',
@@ -178,8 +192,171 @@ function normalizeDrawLedger({ ledger, matchId, drawId, env, ledgerPath }) {
     totalTickets,
     prizeSlotCount,
     ledgerUri,
-    sourceMode: row ? 'per-match-ledger' : 'legacy-global-ledger-diagnostic',
+    sourceMode: 'per-match-ledger',
+    entries: Array.isArray(source.entries) ? source.entries : [],
   }
+}
+
+function toPositiveBigInt(value) {
+  try {
+    const result = BigInt(value || 0)
+    return result > 0n ? result : 0n
+  } catch {
+    return 0n
+  }
+}
+
+function entryIntervals(entry) {
+  const explicitIntervals = Array.isArray(entry?.ticketIntervals)
+    ? entry.ticketIntervals.map((interval) => ({
+        start: toPositiveBigInt(interval?.start),
+        end: toPositiveBigInt(interval?.end),
+        source: interval?.source || null,
+        allocationId: interval?.allocationId || entry?.allocationId || null,
+      }))
+    : []
+  const intervals = explicitIntervals.filter((interval) => interval.start > 0n && interval.end >= interval.start)
+  if (intervals.length > 0) return intervals
+
+  const start = toPositiveBigInt(entry?.ticketStart)
+  const end = toPositiveBigInt(entry?.ticketEnd)
+  return start > 0n && end >= start
+    ? [{ start, end, source: 'entry-range', allocationId: entry?.allocationId || null }]
+    : []
+}
+
+function findTicketEntry(drawLedger, ticketNumber) {
+  const ticket = BigInt(ticketNumber)
+  for (const entry of drawLedger.entries) {
+    for (const interval of entryIntervals(entry)) {
+      if (ticket >= interval.start && ticket <= interval.end) {
+        return {
+          walletAddress: entry.walletAddress || entry.userAddress || '',
+          userAddress: entry.userAddress || entry.walletAddress || '',
+          sourceAddresses: Array.isArray(entry.sourceAddresses) ? entry.sourceAddresses : [],
+          allocationId: entry.allocationId || interval.allocationId || null,
+          roundId: entry.roundId || '',
+          matchId: entry.matchId || drawLedger.matchId || '',
+          teamId: entry.teamId || '',
+          rank: entry.rank ?? null,
+          interval: {
+            start: interval.start.toString(),
+            end: interval.end.toString(),
+            source: interval.source,
+            allocationId: interval.allocationId,
+          },
+        }
+      }
+    }
+  }
+  return null
+}
+
+function buildWinnerDetails(drawLedger, winnerTicketsBySlot, revealedPrizeSlots, revealedTickets) {
+  const detailsBySlot = winnerTicketsBySlot.map((ticket, slotIndex) => {
+    const ticketNumber = ticket.toString()
+    const entry = ticket === 0n ? null : findTicketEntry(drawLedger, ticket)
+    if (drawLedger.entries.length > 0 && ticket !== 0n && !entry) {
+      throw new Error(`winner ticket ${ticketNumber} in prize slot ${slotIndex} is not present in the match draw ledger.`)
+    }
+    return {
+      prizeSlotIndex: slotIndex,
+      ticketNumber,
+      entry,
+    }
+  })
+  const detailsByReveal = revealedTickets.map((ticket, revealIndex) => {
+    const ticketNumber = ticket.toString()
+    const entry = findTicketEntry(drawLedger, ticket)
+    if (drawLedger.entries.length > 0 && !entry) {
+      throw new Error(`revealed winner ticket ${ticketNumber} at reveal ${revealIndex} is not present in the match draw ledger.`)
+    }
+    return {
+      revealIndex,
+      prizeSlotIndex: Number(revealedPrizeSlots[revealIndex]),
+      ticketNumber,
+      entry,
+    }
+  })
+  return { detailsBySlot, detailsByReveal }
+}
+
+function serializableWinnerDetail(detail) {
+  const entry = detail.entry || null
+  return {
+    revealIndex: detail.revealIndex ?? null,
+    prizeSlotIndex: detail.prizeSlotIndex,
+    ticketNumber: String(detail.ticketNumber),
+    walletAddress: entry?.walletAddress || '',
+    userAddress: entry?.userAddress || entry?.walletAddress || '',
+    sourceAddresses: Array.isArray(entry?.sourceAddresses) ? entry.sourceAddresses : [],
+    allocationId: entry?.allocationId || null,
+    roundId: entry?.roundId || '',
+    matchId: entry?.matchId || '',
+    teamId: entry?.teamId || '',
+    entryRank: entry?.rank ?? null,
+    interval: entry?.interval || null,
+  }
+}
+
+function buildWinnersSnapshot({ env, network, contractAddress, drawLedger, status, winnerDetails, revealedPrizeSlots }) {
+  const generatedAt = new Date().toISOString()
+  return {
+    version: 1,
+    mode: 'draw-winners',
+    sourceLabel: 'on-chain-reveal',
+    sourceStatus: 'revealed',
+    generatedAt,
+    generatedAtUnix: Math.floor(Date.now() / 1000),
+    videoUrl: env.WINNER_REVEAL_VIDEO_URL || env.VITE_WINNER_REVEAL_VIDEO_URL || '',
+    network: network.name || `chain-${network.chainId}`,
+    chainId: network.chainId.toString(),
+    contract: contractAddress,
+    matchId: drawLedger.matchId,
+    drawId: drawLedger.drawId,
+    ledgerHash: drawLedger.ledgerHash,
+    ledgerUri: drawLedger.ledgerUri,
+    totalTickets: drawLedger.totalTickets.toString(),
+    prizeSlotCount: drawLedger.prizeSlotCount.toString(),
+    winnerCount: winnerDetails.detailsByReveal.length,
+    fulfilled: Boolean(status.fulfilled),
+    revealedPrizeSlots: revealedPrizeSlots.map((slot) => slot.toString()),
+    winners: winnerDetails.detailsByReveal.map(serializableWinnerDetail),
+    winnersBySlot: winnerDetails.detailsBySlot.map(serializableWinnerDetail),
+  }
+}
+
+function writeWinnersSnapshotIfConfigured(path, snapshot) {
+  const out = resolveOutputPath(path)
+  if (!out) return null
+  writeJsonAtomic(out, snapshot)
+  return out
+}
+
+function plannedStepsForStatus(status, state, drawLedger, revealOrder, batchSize) {
+  const steps = []
+  if (!status.finalized) {
+    steps.push({
+      step: 'finalizeLedger',
+      drawId: drawLedger.drawId,
+      ledgerHash: drawLedger.ledgerHash,
+      totalTickets: drawLedger.totalTickets.toString(),
+      prizeSlotCount: drawLedger.prizeSlotCount.toString(),
+      ledgerUri: drawLedger.ledgerUri,
+    })
+  }
+  if (!status.requested) steps.push({ step: 'requestDraw', drawId: drawLedger.drawId })
+  if (state === 2) steps.push({ step: 'waitForRandomnessReady', drawId: drawLedger.drawId })
+  if (state >= 3 && !status.fulfilled && status.winnerCount < drawLedger.prizeSlotCount) {
+    steps.push({
+      step: 'revealPrizeSlots',
+      drawId: drawLedger.drawId,
+      batchSize,
+      revealOrder,
+      remainingSlots: (drawLedger.prizeSlotCount - status.winnerCount).toString(),
+    })
+  }
+  return steps
 }
 
 async function waitForRandomnessReady(contract, drawId, timeoutMs, intervalMs) {
@@ -195,7 +372,10 @@ async function waitForRandomnessReady(contract, drawId, timeoutMs, intervalMs) {
 const envFilePath = argValue('--env-file') || process.env.DEPLOY_ENV_FILE || 'config/draw-contract.env.local'
 const env = { ...loadEnvFile(envFilePath), ...process.env }
 const ledgerPath = argValue('--ledger') || env.LUCKY_DRAW_LEDGER_PATH || 'public/lucky-draw-ledger.json'
+const winnersOutPath = argValue('--winners-out') || env.SOCCER_DRAW_WINNERS_PATH || ''
 const contractAddress = argValue('--contract') || env.DRAW_CONTRACT_ADDRESS || ''
+const broadcast = hasFlag('--broadcast')
+const verifyOnly = hasFlag('--verify-only')
 if (!contractAddress) {
   throw new Error('Draw contract address is required. Pass --contract <address> or set DRAW_CONTRACT_ADDRESS.')
 }
@@ -208,17 +388,85 @@ const revealOrder = parseRevealOrder(argValue('--reveal-order') || env.DRAW_REVE
 
 const expectedChainId = BigInt(env.BSC_CHAIN_ID || 56)
 const provider = new JsonRpcProvider(required(env, 'BSC_RPC_URL'), Number(expectedChainId))
-const wallet = new Wallet(required(env, 'BSC_DEPLOYER_PRIVATE_KEY'), provider)
 const network = await provider.getNetwork()
 if (network.chainId !== expectedChainId) {
   throw new Error(`RPC chainId ${network.chainId} does not match expected ${expectedChainId}.`)
 }
 
 const artifact = JSON.parse(readFileSync(ARTIFACT_FILE, 'utf8'))
-const raffle = new Contract(contractAddress, artifact.abi, wallet)
+const wallet = broadcast ? new Wallet(required(env, 'BSC_DEPLOYER_PRIVATE_KEY'), provider) : null
+const raffle = new Contract(contractAddress, artifact.abi, wallet || provider)
 const txs = []
 
 let status = parseRoundStatus(await raffle.roundStatus(drawLedger.drawId))
+let state = Number(await raffle.state(drawLedger.drawId))
+
+if (status.finalized) {
+  if (status.ledgerHash.toLowerCase() !== drawLedger.ledgerHash.toLowerCase()) {
+    throw new Error(`Contract ledger hash ${status.ledgerHash} does not match ${drawLedger.ledgerHash}.`)
+  }
+  if (status.totalTickets !== drawLedger.totalTickets) {
+    throw new Error(`Contract total tickets ${status.totalTickets} does not match ${drawLedger.totalTickets}.`)
+  }
+  if (status.prizeSlotCount !== drawLedger.prizeSlotCount) {
+    throw new Error(`Contract prize slots ${status.prizeSlotCount} does not match ${drawLedger.prizeSlotCount}.`)
+  }
+}
+
+if (!broadcast || verifyOnly) {
+  const plan = plannedStepsForStatus(status, state, drawLedger, revealOrder, batchSize)
+  const payload = {
+    ok: true,
+    broadcast: false,
+    verifyOnly,
+    envFile: envFilePath,
+    network: network.name || `chain-${network.chainId}`,
+    chainId: network.chainId.toString(),
+    contract: contractAddress,
+    matchId: drawLedger.matchId,
+    drawId: drawLedger.drawId,
+    ledgerHash: drawLedger.ledgerHash,
+    ledgerUri: drawLedger.ledgerUri,
+    ledgerSourceMode: drawLedger.sourceMode,
+    totalTickets: drawLedger.totalTickets.toString(),
+    prizeSlotCount: drawLedger.prizeSlotCount.toString(),
+    batchSize,
+    revealOrder,
+    state,
+    status,
+    plannedSteps: plan,
+    note: plan.length
+      ? 'No transaction was sent. Re-run with --broadcast only after confirming the official result, ledger hash, total tickets, prize slots, contract, and admin wallet.'
+      : 'No transaction is needed for the current chain state.',
+  }
+
+  if (state === 4 || status.fulfilled) {
+    const winnerTicketsBySlot = await raffle.winnerTicketsBySlot(drawLedger.drawId)
+    const revealedPrizeSlots = await raffle.revealedPrizeSlots(drawLedger.drawId)
+    const storedRevealedTickets = await raffle.revealedTickets(drawLedger.drawId)
+    const winnerDetails = buildWinnerDetails(drawLedger, winnerTicketsBySlot, revealedPrizeSlots, storedRevealedTickets)
+    const winnersSnapshot = buildWinnersSnapshot({
+      env,
+      network,
+      contractAddress,
+      drawLedger,
+      status,
+      winnerDetails,
+      revealedPrizeSlots,
+    })
+    const winnersOut = writeWinnersSnapshotIfConfigured(winnersOutPath, winnersSnapshot)
+    payload.winnerCount = winnerTicketsBySlot.length
+    payload.firstFiveWinnerTicketsBySlot = winnerTicketsBySlot.slice(0, 5).map((ticket) => ticket.toString())
+    payload.firstFiveWinnerDetailsBySlot = winnerDetails.detailsBySlot.slice(0, 5)
+    payload.revealedPrizeSlots = revealedPrizeSlots.map((slot) => slot.toString())
+    payload.firstFiveRevealedWinnerDetails = winnerDetails.detailsByReveal.slice(0, 5)
+    payload.winnersOut = winnersOut
+  }
+
+  console.log(jsonStringify(payload))
+  process.exit(0)
+}
+
 if (!status.finalized) {
   const finalizeTx = await raffle.finalizeLedger(
     drawLedger.drawId,
@@ -230,6 +478,7 @@ if (!status.finalized) {
   txs.push({ step: 'finalizeLedger', hash: finalizeTx.hash })
   await finalizeTx.wait()
   status = parseRoundStatus(await raffle.roundStatus(drawLedger.drawId))
+  state = Number(await raffle.state(drawLedger.drawId))
 }
 
 if (status.ledgerHash.toLowerCase() !== drawLedger.ledgerHash.toLowerCase()) {
@@ -246,9 +495,10 @@ if (!status.requested) {
   const requestTx = await raffle.requestDraw(drawLedger.drawId)
   txs.push({ step: 'requestDraw', hash: requestTx.hash })
   await requestTx.wait()
+  status = parseRoundStatus(await raffle.roundStatus(drawLedger.drawId))
+  state = Number(await raffle.state(drawLedger.drawId))
 }
 
-let state = Number(await raffle.state(drawLedger.drawId))
 if (state === 2) {
   state = await waitForRandomnessReady(
     raffle,
@@ -335,11 +585,23 @@ for (let revealIndex = 0; revealIndex < Number(drawLedger.prizeSlotCount); revea
     throw new Error(`reveal/slot winner mismatch at reveal ${revealIndex}`)
   }
 }
+const winnerDetails = buildWinnerDetails(drawLedger, winnerTicketsBySlot, revealedPrizeSlots, storedRevealedTickets)
+const winnersSnapshot = buildWinnersSnapshot({
+  env,
+  network,
+  contractAddress,
+  drawLedger,
+  status,
+  winnerDetails,
+  revealedPrizeSlots,
+})
+const winnersOut = writeWinnersSnapshotIfConfigured(winnersOutPath, winnersSnapshot)
 
 console.log(
-  JSON.stringify(
+  jsonStringify(
     {
       ok: true,
+      broadcast: true,
       envFile: envFilePath,
       network: network.name || `chain-${network.chainId}`,
       chainId: network.chainId.toString(),
@@ -356,12 +618,13 @@ console.log(
       winnerCount: winnerTicketsBySlot.length,
       firstFiveWinnerTicketsBySlot: winnerTicketsBySlot.slice(0, 5).map((ticket) => ticket.toString()),
       firstFiveRevealedTickets: storedRevealedTickets.slice(0, 5).map((ticket) => ticket.toString()),
+      firstFiveWinnerDetailsBySlot: winnerDetails.detailsBySlot.slice(0, 5),
+      firstFiveRevealedWinnerDetails: winnerDetails.detailsByReveal.slice(0, 5),
       revealedPrizeSlots: revealedPrizeSlots.map((slot) => slot.toString()),
       revealedTickets,
+      winnersOut,
       txs,
-      balanceBNB: ethers.formatEther(await provider.getBalance(wallet.address)),
+      balanceBNB: wallet ? ethers.formatEther(await provider.getBalance(wallet.address)) : null,
     },
-    null,
-    2,
   ),
 )

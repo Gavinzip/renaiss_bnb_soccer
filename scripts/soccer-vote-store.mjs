@@ -3,32 +3,33 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { dirname } from 'node:path'
 
 import { campaignMatches, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
+import { buildMatchResultIndex, confirmedMatchResultFor } from './soccer-match-results.mjs'
 import { findLedgerEntryByAddress } from './soccer-ledger-api.mjs'
 
-const STATE_VERSION = 1
+export const STATE_VERSION = 1
 
 const matchesById = new Map(campaignMatches.map((match) => [match.id, match]))
 const roundsById = new Map(roundDefinitions.map((round) => [round.id, round]))
 
-function nowIso() {
+export function nowIso() {
   return new Date().toISOString()
 }
 
-function unixNow() {
+export function unixNow() {
   return Math.floor(Date.now() / 1000)
 }
 
-function toPositiveInteger(value) {
+export function toPositiveInteger(value) {
   const number = Number(value || 0)
   return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0
 }
 
-function normalizeAddress(value) {
+export function normalizeAddress(value) {
   const address = String(value || '').trim().toLowerCase()
   return /^0x[a-f0-9]{40}$/.test(address) ? address : ''
 }
 
-function normalizeId(value) {
+export function normalizeId(value) {
   return String(value || '').trim()
 }
 
@@ -69,7 +70,7 @@ export function readVoteState(statePath) {
   }
 }
 
-function writeVoteState(statePath, state) {
+export function writeVoteState(statePath, state) {
   const normalized = {
     ...state,
     version: STATE_VERSION,
@@ -82,7 +83,7 @@ function writeVoteState(statePath, state) {
   return normalized
 }
 
-function writeVotePreview(previewPath, state, options = {}) {
+export function writeVotePreview(previewPath, state, options = {}) {
   if (!previewPath) return null
   const preview = buildVotePreview(state, options)
   writeJsonAtomic(previewPath, preview)
@@ -94,15 +95,15 @@ function appendVoteEvent(eventsPath, event) {
   appendFileSync(eventsPath, `${JSON.stringify(event)}\n`)
 }
 
-function allocationKey({ walletAddress, roundId, matchId, teamId }) {
+export function allocationKey({ walletAddress, roundId, matchId, teamId }) {
   return `${walletAddress}:${roundId}:${matchId}:${teamId}`
 }
 
-function allocationId({ walletAddress, matchId, teamId }) {
+export function allocationId({ walletAddress, matchId, teamId }) {
   return `${walletAddress}-${matchId}-${teamId}`
 }
 
-function normalizeAllocation(row) {
+export function normalizeAllocation(row) {
   const walletAddress = normalizeAddress(row?.walletAddress)
   const roundId = normalizeId(row?.roundId)
   const matchId = normalizeId(row?.matchId)
@@ -124,16 +125,17 @@ function normalizeAllocation(row) {
   }
 }
 
-function normalizeStateAllocations(state) {
+export function normalizeStateAllocations(state) {
   return (Array.isArray(state.allocations) ? state.allocations : []).map(normalizeAllocation).filter(Boolean)
 }
 
-function assertVoteInput(input) {
+export function assertVoteInput(input, options = {}) {
   const walletAddress = normalizeAddress(input?.walletAddress)
   const roundId = normalizeId(input?.roundId)
   const matchId = normalizeId(input?.matchId)
   const teamId = normalizeId(input?.teamId)
   const tickets = toPositiveInteger(input?.tickets)
+  const resultIndex = options.resultIndex || buildMatchResultIndex(options.matchResults)
 
   if (!walletAddress) throw Object.assign(new Error('walletAddress must be a valid 0x address.'), { statusCode: 400 })
   if (!roundId || !roundsById.has(roundId)) throw Object.assign(new Error('roundId is invalid.'), { statusCode: 400 })
@@ -152,6 +154,10 @@ function assertVoteInput(input) {
     throw Object.assign(new Error('This match is not accepting votes.'), { statusCode: 409 })
   }
 
+  if (confirmedMatchResultFor(resultIndex, matchId)) {
+    throw Object.assign(new Error('This match already has a backend-confirmed official result.'), { statusCode: 409 })
+  }
+
   const cutoffTime = getMatchCutoffTime(match)
   if (cutoffTime !== null && Date.now() >= cutoffTime) {
     throw Object.assign(new Error('This match closed one hour before kickoff and is not accepting votes.'), { statusCode: 409 })
@@ -160,7 +166,7 @@ function assertVoteInput(input) {
   return { walletAddress, roundId, matchId, teamId, tickets, match }
 }
 
-function roundTicketsUsedByWallet(allocations, walletAddress, roundId, exceptKey = '') {
+export function roundTicketsUsedByWallet(allocations, walletAddress, roundId, exceptKey = '') {
   return allocations.reduce((total, allocation) => {
     if (allocation.walletAddress !== walletAddress || allocation.roundId !== roundId) return total
     if (exceptKey && allocationKey(allocation) === exceptKey) return total
@@ -168,7 +174,7 @@ function roundTicketsUsedByWallet(allocations, walletAddress, roundId, exceptKey
   }, 0)
 }
 
-function findLedgerTickets(ledger, walletAddress) {
+export function findLedgerTickets(ledger, walletAddress) {
   const entry = findLedgerEntryByAddress(ledger, walletAddress)
   return {
     entry,
@@ -176,8 +182,9 @@ function findLedgerTickets(ledger, walletAddress) {
   }
 }
 
-export function submitVote({ statePath, eventsPath, previewPath, ledger, input }) {
-  const normalizedInput = assertVoteInput(input)
+export function submitVote({ statePath, eventsPath, previewPath, ledger, input, matchResults = null }) {
+  const resultIndex = buildMatchResultIndex(matchResults)
+  const normalizedInput = assertVoteInput(input, { resultIndex })
   const { walletAddress, roundId, matchId, teamId, tickets } = normalizedInput
   const state = readVoteState(statePath)
   const allocations = normalizeStateAllocations(state)
@@ -247,7 +254,7 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input }
     allocations,
     eventCount: toPositiveInteger(state.eventCount) + 1,
   })
-  const preview = writeVotePreview(previewPath, nextState)
+  const preview = writeVotePreview(previewPath, nextState, { matchResults })
 
   return {
     event,
@@ -257,15 +264,14 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input }
   }
 }
 
-function buildOutcomes(allocations) {
+function buildOutcomes(allocations, resultIndex) {
   return allocations.map((allocation) => {
-    const match = matchesById.get(allocation.matchId)
-    const result =
-      match?.status === 'official_final' && match.advancingTeamId
-        ? allocation.teamId === match.advancingTeamId
-          ? 'won'
-          : 'lost'
-        : 'pending'
+    const matchResult = confirmedMatchResultFor(resultIndex, allocation.matchId)
+    const result = matchResult
+      ? allocation.teamId === matchResult.winnerTeamId
+        ? 'won'
+        : 'lost'
+      : 'pending'
 
     return {
       id: `${allocation.id}-outcome`,
@@ -277,34 +283,47 @@ function buildOutcomes(allocations) {
       tickets: allocation.tickets,
       result,
       lostTickets: result === 'lost' ? allocation.tickets : 0,
+      official: Boolean(matchResult),
+      resultSourceStatus: matchResult?.resultStatus || 'pending',
+      resultSourceUrl: matchResult?.sourceUrl || null,
+      resultFetchedAt: matchResult?.fetchedAt || null,
+      winnerTeamId: matchResult?.winnerTeamId || null,
     }
   })
 }
 
-function buildRoundSummaries(outcomes) {
+function buildRoundSummaries(outcomes, resultIndex) {
   const summaries = new Map()
   for (const round of roundDefinitions) {
+    const roundMatches = campaignMatches.filter((match) => match.roundId === round.id)
     summaries.set(round.id, {
       roundId: round.id,
+      matchCount: roundMatches.length,
+      officialFinalCount: roundMatches.filter((match) => confirmedMatchResultFor(resultIndex, match.id)).length,
       submittedTickets: 0,
       settledTickets: 0,
       wonTickets: 0,
       lostTickets: 0,
+      pendingTickets: 0,
     })
   }
 
   for (const outcome of outcomes) {
     const summary = summaries.get(outcome.roundId) || {
       roundId: outcome.roundId,
+      matchCount: 0,
+      officialFinalCount: 0,
       submittedTickets: 0,
       settledTickets: 0,
       wonTickets: 0,
       lostTickets: 0,
+      pendingTickets: 0,
     }
     summary.submittedTickets += outcome.tickets
     if (outcome.result !== 'pending') summary.settledTickets += outcome.tickets
     if (outcome.result === 'won') summary.wonTickets += outcome.tickets
     if (outcome.result === 'lost') summary.lostTickets += outcome.lostTickets
+    summary.pendingTickets = Math.max(0, summary.submittedTickets - summary.settledTickets)
     summaries.set(outcome.roundId, summary)
   }
 
@@ -313,22 +332,29 @@ function buildRoundSummaries(outcomes) {
 
 export function buildVotePreview(state, options = {}) {
   const allocations = normalizeStateAllocations(state)
+  const resultIndex = options.resultIndex || buildMatchResultIndex(options.matchResults)
   const filteredAllocations = options.walletAddress
     ? allocations.filter((allocation) => allocation.walletAddress === normalizeAddress(options.walletAddress))
     : allocations
-  const outcomes = buildOutcomes(filteredAllocations)
+  const outcomes = buildOutcomes(filteredAllocations, resultIndex)
 
   return {
-    sourceLabel: 'server-vote-store',
-    sourceStatus: 'live',
+    sourceLabel: state.sourceLabel || 'server-vote-store',
+    sourceStatus: state.sourceStatus || 'live',
     generatedAt: nowIso(),
     eventCount: toPositiveInteger(state.eventCount),
     allocations: filteredAllocations,
     outcomes,
-    roundSummaries: buildRoundSummaries(outcomes),
+    roundSummaries: buildRoundSummaries(outcomes, resultIndex),
+    matchResults: {
+      sourceLabel: options.matchResults?.sourceLabel || null,
+      sourceStatus: options.matchResults?.sourceStatus || 'missing',
+      generatedAt: options.matchResults?.generatedAt || null,
+      hash: options.matchResults?.hash || null,
+    },
   }
 }
 
-export function readVotePreview({ statePath, walletAddress = '' }) {
-  return buildVotePreview(readVoteState(statePath), { walletAddress })
+export function readVotePreview({ statePath, walletAddress = '', matchResults = null }) {
+  return buildVotePreview(readVoteState(statePath), { walletAddress, matchResults })
 }
