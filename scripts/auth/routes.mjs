@@ -74,11 +74,29 @@ function authSuccessRedirect(env) {
   return env.AUTH_SUCCESS_REDIRECT_PATH || '/?auth=success'
 }
 
-function authErrorRedirect(env, reason) {
+function authErrorRedirect(env, reason, details = {}) {
   const base = env.AUTH_ERROR_REDIRECT_PATH || '/?auth=error'
   const url = new URL(base, 'http://localhost')
   if (reason) url.searchParams.set('reason', reason)
+  for (const [key, value] of Object.entries(details)) {
+    if (value) url.searchParams.set(key, String(value))
+  }
   return `${url.pathname}${url.search}${url.hash}`
+}
+
+function sanitizeAuthError(error) {
+  const message = error instanceof Error ? error.message : String(error || 'Unknown OAuth failure')
+  return message
+    .replace(/[A-Za-z0-9_-]{48,}/g, '[redacted]')
+    .slice(0, 240)
+}
+
+function logOAuthCallbackFailure(provider, stage, error) {
+  console.warn('[auth] oauth callback failed', {
+    provider,
+    stage,
+    message: sanitizeAuthError(error),
+  })
 }
 
 function redirect(response, location, headers = {}) {
@@ -116,7 +134,8 @@ function buildProviderConfig(env) {
 
 function providerConfigured(providerConfig, provider) {
   const config = providerConfig[provider]
-  return Boolean(config?.clientId && (provider !== 'google' || config.clientSecret))
+  const requiresSecret = provider === 'google' || provider === 'x'
+  return Boolean(config?.clientId && (!requiresSecret || config.clientSecret))
 }
 
 function oauthStateCookieName(provider) {
@@ -359,25 +378,35 @@ export async function handleAuthRoute({
     const expectedState = cookies[oauthStateCookieName(provider)]
     const clearStateHeader = stateCookie(provider, '', auth.sessionConfig.secureCookies, 0)
 
+    let failureStage = 'callback'
     try {
-      if (oauthError) throw new Error(oauthErrorDescription || oauthError)
+      if (oauthError) {
+        failureStage = 'provider_returned_error'
+        throw new Error(oauthErrorDescription || oauthError)
+      }
+      failureStage = 'state_validation'
       if (!stateToken || !code || stateToken !== expectedState) throw new Error('Invalid OAuth state.')
       const challenge = consumeOauthChallenge(auth.stateConfig, provider, stateToken)
+      failureStage = 'state_lookup'
       if (!challenge) throw new Error('OAuth state expired.')
+      failureStage = 'token_exchange'
       const token = await exchangeOAuthCode(provider, auth.providerConfig, {
         code,
         codeVerifier: challenge.codeVerifier,
         redirectUri: challenge.redirectUri,
       })
+      failureStage = 'userinfo'
       const identity = await fetchOAuthIdentity(provider, auth.providerConfig, token.access_token)
       if (!identity.providerUserId) throw new Error('OAuth identity missing stable user id.')
+      failureStage = 'session_create'
       await createSessionForIdentity({ auth, request, response, identity })
       const currentSetCookie = response.getHeader('set-cookie')
       const headers = appendSetCookie({ 'set-cookie': currentSetCookie }, clearStateHeader)
       redirect(response, authSuccessRedirect(auth.env), headers)
     } catch (error) {
+      logOAuthCallbackFailure(provider, failureStage, error)
       response.setHeader('set-cookie', clearStateHeader)
-      redirect(response, authErrorRedirect(auth.env, 'oauth_failed'))
+      redirect(response, authErrorRedirect(auth.env, 'oauth_failed', { provider, stage: failureStage }))
     }
     return true
   }
