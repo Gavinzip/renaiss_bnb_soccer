@@ -1,42 +1,44 @@
 .rb-stepper {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .rb-stepper__steps {
   display: grid;
   grid-template-columns: repeat(var(--step-count, 2), minmax(0, 1fr));
-  gap: 0;
+  gap: 8px;
   margin: 0;
-  padding: 0;
+  padding: 6px;
   list-style: none;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .rb-stepper__item {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  display: flex;
   align-items: center;
   min-width: 0;
 }
 
-.rb-stepper__item:last-child {
-  grid-template-columns: 34px;
-}
-
 .rb-stepper__item button {
-  width: 34px;
-  height: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.62);
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.58);
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 0 12px;
   font: inherit;
   font-size: 13px;
   font-weight: 760;
-  transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 180ms ease;
+  text-align: left;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
 }
 
 .rb-stepper__item button:not(:disabled) {
@@ -44,62 +46,65 @@
 }
 
 .rb-stepper__item.is-active button {
-  border-color: rgba(54, 211, 153, 0.78);
-  background: rgba(54, 211, 153, 0.18);
-  color: #dcfff2;
-  transform: translateY(-1px);
+  border-color: rgba(155, 244, 208, 0.42);
+  background: rgba(155, 244, 208, 0.11);
+  color: #f4fff9;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .rb-stepper__item.is-complete button {
-  border-color: rgba(125, 211, 252, 0.72);
-  background: rgba(125, 211, 252, 0.14);
-  color: #e0f7ff;
+  border-color: rgba(155, 244, 208, 0.22);
+  background: rgba(155, 244, 208, 0.075);
+  color: rgba(234, 255, 246, 0.86);
 }
 
 .rb-stepper__item i {
-  display: block;
-  height: 1px;
-  margin: 0 10px;
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.rb-stepper__item.is-complete i {
-  background: rgba(125, 211, 252, 0.52);
+  display: none;
 }
 
 .rb-stepper__content {
-  min-height: 210px;
+  min-height: 220px;
 }
 
 .rb-stepper__footer {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 2px;
 }
 
 .rb-stepper__footer button {
-  min-height: 42px;
-  min-width: 116px;
+  min-height: 44px;
+  min-width: 124px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.82);
   font: inherit;
   font-size: 13px;
-  font-weight: 760;
+  font-weight: 820;
   cursor: pointer;
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease, box-shadow 180ms ease;
 }
 
 .rb-stepper__footer button:last-child {
-  background: #61d69f;
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #06120f;
+  border-color: rgba(155, 244, 208, 0.72);
+  background: #9bf4d0;
+  color: #05130e;
+  box-shadow: 0 12px 26px rgba(12, 117, 82, 0.22);
 }
 
 .rb-stepper__footer button:hover:not(:disabled),
 .rb-stepper__footer button:focus-visible:not(:disabled) {
   transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.rb-stepper__footer button:last-child:hover:not(:disabled),
+.rb-stepper__footer button:last-child:focus-visible:not(:disabled) {
+  border-color: rgba(218, 255, 240, 0.88);
+  background: #b5f8de;
 }
 
 .rb-stepper__footer button:disabled {
@@ -110,6 +115,16 @@
 @media (max-width: 740px) {
   .rb-stepper__content {
     min-height: 0;
+  }
+
+  .rb-stepper__steps {
+    gap: 6px;
+    padding: 5px;
+  }
+
+  .rb-stepper__item button {
+    min-height: 56px;
+    padding: 0 10px;
   }
 
   .rb-stepper__footer {

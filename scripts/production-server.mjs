@@ -1210,7 +1210,7 @@ const server = createServer(async (request, response) => {
         sendJson(request, response, 403, { ok: false, error: 'This login is not linked to a voting wallet yet.' }, { 'cache-control': 'no-store' })
         return
       }
-      if (authRequiredForVotes && !getXFollowStatus(auth, session, request).gatePassed) {
+      if (authRequiredForVotes && auth.xFollowGateConfig.required && !getXFollowStatus(auth, session, request).gatePassed) {
         sendJson(request, response, 403, { ok: false, error: 'Follow verification is required before submitting votes.' }, { 'cache-control': 'no-store' })
         return
       }

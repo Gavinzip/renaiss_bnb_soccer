@@ -123,6 +123,8 @@ export const enLocale = {
       "followTitle": "Follow {handle}",
       "notVerified": "Not verified yet",
       "openTarget": "Open {handle}",
+      "optionalButton": "Verify X",
+      "optionalComplete": "X verified",
       "reconnectX": "Reconnect X",
       "statusApiError": "X verification is temporarily unavailable. Try again later.",
       "statusIdle": "Follow the account, then verify.",
@@ -136,6 +138,13 @@ export const enLocale = {
       "skipButton": "Test bypass",
       "skipped": "Test bypassed",
       "skipping": "Bypassing",
+      "stepConnect": "Connect account",
+      "stepState": {
+        "active": "Active",
+        "complete": "Done",
+        "pending": "Pending"
+      },
+      "stepVerify": "Verify follow",
       "title": "Verify X follow to vote",
       "verified": "Verified",
       "verify": "Verify",

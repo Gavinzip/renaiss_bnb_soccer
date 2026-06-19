@@ -22,6 +22,14 @@ function envFlag(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase())
 }
 
+function envEnabled(value, defaultValue = true) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw) return defaultValue
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true
+  return defaultValue
+}
+
 function hasSigningSecret(config) {
   return Boolean(config?.sessionSecret && config.sessionSecret.length >= 32)
 }
@@ -96,6 +104,15 @@ function readCookieSkipRecord(config, state, request) {
 function createSkipCookie(config, token, maxAgeSeconds = Math.floor(SKIP_TTL_MS / 1000)) {
   return serializeCookie(config.skipCookieName, skipCookieValue(config, token), {
     maxAge: maxAgeSeconds,
+    httpOnly: true,
+    secure: config.secureCookies,
+    sameSite: 'Lax',
+  })
+}
+
+function clearSkipCookie(config) {
+  return serializeCookie(config.skipCookieName, '', {
+    maxAge: 0,
     httpOnly: true,
     secure: config.secureCookies,
     sameSite: 'Lax',
@@ -356,6 +373,7 @@ export function createXFollowGateConfig({ authDir, env = process.env }) {
     targetHandle,
     targetUrl: `https://x.com/${targetHandle}`,
     retrySeconds,
+    required: envEnabled(env.X_FOLLOW_GATE_REQUIRED ?? env.X_FOLLOW_REQUIRED, true),
     skipEnabled: envFlag(env.X_FOLLOW_SKIP_ENABLED || env.X_FOLLOW_GATE_SKIP_ENABLED),
     skipCookieName: SKIP_COOKIE,
     sessionSecret: String(env.AUTH_SESSION_SECRET || env.SESSION_SECRET || ''),
@@ -371,7 +389,7 @@ export function getXFollowStatus(auth, session, request) {
 }
 
 export function clearXFollowSkipCookie(auth) {
-  return createSkipCookie(auth.xFollowGateConfig, '', 0)
+  return clearSkipCookie(auth.xFollowGateConfig)
 }
 
 export function skipXFollow(auth, session, request) {

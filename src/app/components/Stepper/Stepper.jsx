@@ -57,7 +57,10 @@ export default function Stepper({
   if (totalSteps === 0) return null;
 
   return (
-    <section className={["rb-stepper", stepCircleContainerClassName].filter(Boolean).join(" ")}>
+    <section
+      className={["rb-stepper", stepCircleContainerClassName].filter(Boolean).join(" ")}
+      style={{ "--step-count": totalSteps }}
+    >
       <ol className={["rb-stepper__steps", stepContainerClassName].filter(Boolean).join(" ")}>
         {steps.map((_, index) => {
           const stepNumber = index + 1;

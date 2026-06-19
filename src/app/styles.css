@@ -26303,3 +26303,44 @@ body {
     display: none;
   }
 }
+.header-x-verify {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid rgba(155, 244, 208, 0.24);
+  border-radius: 8px;
+  background: rgba(155, 244, 208, 0.08);
+  color: rgba(234, 255, 246, 0.9);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 820;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.header-x-verify:hover,
+.header-x-verify:focus-visible,
+.header-x-verify[aria-expanded="true"] {
+  transform: translateY(-1px);
+  border-color: rgba(155, 244, 208, 0.5);
+  background: rgba(155, 244, 208, 0.14);
+  color: #f4fff9;
+}
+
+.header-x-verify.is-complete {
+  border-color: rgba(155, 244, 208, 0.42);
+  background: rgba(155, 244, 208, 0.16);
+  color: #dffff0;
+}
+
+@media (max-width: 740px) {
+  .header-x-verify {
+    min-height: 42px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}

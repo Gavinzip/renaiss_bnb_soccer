@@ -374,6 +374,7 @@ export function getAuthPublicStatus(auth) {
       targetHandle: auth.xFollowGateConfig.targetHandle,
       targetUrl: auth.xFollowGateConfig.targetUrl,
       retrySeconds: auth.xFollowGateConfig.retrySeconds,
+      required: auth.xFollowGateConfig.required,
       skipEnabled: auth.xFollowGateConfig.skipEnabled,
     },
   }

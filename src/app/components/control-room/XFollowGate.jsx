@@ -55,6 +55,10 @@ export function XFollowGate({
   const stepLabels = useMemo(() => ({
     back: t("xFollowGate.back"),
     next: activeStep === 1 ? t("xFollowGate.continue") : verifying ? t("xFollowGate.verifying") : t("xFollowGate.verify"),
+    indicators: [
+      t("xFollowGate.stepConnect"),
+      t("xFollowGate.stepVerify"),
+    ],
   }), [activeStep, t, verifying]);
 
   async function handleVerify() {
@@ -137,6 +141,16 @@ export function XFollowGate({
         backButtonText={stepLabels.back}
         nextButtonText={stepLabels.next}
         disableStepIndicators
+        stepContainerClassName="x-follow-gate__step-tabs"
+        contentClassName="x-follow-gate__step-content"
+        footerClassName="x-follow-gate__step-footer"
+        renderStepIndicator={({ step, state }) => (
+          <span className="x-follow-gate__step-tab">
+            <span className="x-follow-gate__step-index">{String(step).padStart(2, "0")}</span>
+            <span className="x-follow-gate__step-label">{stepLabels.indicators[step - 1]}</span>
+            <span className="x-follow-gate__step-state">{t(`xFollowGate.stepState.${state}`)}</span>
+          </span>
+        )}
         nextButtonProps={{
           disabled: activeStep === 1 ? !canContinueToVerify : !canVerify,
         }}

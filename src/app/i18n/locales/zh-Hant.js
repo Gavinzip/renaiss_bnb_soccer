@@ -123,6 +123,8 @@ export const zhHantLocale = {
       "followTitle": "追蹤 {handle}",
       "notVerified": "尚未通過",
       "openTarget": "打開 {handle}",
+      "optionalButton": "驗證 X",
+      "optionalComplete": "X 已通過",
       "reconnectX": "重新連接 X",
       "statusApiError": "X 驗證暫時不可用，請稍後再試。",
       "statusIdle": "請先追蹤帳號，再按 Verify。",
@@ -136,6 +138,13 @@ export const zhHantLocale = {
       "skipButton": "測試略過",
       "skipped": "測試略過",
       "skipping": "略過中",
+      "stepConnect": "連接帳號",
+      "stepState": {
+        "active": "進行中",
+        "complete": "完成",
+        "pending": "待完成"
+      },
+      "stepVerify": "驗證追蹤",
       "title": "驗證 X 追蹤後才能投票",
       "verified": "已通過",
       "verify": "Verify",

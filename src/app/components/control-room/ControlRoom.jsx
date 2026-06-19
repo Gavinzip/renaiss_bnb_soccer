@@ -13,7 +13,7 @@ import {
   Vote,
   WalletCards,
 } from "lucide-react";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { commandViews } from "../../data/campaignRuntime";
@@ -519,7 +519,10 @@ export function ControlRoom({
   const showRoomMast = activeViewId !== "home" && !compactWorkViews.has(activeViewId);
   const authWalletLinked = Boolean(authSession?.walletAddress);
   const showAuthState = Boolean(authEndpointReady);
-  const voteRequiresXFollow = authEndpointReady && !authSession?.xFollow?.gatePassed;
+  const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
+  const xFollowGateRequired = authConfig?.xFollowGate?.required !== false;
+  const voteRequiresXFollow = authEndpointReady && xFollowGateRequired && !authSession?.xFollow?.gatePassed;
+  const showOptionalXFollowButton = authEndpointReady && !xFollowGateRequired && activeViewId === "vote";
 
   async function handleLogout() {
     try {
@@ -556,6 +559,17 @@ export function ControlRoom({
         </Magnet>
         <ViewMenu activeViewId={activeViewId} onSelectView={onSelectView} t={t} />
         <LanguageSwitch />
+        {showOptionalXFollowButton ? (
+          <button
+            type="button"
+            className={authSession?.xFollow?.gatePassed ? "header-x-verify is-complete" : "header-x-verify"}
+            onClick={() => setXFollowPanelOpen((current) => !current)}
+            aria-expanded={xFollowPanelOpen}
+          >
+            <ShieldCheck size={16} strokeWidth={2.25} />
+            <span>{authSession?.xFollow?.gatePassed ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>
+          </button>
+        ) : null}
         <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
           <button type="button" className="header-wallet__identity" onClick={showAuthState ? onOpenAuthModal : undefined}>
             <WalletCards size={18} strokeWidth={2.1} />
@@ -641,6 +655,15 @@ export function ControlRoom({
           ) : null}
 
           {activeViewId === "vote" && voteRequiresXFollow ? (
+            <XFollowGate
+              authSession={authSession}
+              authConfig={authConfig}
+              authEndpointReady={authEndpointReady}
+              onRefreshAuth={onRefreshAuth}
+            />
+          ) : null}
+
+          {activeViewId === "vote" && showOptionalXFollowButton && xFollowPanelOpen && !authSession?.xFollow?.gatePassed ? (
             <XFollowGate
               authSession={authSession}
               authConfig={authConfig}
