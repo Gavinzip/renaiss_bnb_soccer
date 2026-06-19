@@ -106,7 +106,7 @@ function buildProviderConfig(env) {
     x: {
       clientId: String(env.X_CLIENT_ID || env.TWITTER_CLIENT_ID || '').trim(),
       clientSecret: String(env.X_CLIENT_SECRET || env.TWITTER_CLIENT_SECRET || '').trim(),
-      authUrl: 'https://twitter.com/i/oauth2/authorize',
+      authUrl: 'https://x.com/i/oauth2/authorize',
       tokenUrl: 'https://api.x.com/2/oauth2/token',
       userInfoUrl: 'https://api.x.com/2/users/me?user.fields=profile_image_url,verified',
       scope: String(env.X_OAUTH_SCOPE || 'users.read').trim(),
@@ -353,11 +353,14 @@ export async function handleAuthRoute({
     const provider = url.pathname.includes('/google/') ? 'google' : 'x'
     const stateToken = url.searchParams.get('state') || ''
     const code = url.searchParams.get('code') || ''
+    const oauthError = url.searchParams.get('error') || ''
+    const oauthErrorDescription = url.searchParams.get('error_description') || ''
     const cookies = parseCookies(request.headers.cookie || '')
     const expectedState = cookies[oauthStateCookieName(provider)]
     const clearStateHeader = stateCookie(provider, '', auth.sessionConfig.secureCookies, 0)
 
     try {
+      if (oauthError) throw new Error(oauthErrorDescription || oauthError)
       if (!stateToken || !code || stateToken !== expectedState) throw new Error('Invalid OAuth state.')
       const challenge = consumeOauthChallenge(auth.stateConfig, provider, stateToken)
       if (!challenge) throw new Error('OAuth state expired.')
