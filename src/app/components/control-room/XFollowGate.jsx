@@ -152,10 +152,14 @@ export function XFollowGate({
         contentClassName="x-follow-gate__step-content"
         footerClassName="x-follow-gate__step-footer"
         renderStepIndicator={({ step, state }) => (
-          <span className="x-follow-gate__step-tab">
-            <span className="x-follow-gate__step-index">{String(step).padStart(2, "0")}</span>
-            <span className="x-follow-gate__step-label">{stepLabels.indicators[step - 1]}</span>
-            <span className="x-follow-gate__step-state">{t(`xFollowGate.stepState.${state}`)}</span>
+          <span className="x-follow-gate__rail-item">
+            <span className="x-follow-gate__rail-node" aria-hidden="true">
+              {step < activeStep || (step === 2 && gate.gatePassed) ? <CheckCircle2 size={14} strokeWidth={2.4} /> : String(step).padStart(2, "0")}
+            </span>
+            <span className="x-follow-gate__rail-copy">
+              <span className="x-follow-gate__step-label">{stepLabels.indicators[step - 1]}</span>
+              <span className="x-follow-gate__step-state">{t(`xFollowGate.stepState.${state}`)}</span>
+            </span>
           </span>
         )}
         nextButtonProps={{

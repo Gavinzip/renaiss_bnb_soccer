@@ -1,10 +1,10 @@
 .x-follow-gate-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  z-index: 1600;
   display: grid;
   place-items: center;
-  padding: clamp(18px, 4vw, 46px);
+  padding: clamp(16px, 3vw, 36px);
   overflow: auto;
   pointer-events: auto;
   overscroll-behavior: contain;
@@ -16,11 +16,11 @@
   z-index: 0;
   border: 0;
   background:
-    radial-gradient(circle at 50% 36%, rgba(155, 244, 208, 0.12), transparent 28%),
-    rgba(0, 0, 0, 0.72);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.76)),
+    rgba(0, 0, 0, 0.68);
   cursor: pointer;
-  backdrop-filter: blur(12px) saturate(108%);
-  -webkit-backdrop-filter: blur(12px) saturate(108%);
+  backdrop-filter: blur(10px) saturate(104%);
+  -webkit-backdrop-filter: blur(10px) saturate(104%);
 }
 
 .x-follow-gate-overlay__scrim:disabled {
@@ -30,8 +30,8 @@
 .x-follow-gate-overlay__sheet {
   position: relative;
   z-index: 1;
-  width: min(720px, 100%);
-  max-height: min(780px, calc(100dvh - 44px));
+  width: min(660px, calc(100vw - 28px));
+  max-height: min(720px, calc(100dvh - 32px));
   display: grid;
   overflow: auto;
   scrollbar-width: thin;
@@ -43,17 +43,17 @@
   width: 100%;
   margin: 0;
   display: grid;
-  gap: 18px;
-  padding: 24px;
+  gap: 16px;
+  padding: 22px;
   overflow: hidden;
   border: 1px solid rgba(245, 246, 241, 0.18);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.014)),
-    rgba(8, 10, 10, 0.96);
+    linear-gradient(180deg, rgba(245, 246, 241, 0.07), rgba(245, 246, 241, 0.018)),
+    rgba(8, 9, 9, 0.97);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.11),
-    0 28px 80px rgba(0, 0, 0, 0.48);
+    0 30px 86px rgba(0, 0, 0, 0.52);
 }
 
 .x-follow-gate__close {
@@ -89,7 +89,8 @@
 }
 
 .x-follow-gate__head {
-  padding: 0 44px 0 0;
+  padding: 0 44px 14px 0;
+  border-bottom: 1px solid rgba(245, 246, 241, 0.1);
 }
 
 .x-follow-gate__head span,
@@ -115,8 +116,8 @@
 
 .x-follow-gate__head h1 {
   max-width: 620px;
-  font-size: clamp(28px, 3.2vw, 34px);
-  line-height: 1.04;
+  font-size: clamp(24px, 2.7vw, 31px);
+  line-height: 1.06;
 }
 
 .x-follow-gate__step h2 {
@@ -136,34 +137,43 @@
   margin-top: 0;
 }
 
-.x-follow-gate__step-tab {
+.x-follow-gate__rail-item {
   width: 100%;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: 38px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   min-width: 0;
 }
 
-.x-follow-gate__step-index {
-  width: 30px;
-  height: 30px;
+.x-follow-gate__rail-node {
+  width: 34px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(245, 246, 241, 0.14);
-  border-radius: 7px;
-  background: rgba(245, 246, 241, 0.045);
-  color: rgba(245, 246, 241, 0.7);
-  font-size: 12px;
+  border: 1px solid rgba(245, 246, 241, 0.16);
+  border-radius: 999px;
+  background: rgba(7, 8, 8, 0.92);
+  color: rgba(245, 246, 241, 0.62);
+  font-size: 11px;
   font-weight: 860;
   font-variant-numeric: tabular-nums;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 5px rgba(8, 9, 9, 0.96);
+}
+
+.x-follow-gate__rail-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
 }
 
 .x-follow-gate__step-label {
   min-width: 0;
   overflow: hidden;
-  color: rgba(245, 246, 241, 0.82);
+  color: rgba(245, 246, 241, 0.78);
   font-size: 13px;
   font-weight: 840;
   text-overflow: ellipsis;
@@ -171,22 +181,35 @@
 }
 
 .x-follow-gate__step-state {
-  color: rgba(245, 246, 241, 0.42);
+  color: rgba(245, 246, 241, 0.4);
   font-size: 11px;
   font-weight: 760;
   white-space: nowrap;
 }
 
-.rb-stepper__item.is-active .x-follow-gate__step-index,
-.rb-stepper__item.is-complete .x-follow-gate__step-index {
-  border-color: rgba(155, 244, 208, 0.58);
-  background: rgba(155, 244, 208, 0.16);
-  color: #dffff0;
+.rb-stepper__item.is-active .x-follow-gate__rail-node {
+  border-color: rgba(240, 209, 139, 0.76);
+  background: rgba(240, 209, 139, 0.14);
+  color: #fff3d0;
 }
 
-.rb-stepper__item.is-active .x-follow-gate__step-state,
+.rb-stepper__item.is-complete .x-follow-gate__rail-node {
+  border-color: rgba(137, 185, 154, 0.62);
+  background: rgba(137, 185, 154, 0.14);
+  color: #dff7e7;
+}
+
+.rb-stepper__item.is-active .x-follow-gate__step-label,
+.rb-stepper__item.is-complete .x-follow-gate__step-label {
+  color: rgba(245, 246, 241, 0.96);
+}
+
+.rb-stepper__item.is-active .x-follow-gate__step-state {
+  color: rgba(240, 209, 139, 0.82);
+}
+
 .rb-stepper__item.is-complete .x-follow-gate__step-state {
-  color: rgba(155, 244, 208, 0.78);
+  color: rgba(137, 185, 154, 0.86);
 }
 
 .x-follow-gate__step-content {
@@ -194,24 +217,86 @@
 }
 
 .x-follow-gate .rb-stepper {
-  gap: 14px;
+  gap: 16px;
 }
 
 .x-follow-gate .rb-stepper__steps {
-  border-color: rgba(245, 246, 241, 0.12);
-  background: rgba(245, 246, 241, 0.045);
+  gap: 18px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.x-follow-gate .rb-stepper__item {
+  position: relative;
+}
+
+.x-follow-gate .rb-stepper__item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: 17px;
+  right: -35px;
+  height: 1px;
+  background: rgba(245, 246, 241, 0.14);
+  pointer-events: none;
 }
 
 .x-follow-gate .rb-stepper__item button {
-  min-height: 52px;
+  position: relative;
+  z-index: 1;
+  min-height: 48px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.x-follow-gate .rb-stepper__item.is-active button,
+.x-follow-gate .rb-stepper__item.is-complete button {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .x-follow-gate .rb-stepper__content {
-  min-height: 150px;
+  min-height: 142px;
 }
 
 .x-follow-gate .rb-stepper__footer {
-  padding-top: 0;
+  padding-top: 2px;
+}
+
+.x-follow-gate .rb-stepper__footer button {
+  min-height: 42px;
+  border-color: rgba(245, 246, 241, 0.13);
+  background: rgba(245, 246, 241, 0.05);
+  color: rgba(245, 246, 241, 0.76);
+  box-shadow: none;
+}
+
+.x-follow-gate .rb-stepper__footer button:last-child {
+  border-color: rgba(240, 209, 139, 0.48);
+  background:
+    linear-gradient(180deg, rgba(255, 244, 213, 0.94), rgba(201, 160, 90, 0.92));
+  color: #15130d;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.24);
+}
+
+.x-follow-gate .rb-stepper__footer button:hover:not(:disabled),
+.x-follow-gate .rb-stepper__footer button:focus-visible:not(:disabled) {
+  border-color: rgba(245, 246, 241, 0.23);
+  background: rgba(245, 246, 241, 0.08);
+  color: #fff;
+}
+
+.x-follow-gate .rb-stepper__footer button:last-child:hover:not(:disabled),
+.x-follow-gate .rb-stepper__footer button:last-child:focus-visible:not(:disabled) {
+  border-color: rgba(255, 244, 213, 0.66);
+  background:
+    linear-gradient(180deg, #fff4d5, #d4ad68);
+  color: #11100b;
 }
 
 .x-follow-gate .rb-stepper__footer button:disabled,
@@ -225,18 +310,22 @@
 }
 
 .x-follow-gate__step > span.is-complete {
-  color: #9bf4d0;
+  color: #c8ead3;
 }
 
 .x-follow-gate__step > span.is-locked {
-  color: #fbbf24;
+  color: #f0d18b;
 }
 
 .x-follow-gate__step > span {
-  padding: 7px 10px;
-  border: 1px solid rgba(245, 246, 241, 0.1);
-  border-radius: 8px;
-  background: rgba(245, 246, 241, 0.045);
+  padding: 6px 9px;
+  border: 1px solid rgba(245, 246, 241, 0.12);
+  border-radius: 999px;
+  background: rgba(245, 246, 241, 0.04);
+}
+
+.x-follow-gate__step > span svg {
+  flex: 0 0 auto;
 }
 
 .x-follow-gate__action,
@@ -254,16 +343,20 @@
   text-decoration: none;
   font-size: 13px;
   font-weight: 820;
-  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
 }
 
 .x-follow-gate__action {
-  background: rgba(245, 246, 241, 0.07);
+  background:
+    linear-gradient(180deg, rgba(245, 246, 241, 0.09), rgba(245, 246, 241, 0.045)),
+    rgba(10, 11, 11, 0.88);
 }
 
 .x-follow-gate__follow-link {
   border-color: rgba(240, 209, 139, 0.36);
-  background: rgba(240, 209, 139, 0.1);
+  background:
+    linear-gradient(180deg, rgba(240, 209, 139, 0.14), rgba(240, 209, 139, 0.07)),
+    rgba(10, 11, 11, 0.86);
   color: #fff4d5;
 }
 
@@ -273,13 +366,18 @@
 .x-follow-gate__follow-link:focus-visible {
   transform: translateY(-1px);
   border-color: rgba(245, 246, 241, 0.24);
-  background: rgba(245, 246, 241, 0.1);
+  background:
+    linear-gradient(180deg, rgba(245, 246, 241, 0.12), rgba(245, 246, 241, 0.06)),
+    rgba(10, 11, 11, 0.9);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
 }
 
 .x-follow-gate__follow-link:hover,
 .x-follow-gate__follow-link:focus-visible {
   border-color: rgba(240, 209, 139, 0.58);
-  background: rgba(240, 209, 139, 0.15);
+  background:
+    linear-gradient(180deg, rgba(240, 209, 139, 0.19), rgba(240, 209, 139, 0.1)),
+    rgba(10, 11, 11, 0.9);
 }
 
 .x-follow-gate__action.is-disabled {
@@ -304,10 +402,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(251, 191, 36, 0.18);
+  padding: 9px 10px;
+  border: 1px dashed rgba(240, 209, 139, 0.2);
   border-radius: 8px;
-  background: rgba(251, 191, 36, 0.045);
+  background: rgba(245, 246, 241, 0.026);
 }
 
 .x-follow-gate__test-skip p {
@@ -318,18 +416,18 @@
 }
 
 .x-follow-gate__test-skip button {
-  min-height: 40px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 0 14px;
-  border: 1px solid rgba(251, 191, 36, 0.28);
+  padding: 0 12px;
+  border: 1px solid rgba(240, 209, 139, 0.28);
   border-radius: 8px;
-  background: rgba(251, 191, 36, 0.12);
-  color: #fde68a;
+  background: rgba(240, 209, 139, 0.08);
+  color: #f0d18b;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 780;
   cursor: pointer;
   transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
@@ -338,8 +436,8 @@
 .x-follow-gate__test-skip button:hover:not(:disabled),
 .x-follow-gate__test-skip button:focus-visible:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(251, 191, 36, 0.45);
-  background: rgba(251, 191, 36, 0.16);
+  border-color: rgba(240, 209, 139, 0.44);
+  background: rgba(240, 209, 139, 0.12);
 }
 
 .x-follow-gate__test-skip button:disabled {
@@ -362,20 +460,37 @@
     gap: 16px;
   }
 
+  .x-follow-gate__head {
+    padding-right: 40px;
+  }
+
   .x-follow-gate__head h1 {
-    font-size: 27px;
+    font-size: 25px;
   }
 
   .x-follow-gate__step h2 {
-    font-size: 22px;
+    font-size: 21px;
   }
 
   .x-follow-gate__step-state {
     display: none;
   }
 
-  .x-follow-gate__step-tab {
-    grid-template-columns: 30px minmax(0, 1fr);
+  .x-follow-gate__rail-item {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .x-follow-gate__rail-node {
+    width: 30px;
+    height: 30px;
+    font-size: 10px;
+  }
+
+  .x-follow-gate .rb-stepper__item:not(:last-child)::after {
+    top: 15px;
+    left: 15px;
+    right: -33px;
   }
 
   .x-follow-gate__action,
