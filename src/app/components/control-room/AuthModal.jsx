@@ -1,5 +1,5 @@
 import { AtSign, Chrome, Loader2, Mail, MessageCircle, ShieldCheck, WalletCards, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { compactAddress } from "../../data/ticketMath";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
@@ -14,6 +14,72 @@ function providerHref(provider) {
 
 function authErrorMessage(error, fallback) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function walletProviderLabel(provider, info) {
+  if (info?.name) return info.name;
+  if (provider?.isRabby) return "Rabby";
+  if (provider?.isOkxWallet || provider?.isOKExWallet) return "OKX Wallet";
+  if (provider?.isTrust) return "Trust Wallet";
+  if (provider?.isCoinbaseWallet) return "Coinbase Wallet";
+  if (provider?.isBraveWallet) return "Brave Wallet";
+  if (provider?.isMetaMask) return "MetaMask";
+  return "Injected Wallet";
+}
+
+function walletProviderDetail(provider, info) {
+  if (info?.rdns) return info.rdns;
+  if (provider?.isRabby) return "rabby.io";
+  if (provider?.isOkxWallet || provider?.isOKExWallet) return "okx.com";
+  if (provider?.isTrust) return "trustwallet.com";
+  if (provider?.isCoinbaseWallet) return "coinbase.com";
+  if (provider?.isBraveWallet) return "brave.com";
+  if (provider?.isMetaMask) return "metamask.io";
+  return "browser injected";
+}
+
+function getLegacyWalletProviders() {
+  if (typeof window === "undefined") return [];
+  const injected = window.ethereum;
+  if (!injected) return [];
+
+  const providers = Array.isArray(injected.providers) && injected.providers.length > 0
+    ? injected.providers
+    : [injected];
+
+  return providers
+    .filter((provider) => provider?.request)
+    .map((provider) => ({
+      provider,
+      info: null,
+      source: "legacy",
+    }));
+}
+
+function normalizeWalletProviders(entries) {
+  const seenProviders = new Set();
+  const seenKeys = new Set();
+
+  return entries.reduce((providers, entry) => {
+    if (!entry?.provider?.request) return providers;
+    if (seenProviders.has(entry.provider)) return providers;
+
+    const label = walletProviderLabel(entry.provider, entry.info);
+    const detail = walletProviderDetail(entry.provider, entry.info);
+    const key = entry.info?.uuid || entry.info?.rdns || `${label}:${detail}`;
+    if (seenKeys.has(key)) return providers;
+
+    seenProviders.add(entry.provider);
+    seenKeys.add(key);
+    providers.push({
+      id: key,
+      provider: entry.provider,
+      label,
+      detail,
+      source: entry.source,
+    });
+    return providers;
+  }, []);
 }
 
 export function AuthModal({
@@ -31,6 +97,8 @@ export function AuthModal({
   const [emailStep, setEmailStep] = useState("email");
   const [busyAction, setBusyAction] = useState("");
   const [localIssue, setLocalIssue] = useState("");
+  const [walletProviders, setWalletProviders] = useState([]);
+  const [walletDetecting, setWalletDetecting] = useState(false);
   const walletLinked = Boolean(authSession?.walletAddress);
   const hasBackend = Boolean(authEndpointReady);
   const canUseEmail = hasBackend && providerEnabled(authConfig, "email");
@@ -59,18 +127,64 @@ export function AuthModal({
     },
   ]), [authConfig, hasBackend, t]);
 
+  useEffect(() => {
+    if (!open || !canUseWallet) {
+      setWalletProviders([]);
+      setWalletDetecting(false);
+      return undefined;
+    }
+
+    let active = true;
+    const discoveredEntries = [];
+
+    function publish(entries = []) {
+      if (!active) return;
+      const nextEntries = entries.length > 0 ? entries : discoveredEntries;
+      setWalletProviders(normalizeWalletProviders(nextEntries));
+    }
+
+    function handleAnnounceProvider(event) {
+      const detail = event.detail;
+      if (!detail?.provider) return;
+      discoveredEntries.push({
+        provider: detail.provider,
+        info: detail.info || null,
+        source: "eip6963",
+      });
+      publish();
+    }
+
+    setWalletDetecting(true);
+    window.addEventListener?.("eip6963:announceProvider", handleAnnounceProvider);
+    discoveredEntries.push(...getLegacyWalletProviders());
+    publish();
+    window.dispatchEvent?.(new Event("eip6963:requestProvider"));
+
+    const settleTimer = window.setTimeout(() => {
+      if (!active) return;
+      setWalletDetecting(false);
+      publish();
+    }, 420);
+
+    return () => {
+      active = false;
+      window.clearTimeout(settleTimer);
+      window.removeEventListener?.("eip6963:announceProvider", handleAnnounceProvider);
+    };
+  }, [canUseWallet, open]);
+
   if (!open) return null;
 
-  async function handleWalletLogin() {
+  async function handleWalletLogin(walletProvider) {
     setLocalIssue("");
-    if (!window.ethereum?.request) {
+    if (!walletProvider?.provider?.request) {
       setLocalIssue(t("auth.walletMissing"));
       return;
     }
 
-    setBusyAction("wallet");
+    setBusyAction(`wallet:${walletProvider.id}`);
     try {
-      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      const accounts = await walletProvider.provider.request({ method: "eth_requestAccounts" });
       const address = accounts?.[0];
       if (!address) throw new Error(t("auth.walletMissing"));
 
@@ -80,7 +194,7 @@ export function AuthModal({
       const noncePayload = await nonceResponse.json().catch(() => ({}));
       if (!nonceResponse.ok) throw new Error(noncePayload.error || `HTTP ${nonceResponse.status}`);
 
-      const signature = await window.ethereum.request({
+      const signature = await walletProvider.provider.request({
         method: "personal_sign",
         params: [noncePayload.message, address],
       });
@@ -184,12 +298,42 @@ export function AuthModal({
               <em>{enabled ? t("auth.openProvider") : t("auth.notConfigured")}</em>
             </a>
           ))}
+        </div>
 
-          <button type="button" disabled={!canUseWallet || busyAction === "wallet"} onClick={handleWalletLogin}>
-            {busyAction === "wallet" ? <Loader2 className="is-spinning" size={18} /> : <WalletCards size={18} strokeWidth={2.15} />}
-            <span>{t("auth.wallet")}</span>
-            <em>{canUseWallet ? t("auth.signWallet") : t("auth.notConfigured")}</em>
-          </button>
+        <div className="auth-wallet-selector" aria-label={t("auth.walletSelectorAria")}>
+          <header className="auth-wallet-selector__head">
+            <span>
+              <WalletCards size={17} strokeWidth={2.15} />
+              {t("auth.walletChoose")}
+            </span>
+            <em>{walletDetecting ? t("auth.walletDetecting") : t("auth.walletDetected", { count: walletProviders.length })}</em>
+          </header>
+          {walletProviders.length > 0 ? (
+            <div className="auth-wallet-selector__grid">
+              {walletProviders.map((walletProvider) => {
+                const busy = busyAction === `wallet:${walletProvider.id}`;
+                return (
+                  <button
+                    key={walletProvider.id}
+                    className="auth-wallet-provider"
+                    type="button"
+                    disabled={!canUseWallet || Boolean(busyAction)}
+                    onClick={() => handleWalletLogin(walletProvider)}
+                  >
+                    {busy ? <Loader2 className="is-spinning" size={18} /> : <WalletCards size={18} strokeWidth={2.15} />}
+                    <span>{walletProvider.label}</span>
+                    <em>{canUseWallet ? walletProvider.detail : t("auth.notConfigured")}</em>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <button type="button" className="auth-wallet-provider is-empty" disabled>
+              <WalletCards size={18} strokeWidth={2.15} />
+              <span>{t("auth.wallet")}</span>
+              <em>{canUseWallet ? t("auth.walletMissing") : t("auth.notConfigured")}</em>
+            </button>
+          )}
         </div>
 
         <form className="auth-email-form" onSubmit={emailStep === "otp" ? handleVerifyOtp : handleSendOtp}>

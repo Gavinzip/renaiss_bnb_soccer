@@ -19,6 +19,22 @@ function tokenKey(sessionId, provider) {
   return `${provider}:${sessionId}`
 }
 
+function sanitizeIdentity(identity) {
+  if (!identity || typeof identity !== 'object') return null
+  const provider = String(identity.provider || '').trim()
+  const providerUserId = String(identity.providerUserId || '').trim()
+  if (!provider || !providerUserId) return null
+
+  return {
+    provider,
+    providerUserId,
+    username: identity.username || null,
+    email: identity.email || null,
+    name: identity.name || identity.globalName || null,
+    picture: identity.picture || null,
+  }
+}
+
 function encryptionKey(secret) {
   return createHash('sha256').update(String(secret || '')).digest()
 }
@@ -77,25 +93,29 @@ export function createOAuthTokenConfig({ authDir, sessionSecret }) {
   }
 }
 
-export function saveOAuthToken(config, session, provider, tokenPayload) {
+export function saveOAuthToken(config, session, provider, tokenPayload, options = {}) {
   if (!session?.id || !provider || !tokenPayload?.access_token) return null
 
   const state = readTokenState(config.path)
   const createdAt = nowIso()
+  const existing = state.tokens[tokenKey(session.id, provider)] || {}
   const expiresIn = Math.max(0, Math.floor(Number(tokenPayload.expires_in || 0)))
   const accessTokenExpiresAt = expiresIn > 0
     ? new Date(Date.now() + expiresIn * 1000).toISOString()
     : null
+  const identity = sanitizeIdentity(options.identity) || existing.identity || null
 
   const record = {
+    ...existing,
     sessionId: session.id,
     provider,
-    createdAt,
+    createdAt: existing.createdAt || createdAt,
     updatedAt: createdAt,
     expiresAt: session.expiresAt,
     accessTokenExpiresAt,
     scope: tokenPayload.scope || null,
     tokenType: tokenPayload.token_type || 'bearer',
+    identity,
     encrypted: encryptPayload(config.sessionSecret, {
       access_token: tokenPayload.access_token,
       refresh_token: tokenPayload.refresh_token || null,
@@ -129,6 +149,7 @@ export function readOAuthToken(config, session, provider) {
       accessTokenExpiresAt: record.accessTokenExpiresAt || null,
       scope: record.scope || null,
       tokenType: record.tokenType || 'bearer',
+      identity: record.identity || null,
     }
   } catch {
     return null

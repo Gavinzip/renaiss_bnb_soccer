@@ -104,8 +104,12 @@ export const enLocale = {
       "title": "Choose a login method",
       "verifyOtp": "Verify OTP",
       "wallet": "Web3 wallet",
+      "walletChoose": "Choose wallet",
+      "walletDetected": "{count} detected",
+      "walletDetecting": "Detecting wallets",
       "walletFailed": "Wallet verification failed.",
       "walletMissing": "No wallet provider found.",
+      "walletSelectorAria": "Available wallet selector",
       "walletUnlinked": "No wallet linked",
       "x": "X"
     },
@@ -282,9 +286,9 @@ export const enLocale = {
     "home": {
       "aria": "Renaiss campaign home",
       "kicker": "Round reset campaign",
-      "title": "Renaiss World Cup Prediction",
-      "body": "Allocate pack tickets match by match. Correct advancing-team picks enter that round's draw, then the next round starts from a fresh ticket pool.",
-      "startVoting": "Start voting",
+      "title": "Renaiss\nWorld Cup Prediction",
+      "body": "Rewards from the Round of 32 to the final, across all five rounds\nCorrect advancement picks enter the draw; start from the first match and chase championship night",
+      "startVoting": "Start prediction",
       "viewSchedule": "View schedule",
       "prizeLadder": "Ticket Milestone",
       "unlocked": "{unlocked} / {total} unlocked",
@@ -682,7 +686,7 @@ export const enLocale = {
       "heroTitle": "Pick the advancing team. Enter that match pool.",
       "heroBody": "Votes stay on the server; correct picks enter after results; only the reveal goes on-chain.",
       "lifecycleEyebrow": "Flow",
-      "lifecycleTitle": "How tickets become prizes",
+      "lifecycleTitle": "Read the game, claim the prize",
       "roundRulebook": "Entry rules",
       "eligibilityMap": "{round} eligibility",
       "eligibilityAria": "Vote and entry eligibility",
@@ -690,9 +694,6 @@ export const enLocale = {
       "roundOverviewEyebrow": "Round overview",
       "roundOverviewTitle": "Prize state by round",
       "notConnected": "Data split",
-      "boundaryTitle": "Server handles votes; chain handles reveal",
-      "proofTitle": "Trackable, verifiable, claimable",
-      "boundaryAria": "Server vote ledger and on-chain reveal split",
       "productionOps": "Production ops",
       "adminRequirements": "Launch checklist",
       "checklistAria": "Production admin and operations checklist",
@@ -748,50 +749,32 @@ export const enLocale = {
       },
       "flow": {
         "tickets": [
-          "1 vote per buyback",
-          "Qualified only"
+          "Claim prediction tickets",
+          "Buybacks earn Tickets"
         ],
         "vote": [
-          "Vote team",
-          "Either side"
+          "Pick advancing teams",
+          "Spend Tickets on contenders"
         ],
         "cutoff": [
-          "Cutoff",
-          "1 hour before"
+          "Match cutoff lock",
+          "Closed one hour before each match"
         ],
         "result": [
-          "Result",
-          "FIFA"
+          "Official result check",
+          "Judged by FIFA results"
         ],
         "pool": [
-          "Pool",
-          "Correct picks"
+          "Correct picks enter",
+          "Winning Tickets enter automatically"
         ],
         "chain": [
-          "On-chain",
-          "VRF reveal"
+          "Fair on-chain draw",
+          "VRF reveals the winners"
         ],
         "winner": [
-          "Payout",
-          "Ticket to wallet"
-        ]
-      },
-      "proof": {
-        "server": [
-          "Qualified buybacks",
-          "Within the campaign window, successful on-chain, wallet-matched, and not duplicated."
-        ],
-        "fifa": [
-          "Official result",
-          "FIFA decides advancement"
-        ],
-        "chain": [
-          "On-chain reveal",
-          "Ledger hash + VRF"
-        ],
-        "payout": [
-          "Match winner",
-          "Winning ticket maps to wallet"
+          "Claim the prize",
+          "Winning ticket wallet claims U"
         ]
       },
       "eligibility": {

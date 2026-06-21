@@ -17,6 +17,17 @@ import { RulesRoom } from "./RulesRoom";
 const HERO_SCROLL_VIDEO_URL =
   "https://pub-7230fa99c50e44e9b241e47cac526165.r2.dev/home/Background.web.2026-06-18.mp4";
 
+function renderCopyLines(text) {
+  return String(text || "")
+    .split("\n")
+    .map((line, index, lines) => (
+      <span key={`${line}-${index}`}>
+        {line}
+        {index < lines.length - 1 ? <br /> : null}
+      </span>
+    ));
+}
+
 export function preloadHomeRoomAssets() {
   addPreloadHint(heroImage, "image", "image/webp");
   return preloadImage(heroImage);
@@ -388,9 +399,9 @@ export function HomeRoom({
       <figure className="hero-stage">
         <figcaption className="hero-stage__content">
           <section className="hero-copy">
-            <h1>{t("home.title")}</h1>
+            <h1>{renderCopyLines(t("home.title"))}</h1>
             <p>
-              {t("home.body")}
+              {renderCopyLines(t("home.body"))}
             </p>
             <menu className="hero-actions" aria-label={t("home.primaryActionsAria")}>
               <li>

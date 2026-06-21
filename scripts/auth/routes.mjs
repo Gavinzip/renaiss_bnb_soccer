@@ -494,12 +494,15 @@ export async function handleAuthRoute({
       return true
     }
 
+    const currentSession = readAuthSession(auth, request)
+    const connectRequested = provider === 'x' && url.searchParams.get('connect') === '1'
     const redirectUri = createRedirectUri(provider, request, auth.env)
     const { verifier, challenge } = createPkcePair()
     const stateToken = createOauthChallenge(auth.stateConfig, provider, {
       codeVerifier: verifier,
       redirectUri,
       returnTo: safeReturnTo(url.searchParams.get('return_to')),
+      connectSessionId: connectRequested && currentSession?.id ? currentSession.id : null,
     })
 
     const config = auth.providerConfig[provider]
@@ -551,10 +554,22 @@ export async function handleAuthRoute({
       failureStage = 'userinfo'
       const identity = await fetchOAuthIdentity(provider, auth.providerConfig, token.access_token)
       if (!identity.providerUserId) throw new Error('OAuth identity missing stable user id.')
-      failureStage = 'session_create'
-      const { session } = await createSessionForIdentity({ auth, request, response, identity })
-      if (provider === 'x') {
-        saveOAuthToken(auth.oauthTokenConfig, session, provider, token)
+      const currentSession = readAuthSession(auth, request)
+      let session = null
+      if (provider === 'x' && challenge.connectSessionId) {
+        failureStage = 'session_link'
+        if (!currentSession || currentSession.id !== challenge.connectSessionId) {
+          throw new Error('X connection session expired or changed. Please retry from the verification panel.')
+        }
+        session = currentSession
+        saveOAuthToken(auth.oauthTokenConfig, session, provider, token, { identity })
+      } else {
+        failureStage = 'session_create'
+        const result = await createSessionForIdentity({ auth, request, response, identity })
+        session = result.session
+        if (provider === 'x') {
+          saveOAuthToken(auth.oauthTokenConfig, session, provider, token, { identity })
+        }
       }
       const currentSetCookie = response.getHeader('set-cookie')
       const headers = appendSetCookie({ 'set-cookie': currentSetCookie }, clearStateHeader)

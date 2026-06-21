@@ -109,11 +109,6 @@ export function WinnersRoom({ winnerRevealData, winnerRevealIssue }) {
       />
       <div className="winner-stage-reveal-bg" style={{ backgroundImage: `url(${revealBackdrop})` }} aria-hidden="true" />
       <div className="winner-stage-scrim" aria-hidden="true" />
-      <div className="winner-stage-chrome" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
 
       <section className="winner-stage-intro" aria-hidden={revealStarted}>
         <span>

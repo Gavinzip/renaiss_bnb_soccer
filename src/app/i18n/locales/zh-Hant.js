@@ -104,8 +104,12 @@ export const zhHantLocale = {
       "title": "選擇登入方式",
       "verifyOtp": "驗證 OTP",
       "wallet": "Web3 錢包",
+      "walletChoose": "選擇錢包",
+      "walletDetected": "偵測到 {count} 個",
+      "walletDetecting": "偵測錢包中",
       "walletFailed": "錢包驗證失敗。",
       "walletMissing": "找不到可用的錢包外掛。",
+      "walletSelectorAria": "可用錢包選擇",
       "walletUnlinked": "尚未連到錢包",
       "x": "X"
     },
@@ -282,9 +286,9 @@ export const zhHantLocale = {
     "home": {
       "aria": "Renaiss 活動首頁",
       "kicker": "每輪重置活動",
-      "title": "Renaiss 世界盃預測",
-      "body": "",
-      "startVoting": "開始投票",
+      "title": "Renaiss\n世界盃預測",
+      "body": "32 強到冠軍賽，五輪都有獎\n猜中晉級即可加入抽獎；由第一場開始，衝向冠軍夜",
+      "startVoting": "開始預測",
       "viewSchedule": "查看賽程",
       "prizeLadder": "票數 Milestone",
       "unlocked": "{unlocked} / {total} 已解鎖",
@@ -682,7 +686,7 @@ export const zhHantLocale = {
       "heroTitle": "猜中晉級，進該場獎池。",
       "heroBody": "投票在伺服器；賽果後入池；抽獎揭示才上鏈。",
       "lifecycleEyebrow": "流程",
-      "lifecycleTitle": "票怎麼變成獎金",
+      "lifecycleTitle": "看透賽局，奪標獎金",
       "roundRulebook": "入池規則",
       "eligibilityMap": "{round} 資格判定",
       "eligibilityAria": "投票與入池資格",
@@ -690,9 +694,6 @@ export const zhHantLocale = {
       "roundOverviewEyebrow": "輪次總覽",
       "roundOverviewTitle": "各輪獎池狀態",
       "notConnected": "資料分工",
-      "boundaryTitle": "伺服器負責投票；鏈上負責揭示",
-      "proofTitle": "可查、可驗、可對獎",
-      "boundaryAria": "伺服器票務與鏈上揭示分工",
       "productionOps": "正式營運",
       "adminRequirements": "上線前檢查",
       "checklistAria": "正式營運與後台檢查清單",
@@ -748,50 +749,32 @@ export const zhHantLocale = {
       },
       "flow": {
         "tickets": [
-          "buyback 得一票",
-          "符合條件才計入"
+          "領取競猜門票",
+          "回購獲取Tickets"
         ],
         "vote": [
-          "投隊伍",
-          "兩邊可加"
+          "預測晉級隊伍",
+          "消耗Tickets力挺強隊"
         ],
         "cutoff": [
-          "截止",
-          "前 1 小時"
+          "賽事截止鎖定",
+          "每輪賽事前一小時截止"
         ],
         "result": [
-          "賽果",
-          "FIFA"
+          "官方賽果確認",
+          "依據FIFA賽果判定"
         ],
         "pool": [
-          "入池",
-          "猜中才進"
+          "預測成功入池",
+          "預測成功的ticket自動入池"
         ],
         "chain": [
-          "鏈上",
-          "VRF 揭示"
+          "鏈上公正抽獎",
+          "VRF隨機揭曉幸運兒"
         ],
         "winner": [
-          "發獎",
-          "票號對錢包"
-        ]
-      },
-      "proof": {
-        "server": [
-          "符合條件",
-          "活動時間內、鏈上成功、可對回錢包且未重複的 buyback 才計票。"
-        ],
-        "fifa": [
-          "官方賽果",
-          "FIFA 結果決定晉級"
-        ],
-        "chain": [
-          "鏈上揭示",
-          "ledger hash + VRF"
-        ],
-        "payout": [
-          "對獎",
-          "中獎票號對回錢包"
+          "抱走巨額獎金",
+          "憑中獎票號錢包領U"
         ]
       },
       "eligibility": {

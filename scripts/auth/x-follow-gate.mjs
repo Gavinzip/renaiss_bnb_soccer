@@ -68,16 +68,50 @@ function emptyVerificationState() {
   }
 }
 
-function verificationKey(providerUserId, targetHandle) {
+function normalizeWalletAddress(value) {
+  const address = String(value || '').trim().toLowerCase()
+  return /^0x[a-f0-9]{40}$/.test(address) ? address : ''
+}
+
+function legacyXVerificationKey(providerUserId, targetHandle) {
   return `${targetHandle}:${providerUserId}`
+}
+
+function identityVerificationKey(identity, targetHandle) {
+  if (!identity?.provider || !identity?.providerUserId) return ''
+  return `${targetHandle}:${identity.provider}:${identity.providerUserId}`
+}
+
+function verificationSubject(session) {
+  const walletAddress = normalizeWalletAddress(session?.walletAddress)
+  if (walletAddress) {
+    return {
+      type: 'wallet',
+      walletAddress,
+      keyPart: `wallet:${walletAddress}`,
+    }
+  }
+
+  const identity = session?.identity || null
+  if (identity?.provider && identity?.providerUserId) {
+    return {
+      type: 'identity',
+      provider: identity.provider,
+      providerUserId: identity.providerUserId,
+      keyPart: `${identity.provider}:${identity.providerUserId}`,
+    }
+  }
+
+  return null
 }
 
 function sessionVerificationKeys(session, targetHandle) {
   const identity = session?.identity || null
-  if (!identity?.provider || !identity?.providerUserId) return []
-  const current = `${targetHandle}:${identity.provider}:${identity.providerUserId}`
-  const legacy = identity.provider === 'x' ? verificationKey(identity.providerUserId, targetHandle) : ''
-  return [...new Set([current, legacy].filter(Boolean))]
+  const subject = verificationSubject(session)
+  const current = subject ? `${targetHandle}:${subject.keyPart}` : ''
+  const identityKey = identityVerificationKey(identity, targetHandle)
+  const legacy = identity?.provider === 'x' ? legacyXVerificationKey(identity.providerUserId, targetHandle) : ''
+  return [...new Set([current, identityKey, legacy].filter(Boolean))]
 }
 
 function skipCookieRecordKey(config, token) {
@@ -148,8 +182,22 @@ function retryAfterSeconds(record, retrySeconds) {
   return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000))
 }
 
-function statusForSession(config, session, request) {
+function xIdentityFromSession(session) {
   const identity = session?.identity || null
+  return identity?.provider === 'x' && identity?.providerUserId ? identity : null
+}
+
+function getSessionXIdentity(auth, session) {
+  const token = readOAuthToken(auth.oauthTokenConfig, session, 'x')
+  const tokenIdentity = token?.identity || null
+  if (tokenIdentity?.provider === 'x' && tokenIdentity?.providerUserId) return tokenIdentity
+  return xIdentityFromSession(session)
+}
+
+function statusForSession(auth, session, request) {
+  const config = auth.xFollowGateConfig
+  const xIdentity = session ? getSessionXIdentity(auth, session) : null
+  const subject = verificationSubject(session)
   const target = {
     handle: config.targetHandle,
     url: config.targetUrl,
@@ -199,6 +247,8 @@ function statusForSession(config, session, request) {
   const common = {
     target,
     authenticated: true,
+    verificationScope: subject?.type || 'session',
+    walletAddress: subject?.walletAddress || null,
     verified,
     gatePassed: verified || bypassed,
     bypassed,
@@ -211,7 +261,7 @@ function statusForSession(config, session, request) {
     connectionStatus: Array.isArray(record?.connectionStatus) ? record.connectionStatus : [],
   }
 
-  if (identity?.provider !== 'x' || !identity?.providerUserId) {
+  if (!xIdentity?.providerUserId) {
     return {
       ...common,
       xConnected: false,
@@ -222,8 +272,8 @@ function statusForSession(config, session, request) {
   return {
     ...common,
     xConnected: true,
-    xUserId: identity.providerUserId,
-    username: identity.username || null,
+    xUserId: xIdentity.providerUserId,
+    username: xIdentity.username || null,
     status: common.status || 'unverified',
   }
 }
@@ -256,7 +306,9 @@ async function refreshXToken(auth, session, token) {
   if (!payload.refresh_token && refreshToken) {
     payload.refresh_token = refreshToken
   }
-  saveOAuthToken(auth.oauthTokenConfig, session, 'x', payload)
+  saveOAuthToken(auth.oauthTokenConfig, session, 'x', payload, {
+    identity: token.identity || xIdentityFromSession(session),
+  })
   return payload
 }
 
@@ -316,20 +368,29 @@ async function fetchConnectionStatus(auth, config, session, accessToken) {
   }
 }
 
-function saveVerificationResult(config, session, result) {
-  const identity = session.identity
+function saveVerificationResult(auth, session, result) {
+  const config = auth.xFollowGateConfig
+  const xIdentity = getSessionXIdentity(auth, session)
+  const subject = verificationSubject(session)
   const checkedAt = nowIso()
   const connectionStatus = Array.isArray(result.connectionStatus) ? result.connectionStatus : []
   const verified = connectionStatus.includes('following')
   const state = readState(config.path)
-  const key = sessionVerificationKeys(session, config.targetHandle)[0] || verificationKey(identity.providerUserId, config.targetHandle)
+  const key = sessionVerificationKeys(session, config.targetHandle)[0]
+  if (!key || !subject || !xIdentity?.providerUserId) {
+    throw Object.assign(new Error('X follow verification requires a session identity and connected X identity.'), {
+      statusCode: 409,
+    })
+  }
   const existing = state.verifications[key] || {}
 
   state.verifications[key] = {
     ...existing,
+    subjectType: subject?.type || existing.subjectType || 'identity',
+    walletAddress: subject?.walletAddress || existing.walletAddress || null,
     provider: 'x',
-    providerUserId: identity.providerUserId,
-    username: identity.username || null,
+    providerUserId: xIdentity.providerUserId,
+    username: xIdentity.username || null,
     targetHandle: config.targetHandle,
     targetUserId: result.targetUser?.id || existing.targetUserId || null,
     connectionStatus,
@@ -339,22 +400,27 @@ function saveVerificationResult(config, session, result) {
     updatedAt: checkedAt,
   }
   writeState(config.path, state)
-  return statusForSession(config, session)
+  return statusForSession(auth, session)
 }
 
-function saveVerificationFailure(config, session, status, error) {
-  const identity = session?.identity
-  if (identity?.provider !== 'x' || !identity.providerUserId) return
+function saveVerificationFailure(auth, session, status, error) {
+  const config = auth.xFollowGateConfig
+  const xIdentity = getSessionXIdentity(auth, session)
+  const subject = verificationSubject(session)
+  if (!xIdentity?.providerUserId || !subject) return
 
   const checkedAt = nowIso()
   const state = readState(config.path)
-  const key = sessionVerificationKeys(session, config.targetHandle)[0] || verificationKey(identity.providerUserId, config.targetHandle)
+  const key = sessionVerificationKeys(session, config.targetHandle)[0]
+  if (!key) return
   const existing = state.verifications[key] || {}
   state.verifications[key] = {
     ...existing,
+    subjectType: subject.type,
+    walletAddress: subject.walletAddress || existing.walletAddress || null,
     provider: 'x',
-    providerUserId: identity.providerUserId,
-    username: identity.username || null,
+    providerUserId: xIdentity.providerUserId,
+    username: xIdentity.username || null,
     targetHandle: config.targetHandle,
     status,
     lastCheckedAt: checkedAt,
@@ -385,7 +451,7 @@ export function createXFollowGateConfig({ authDir, env = process.env }) {
 }
 
 export function getXFollowStatus(auth, session, request) {
-  return statusForSession(auth.xFollowGateConfig, session, request)
+  return statusForSession(auth, session, request)
 }
 
 export function clearXFollowSkipCookie(auth) {
@@ -394,7 +460,7 @@ export function clearXFollowSkipCookie(auth) {
 
 export function skipXFollow(auth, session, request) {
   const config = auth.xFollowGateConfig
-  const status = statusForSession(config, session, request)
+  const status = statusForSession(auth, session, request)
   if (!config.skipEnabled) {
     throw Object.assign(new Error('X follow test bypass is disabled.'), {
       statusCode: 404,
@@ -427,11 +493,14 @@ export function skipXFollow(auth, session, request) {
   }
 
   const identity = session?.identity || null
+  const subject = verificationSubject(session)
   const sessionKey = sessionVerificationKeys(session, config.targetHandle)[0]
-  if (sessionKey && identity?.provider && identity?.providerUserId) {
+  if (sessionKey && subject && identity?.provider && identity?.providerUserId) {
     const existing = state.verifications[sessionKey] || {}
     state.verifications[sessionKey] = {
       ...existing,
+      subjectType: subject.type,
+      walletAddress: subject.walletAddress || existing.walletAddress || null,
       provider: identity.provider,
       providerUserId: identity.providerUserId,
       username: identity.username || null,
@@ -446,7 +515,7 @@ export function skipXFollow(auth, session, request) {
   writeState(config.path, state)
 
   const nextStatus = session
-    ? statusForSession(config, session, request)
+    ? statusForSession(auth, session, request)
     : {
       target: {
         handle: config.targetHandle,
@@ -473,7 +542,7 @@ export function skipXFollow(auth, session, request) {
 }
 
 export async function verifyXFollow(auth, session, request) {
-  const status = statusForSession(auth.xFollowGateConfig, session, request)
+  const status = statusForSession(auth, session, request)
   if (!session) {
     throw Object.assign(new Error('X login is required before verification.'), {
       statusCode: 401,
@@ -509,13 +578,13 @@ export async function verifyXFollow(auth, session, request) {
 
   try {
     const result = await fetchConnectionStatus(auth, auth.xFollowGateConfig, session, token.access_token)
-    return saveVerificationResult(auth.xFollowGateConfig, session, result)
+    return saveVerificationResult(auth, session, result)
   } catch (error) {
     const failureStatus = error?.statusCode === 429 ? 'rate_limited' : 'api_error'
-    saveVerificationFailure(auth.xFollowGateConfig, session, failureStatus, error)
+    saveVerificationFailure(auth, session, failureStatus, error)
     throw Object.assign(error, {
       code: failureStatus,
-      status: statusForSession(auth.xFollowGateConfig, session, request),
+      status: statusForSession(auth, session, request),
     })
   }
 }

@@ -46,25 +46,6 @@ const ruleFlowBlueprint = [
   },
 ];
 
-const proofLaneBlueprint = [
-  {
-    id: "server",
-    icon: Database,
-  },
-  {
-    id: "fifa",
-    icon: BadgeCheck,
-  },
-  {
-    id: "chain",
-    icon: ShieldCheck,
-  },
-  {
-    id: "payout",
-    icon: Trophy,
-  },
-];
-
 const DEFAULT_MATCH_PRIZE_AMOUNT = 1000;
 const DEFAULT_PRIZE_CURRENCY = "USDT";
 
@@ -170,33 +151,6 @@ function RulesRewardMap({ activeRound, matches, totalPrizeSlots, copy }) {
   );
 }
 
-function RulesProofLanes({ copy }) {
-  const { copyList, t } = copy;
-
-  return (
-    <GlareHover as="article" className="rules-proof-lanes">
-      <header>
-        <span>{t("rules.boundaryTitle")}</span>
-        <h2>{t("rules.proofTitle")}</h2>
-      </header>
-      <ol aria-label={t("rules.boundaryAria")}>
-        {proofLaneBlueprint.map((item, index) => {
-          const Icon = item.icon;
-          const [title, body] = copyList(`rules.proof.${item.id}`);
-
-          return (
-            <AnimatedContent as="li" key={item.id} delay={index * 0.035} distance={8}>
-              <Icon size={18} strokeWidth={2.15} />
-              <strong>{title}</strong>
-              <p>{body}</p>
-            </AnimatedContent>
-          );
-        })}
-      </ol>
-    </GlareHover>
-  );
-}
-
 export function RulesRoom({ activeRound, activeRoundMatches = [], rounds = [], className = "" }) {
   const copy = useCampaignCopy();
   const { t } = copy;
@@ -212,8 +166,6 @@ export function RulesRoom({ activeRound, activeRoundMatches = [], rounds = [], c
       />
 
       <RulesFlowChart copy={copy} />
-
-      <RulesProofLanes copy={copy} />
     </section>
   );
 }

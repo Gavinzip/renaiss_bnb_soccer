@@ -6,7 +6,7 @@ import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import "./XFollowGate.css";
 
 function xLoginHref() {
-  return `/api/auth/x/start?return_to=${encodeURIComponent("/?view=vote&auth=success")}`;
+  return `/api/auth/x/start?connect=1&return_to=${encodeURIComponent("/?view=vote&auth=success")}`;
 }
 
 function statusMessageKey(status) {
