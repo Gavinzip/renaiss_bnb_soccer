@@ -21,7 +21,7 @@ const DEFAULT_DATA_DIR = join(repoRoot, '.local-data/soccer-test-batch')
 const DEFAULT_SOURCE_LEDGER = join(repoRoot, '.local-data/soccer-production/lucky-draw-ledger.json')
 const LEGACY_SOURCE_LEDGER = join(repoRoot, '.local-data/soccer/lucky-draw-ledger.json')
 const DEFAULT_VOTE_COUNT = 1000
-const DEFAULT_PRIZE_SLOTS = 2
+const DEFAULT_PRIZE_SLOTS = 1
 const DEFAULT_ALTERNATE_COUNT = 2
 const DEFAULT_SEED = 'renaiss-round16-test-batch-2026'
 
@@ -36,7 +36,7 @@ function hasFlag(name) {
 
 function printHelp() {
   console.log(`Usage:
-  node scripts/seed-local-test-batch.mjs [--data-dir <path>] [--source-ledger <path>] [--votes 1000] [--prize-slots 2] [--alternates 2]
+  node scripts/seed-local-test-batch.mjs [--data-dir <path>] [--source-ledger <path>] [--votes 1000] [--prize-slots 1] [--alternates 2]
 
 Builds a local test-batch dataset from real production ledger wallets:
   - copies the source ticket ledger

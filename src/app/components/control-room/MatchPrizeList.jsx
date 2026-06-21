@@ -4,7 +4,7 @@ import {
   Ticket,
 } from "lucide-react";
 import { Fragment } from "react";
-import { formatNumber } from "../../data/ticketMath";
+import { formatNumber, formatPrizeMoney } from "../../data/ticketMath";
 
 const voteableStatuses = new Set(["open", "closing_soon"]);
 
@@ -39,11 +39,10 @@ function getMatchPrize(match, activeRound) {
   };
 }
 
-function formatPrizeAmount(match, activeRound) {
+function formatPrizeAmount(match, activeRound, locale) {
   const prize = getMatchPrize(match, activeRound);
   if (!Number.isFinite(prize.amount) || !prize.currency) return null;
-  const currency = prize.currency === "USDT" ? "U" : ` ${prize.currency}`;
-  return `${formatNumber(prize.amount)}${currency}`;
+  return formatPrizeMoney(prize.amount, prize.currency, locale);
 }
 
 function getTeamVoteOutcome(roundVoteOutcomes, matchId, teamId) {
@@ -67,8 +66,8 @@ export function MatchPrizeList({
   onSelectTeam,
   copy,
 }) {
-  const { compactVotes, roundLabel, t, teamName } = copy;
-  const roundPrizeAmount = formatPrizeAmount(matches[0], activeRound);
+  const { compactVotes, locale, roundLabel, t, teamName } = copy;
+  const roundPrizeAmount = formatPrizeAmount(matches[0], activeRound, locale);
 
   return (
     <section className="match-prize-list-view" aria-label={t("vote.matchPrizeListAria", { round: roundLabel(activeRound) })}>
@@ -95,7 +94,7 @@ export function MatchPrizeList({
           const phase = getMatchPhase(match);
           const statusText = t(phase.labelKey);
           const MatchIcon = phase.icon;
-          const matchPrizeAmount = formatPrizeAmount(match, activeRound);
+          const matchPrizeAmount = formatPrizeAmount(match, activeRound, locale);
 
           return (
             <li

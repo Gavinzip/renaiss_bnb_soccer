@@ -21,6 +21,7 @@ import { readVoteStateFromSqlite } from './soccer-vote-store-sqlite.mjs'
 const OUTPUT_VERSION = 1
 const DRAW_LEDGER_HASH_VERSION = 'match-draw-ledger-v1'
 const ROUND_DRAW_LEDGER_HASH_VERSION = 'round-draw-ledger-v1'
+const DEFAULT_MATCH_PRIZE_SLOT_COUNT = 1
 const DEFAULT_ALTERNATE_COUNT = 2
 
 const roundsById = new Map(roundDefinitions.map((round) => [round.id, round]))
@@ -111,7 +112,7 @@ Options:
   --match-results <path>  Backend match-results.json from sync-fifa-results.
   --out <path>            Output match draw ledger.
   --match-id <id>         Build one match only.
-  --prize-slots <n>       Override prize slots for all built matches.
+  --prize-slots <n>       Override primary winner slots per built match. Default 1.
   --alternates <n>        Alternate ticket count per prize slot. Default 2.
   --ledger-uri-base <uri> Base URI used in draw rows. Defaults to output path.
   --dry-run               Print summary without writing.
@@ -250,7 +251,7 @@ function buildDrawRow({ result, allocations, baseLedger, baseLedgerPath, matchRe
   const round = roundsById.get(eligibleAllocations[0].roundId || '')
   if (!round) throw new Error(`Could not resolve round for match ${result.matchId}.`)
   const multiplier = Math.max(1, toPositiveInteger(round.multiplier || 1))
-  const prizeSlotCount = args.prizeSlotCount || toPositiveInteger(round.prizeCount)
+  const prizeSlotCount = args.prizeSlotCount || toPositiveInteger(round.matchPrizeSlotCount) || DEFAULT_MATCH_PRIZE_SLOT_COUNT
   const alternateCount = Math.max(DEFAULT_ALTERNATE_COUNT, toPositiveInteger(args.alternateCount || DEFAULT_ALTERNATE_COUNT))
   if (prizeSlotCount <= 0) throw new Error(`prizeSlotCount must be positive for match ${result.matchId}.`)
 

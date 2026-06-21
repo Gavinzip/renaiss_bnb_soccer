@@ -37,9 +37,9 @@ npm run local:dev
 `npm run local:seed` writes local-only demo data to `.local-data/soccer`:
 
 - 8 Round of 16 match result fixtures marked `sourceLabel: local-round16-demo-result-fixture`.
-- 16 fake SQLite vote allocations, 2 per match.
-- 8 per-match draw rows, each with its own 1..N namespace and `prizeSlotCount: 2`.
-- 16 contract-compatible demo winners generated with the same `_drawUniqueTicket(seed, drawId, pickIndex, nonce)` formula used by the Solidity contract.
+- 24 fake SQLite vote allocations, 3 per match, covering 1 primary winner ticket plus 2 alternates.
+- 8 per-match draw rows, each with its own 1..N namespace and `prizeSlotCount: 1`.
+- 8 contract-compatible demo winners and 16 alternates generated with the same ticket-pick formula used by the Solidity contract.
 
 Because the real 2026 Round of 16 results do not exist yet, the local seed also
 creates local-only confirmed result fixtures. Production still requires the
@@ -102,7 +102,7 @@ Production builds read the server APIs by default:
 - `/api/auth/wallet/nonce`
 - `/api/auth/email/start`
 
-Local dev still uses the mock vote preview unless `VITE_VOTE_PREVIEW_URL` and `VITE_VOTE_SUBMIT_URL` are set. The winner reveal page reads `VITE_DRAW_WINNERS_URL` when configured and otherwise shows a pending official reveal state with the hosted reveal video.
+Local dev still uses the mock vote preview unless `VITE_VOTE_PREVIEW_URL` and `VITE_VOTE_SUBMIT_URL` are set. The winner reveal page reads `VITE_DRAW_WINNERS_URL` when configured. Plain `npm run dev` reads `public/mock-api/draw-winners.json` so the reveal animation can show local-only grouped winners; set `VITE_DRAW_WINNERS_URL=/api/draw-winners` with `npm run local:server` when testing the local API snapshot instead.
 
 ## Production Data Service
 
@@ -255,7 +255,7 @@ namespace, and each prize slot includes one primary winner plus the configured
 alternate count.
 
 ```sh
-npm run build:match-draw-ledger:local -- --prize-slots 2 --alternates 2
+npm run build:match-draw-ledger:local -- --prize-slots 1 --alternates 2
 ```
 
 Compile and deploy the draw contract:
@@ -298,8 +298,8 @@ with an empty `winners` list instead of placeholder winners.
 
 The round-level contract accepts `prizeSlotCount` and `alternateCount` per
 match through `finalizeRoundLedger`, so prize count is not fixed. In the current
-production path, `round16` can use 8 match ledgers, each with 2 primary winners
-and 2 alternates per prize slot. The old per-match runner is still available as
+production path, `round16` uses 8 match ledgers, each with 1 primary winner
+and 2 alternates for that prize slot. The old per-match runner is still available as
 `contract:match-round` for legacy draw inspection only.
 
 The draw runner expects the ledger to contain a per-match draw row. A minimal shape is:
@@ -311,7 +311,8 @@ The draw runner expects the ledger to contain a per-match draw row. A minimal sh
       "matchId": "m73",
       "ledgerHash": "0x...",
       "totalTickets": 12842,
-      "prizeSlotCount": 20,
+      "prizeSlotCount": 1,
+      "alternateCount": 2,
       "ledgerUri": "public/lucky-draw-ledger.json#m73"
     }
   ]

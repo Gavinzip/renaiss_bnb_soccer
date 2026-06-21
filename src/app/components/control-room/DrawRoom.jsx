@@ -5,16 +5,22 @@ import {
   CircleDashed,
   Clock3,
   LockKeyhole,
+  Loader2,
+  Network,
   RefreshCw,
   ShieldCheck,
+  WalletCards,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { AnimatedContent } from "../AnimatedContent";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
-import { formatNumber, formatPercent } from "../../data/ticketMath";
+import { compactAddress, formatNumber, formatPercent } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+import { getLegacyWalletProviders, normalizeWalletProviders } from "../../utils/walletProviders";
 
 const drawStepIds = ["results", "eligible", "snapshot", "reveal"];
+const targetDrawChainId = normalizeChainId(import.meta.env.VITE_DRAW_CHAIN_ID || "0x38");
 
 export function preloadRoomAssets() {
   return Promise.resolve();
@@ -397,6 +403,219 @@ function DrawProgressMap({ activeDraw, activeStep, drawState, t }) {
   );
 }
 
+function normalizeChainId(value) {
+  if (typeof value === "number") return `0x${value.toString(16)}`;
+  const chainId = String(value || "").trim().toLowerCase();
+  if (!chainId) return "";
+  if (chainId.startsWith("0x")) return chainId;
+  const numeric = Number(chainId);
+  return Number.isFinite(numeric) ? `0x${numeric.toString(16)}` : chainId;
+}
+
+function chainLabel(chainId, t) {
+  const normalized = normalizeChainId(chainId);
+  if (!normalized) return t("draw.operatorWalletChainUnknown");
+  if (normalized === "0x38") return "BNB Chain";
+  if (normalized === "0x61") return "BNB Testnet";
+  return normalized;
+}
+
+function targetChainLabel(t) {
+  return chainLabel(targetDrawChainId, t);
+}
+
+function DrawOperatorWallet({ t }) {
+  const [walletProviders, setWalletProviders] = useState([]);
+  const [walletDetecting, setWalletDetecting] = useState(false);
+  const [busyAction, setBusyAction] = useState("");
+  const [issue, setIssue] = useState("");
+  const [connectedWallet, setConnectedWallet] = useState({
+    address: "",
+    chainId: "",
+    label: "",
+    provider: null,
+  });
+  const connected = Boolean(connectedWallet.address);
+  const targetMatched = connected && normalizeChainId(connectedWallet.chainId) === targetDrawChainId;
+
+  useEffect(() => {
+    let active = true;
+    const discoveredEntries = [];
+
+    function publish(entries = []) {
+      if (!active) return;
+      const nextEntries = entries.length > 0 ? entries : discoveredEntries;
+      setWalletProviders(normalizeWalletProviders(nextEntries));
+    }
+
+    function handleAnnounceProvider(event) {
+      const detail = event.detail;
+      if (!detail?.provider) return;
+      discoveredEntries.push({
+        provider: detail.provider,
+        info: detail.info || null,
+        source: "eip6963",
+      });
+      publish();
+    }
+
+    setWalletDetecting(true);
+    window.addEventListener?.("eip6963:announceProvider", handleAnnounceProvider);
+    discoveredEntries.push(...getLegacyWalletProviders());
+    publish();
+    window.dispatchEvent?.(new Event("eip6963:requestProvider"));
+
+    const settleTimer = window.setTimeout(() => {
+      if (!active) return;
+      setWalletDetecting(false);
+      publish();
+    }, 420);
+
+    return () => {
+      active = false;
+      window.clearTimeout(settleTimer);
+      window.removeEventListener?.("eip6963:announceProvider", handleAnnounceProvider);
+    };
+  }, []);
+
+  useEffect(() => {
+    const provider = connectedWallet.provider;
+    if (!provider?.on) return undefined;
+
+    function handleAccountsChanged(accounts = []) {
+      const nextAddress = accounts?.[0] || "";
+      setConnectedWallet((current) => ({
+        ...current,
+        address: nextAddress,
+      }));
+    }
+
+    function handleChainChanged(chainId) {
+      setConnectedWallet((current) => ({
+        ...current,
+        chainId: normalizeChainId(chainId),
+      }));
+    }
+
+    provider.on("accountsChanged", handleAccountsChanged);
+    provider.on("chainChanged", handleChainChanged);
+    return () => {
+      provider.removeListener?.("accountsChanged", handleAccountsChanged);
+      provider.removeListener?.("chainChanged", handleChainChanged);
+    };
+  }, [connectedWallet.provider]);
+
+  async function connectDrawWallet(walletProvider) {
+    setIssue("");
+    if (!walletProvider?.provider?.request) {
+      setIssue(t("draw.operatorWalletMissing"));
+      return;
+    }
+
+    setBusyAction(`connect:${walletProvider.id}`);
+    try {
+      const accounts = await walletProvider.provider.request({ method: "eth_requestAccounts" });
+      const address = accounts?.[0] || "";
+      if (!address) throw new Error(t("draw.operatorWalletMissing"));
+      const chainId = normalizeChainId(await walletProvider.provider.request({ method: "eth_chainId" }));
+      setConnectedWallet({
+        address,
+        chainId,
+        label: walletProvider.label,
+        provider: walletProvider.provider,
+      });
+    } catch (error) {
+      setIssue(error instanceof Error ? error.message : t("draw.operatorWalletFailed"));
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function switchTargetChain() {
+    if (!connectedWallet.provider?.request) return;
+    setIssue("");
+    setBusyAction("switch-chain");
+    try {
+      await connectedWallet.provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: targetDrawChainId }],
+      });
+      setConnectedWallet((current) => ({
+        ...current,
+        chainId: targetDrawChainId,
+      }));
+    } catch (error) {
+      setIssue(error instanceof Error ? error.message : t("draw.operatorWalletFailed"));
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  return (
+    <section className="draw-operator-wallet" aria-label={t("draw.operatorWalletAria")}>
+      <header>
+        <span>
+          <WalletCards size={16} strokeWidth={2.25} />
+          {t("draw.operatorWalletTitle")}
+        </span>
+        <strong>{connected ? compactAddress(connectedWallet.address) : t("draw.operatorWalletDisconnected")}</strong>
+      </header>
+      <p>{t("draw.operatorWalletBody")}</p>
+
+      {connected ? (
+        <dl>
+          <div>
+            <dt>{t("draw.operatorWalletAddress")}</dt>
+            <dd>{compactAddress(connectedWallet.address)}</dd>
+          </div>
+          <div>
+            <dt>{t("draw.operatorWalletChain")}</dt>
+            <dd className={targetMatched ? "is-ready" : "is-warning"}>
+              <Network size={13} strokeWidth={2.2} />
+              {chainLabel(connectedWallet.chainId, t)}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("draw.operatorWalletTarget")}</dt>
+            <dd>{targetChainLabel(t)}</dd>
+          </div>
+        </dl>
+      ) : null}
+
+      <div className="draw-operator-wallet__actions">
+        {walletProviders.length > 0 ? walletProviders.map((walletProvider) => {
+          const busy = busyAction === `connect:${walletProvider.id}`;
+          return (
+            <button
+              key={walletProvider.id}
+              type="button"
+              disabled={Boolean(busyAction)}
+              onClick={() => connectDrawWallet(walletProvider)}
+            >
+              {busy ? <Loader2 className="is-spinning" size={15} /> : <WalletCards size={15} strokeWidth={2.2} />}
+              <span>{walletProvider.label}</span>
+            </button>
+          );
+        }) : (
+          <button type="button" disabled>
+            <WalletCards size={15} strokeWidth={2.2} />
+            <span>{walletDetecting ? t("draw.operatorWalletDetecting") : t("draw.operatorWalletMissing")}</span>
+          </button>
+        )}
+        {connected && !targetMatched ? (
+          <button type="button" disabled={Boolean(busyAction)} onClick={switchTargetChain}>
+            {busyAction === "switch-chain" ? <Loader2 className="is-spinning" size={15} /> : <Network size={15} strokeWidth={2.2} />}
+            <span>{t("draw.operatorWalletSwitch", { chain: targetChainLabel(t) })}</span>
+          </button>
+        ) : null}
+      </div>
+
+      <small>{connected ? t("draw.operatorWalletReady") : t("draw.operatorWalletBoundary")}</small>
+      {issue ? <em>{issue}</em> : null}
+    </section>
+  );
+}
+
 function DrawPrizeRunway({ activeDraw, drawState, t }) {
   return (
     <section className="draw-prize-runway" aria-label={t("draw.prizeRunway", { count: formatNumber(activeDraw.prizeCount) })}>
@@ -461,6 +680,7 @@ export function DrawRoom({ activeRound, rounds, simulatedRoundId, drawStats, mat
         </header>
 
         <DrawProgressMap activeDraw={activeDraw} activeStep={activeStep} drawState={drawState} t={t} />
+        <DrawOperatorWallet t={t} />
 
         <section className="draw-stage-map__stats" aria-label={t("mast.currentRoundBalances")}>
           <output>

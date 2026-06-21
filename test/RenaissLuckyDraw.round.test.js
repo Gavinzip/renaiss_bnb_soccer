@@ -21,7 +21,7 @@ function roundMatchInput(matchId, totalTickets = 20n) {
     matchId: ethers.id(matchId),
     ledgerHash: ethers.id(`${matchId}-ledger`),
     totalTickets,
-    prizeSlotCount: 2n,
+    prizeSlotCount: 1n,
     alternateCount: 2n,
     ledgerUri: `/match-draw-ledger.json#${matchId}`,
   };
@@ -58,12 +58,10 @@ describe("RenaissLuckyDraw round-level draws", function () {
 
     const matchAWinners = await draw.roundMatchWinnerTicketsBySlot(roundId, matchA.matchId);
     const matchAAlternates0 = await draw.roundMatchAlternateTicketsBySlot(roundId, matchA.matchId, 0);
-    const matchAAlternates1 = await draw.roundMatchAlternateTicketsBySlot(roundId, matchA.matchId, 1);
-    expect(matchAWinners).to.have.length(2);
+    expect(matchAWinners).to.have.length(1);
     expect(matchAAlternates0).to.have.length(2);
-    expect(matchAAlternates1).to.have.length(2);
-    expect(uniqueTicketNumbers(matchAWinners, matchAAlternates0, matchAAlternates1).size).to.equal(6);
-    for (const ticket of [...matchAWinners, ...matchAAlternates0, ...matchAAlternates1]) {
+    expect(uniqueTicketNumbers(matchAWinners, matchAAlternates0).size).to.equal(3);
+    for (const ticket of [...matchAWinners, ...matchAAlternates0]) {
       expect(ticket).to.be.greaterThan(0n);
       expect(ticket).to.be.lessThanOrEqual(20n);
     }
@@ -75,9 +73,9 @@ describe("RenaissLuckyDraw round-level draws", function () {
     await draw.revealRoundMatch(roundId, matchB.matchId);
     const matchBWinners = await draw.roundMatchWinnerTicketsBySlot(roundId, matchB.matchId);
     const matchBAlternatesFlat = await draw.roundMatchAlternateTicketsFlat(roundId, matchB.matchId);
-    expect(matchBWinners).to.have.length(2);
-    expect(matchBAlternatesFlat).to.have.length(4);
-    expect(uniqueTicketNumbers(matchBWinners, matchBAlternatesFlat).size).to.equal(6);
+    expect(matchBWinners).to.have.length(1);
+    expect(matchBAlternatesFlat).to.have.length(2);
+    expect(uniqueTicketNumbers(matchBWinners, matchBAlternatesFlat).size).to.equal(3);
 
     status = await draw.roundDrawStatus(roundId);
     expect(status.fulfilled).to.equal(true);
@@ -87,7 +85,7 @@ describe("RenaissLuckyDraw round-level draws", function () {
   it("rejects a match pool that cannot cover winners plus alternates", async function () {
     const { draw } = await deployDraw();
     const roundId = ethers.id("round16");
-    const tooSmall = roundMatchInput("m73", 5n);
+    const tooSmall = roundMatchInput("m73", 2n);
 
     await expect(
       draw.finalizeRoundLedger(roundId, ethers.id("round16-ledger"), [tooSmall], "/match-draw-ledger.json#round16"),

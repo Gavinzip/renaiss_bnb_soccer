@@ -256,6 +256,9 @@ function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTi
         <p className="hero-milestone-command__caption">
           {t("home.milestoneTicketExplain")} <span>{nextTargetSummary}</span>
         </p>
+        <p className="hero-milestone-command__champion-rule">
+          {t("home.milestoneChampionPoolRule")}
+        </p>
 
         <section className="hero-milestone-command__focus">
           <span>{milestoneSnapshot.complete ? t("home.milestoneAllRewards") : t("home.milestoneNextReward")}</span>

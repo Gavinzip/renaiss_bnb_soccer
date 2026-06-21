@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "mode": "draw-winners",
+  "sourceLabel": "local-dev-round-group-winners",
+  "sourceStatus": "revealed",
+  "localOnly": true,
+  "generatedAt": "2026-06-22T00:27:00+08:00",
+  "drawId": "local-dev-round-groups",
+  "matchId": "local-dev-round-groups",
+  "winnerCount": 8,
+  "alternateCount": 16,
+  "winners": [
+    {
+      "id": "dev-r16-m73-w1",
+      "revealIndex": 0,
+      "prizeSlotIndex": 0,
+      "ticketNumber": "107",
+      "walletAddress": "0x0000000000000000000000000000000000000107",
+      "roundId": "round16",
+      "matchId": "m73",
+      "teamId": "italy"
+    },
+    {
+      "id": "dev-r16-m74-w1",
+      "revealIndex": 1,
+      "prizeSlotIndex": 0,
+      "ticketNumber": "118",
+      "walletAddress": "0x0000000000000000000000000000000000000118",
+      "roundId": "round16",
+      "matchId": "m74",
+      "teamId": "france"
+    },
+    {
+      "id": "dev-r16-m75-w1",
+      "revealIndex": 2,
+      "prizeSlotIndex": 0,
+      "ticketNumber": "129",
+      "walletAddress": "0x0000000000000000000000000000000000000129",
+      "roundId": "round16",
+      "matchId": "m75",
+      "teamId": "england"
+    },
+    {
+      "id": "dev-r16-m76-w1",
+      "revealIndex": 3,
+      "prizeSlotIndex": 0,
+      "ticketNumber": "140",
+      "walletAddress": "0x0000000000000000000000000000000000000140",
+      "roundId": "round16",
+      "matchId": "m76",
+      "teamId": "argentina"
+    },
+    {
+      "id": "dev-r16-m77-w1",
+      "revealIndex": 4,
+      "prizeSlotIndex": 0,
+      "ticketNumber": "151",
+      "walletAddress": "0x0000000000000000000000000000000000000151",
+      "roundId": "round16",
+      "matchId": "m77",
+      "teamId": "spain"
+    },
+    {
+      "id": "dev-r16-m78-w1",
+      "revealIndex": 5,
+      "prizeSlotIndex": 0,
+      "ticketNumber": "162",
+      "walletAddress": "0x0000000000000000000000000000000000000162",
+      "roundId": "round16",
+      "matchId": "m78",
+      "teamId": "portugal"
+    },
+    {
+      "id": "dev-r16-m79-w1",
+      "revealIndex": 6,
+      "prizeSlotIndex": 0,
+      "ticketNumber": "173",
+      "walletAddress": "0x0000000000000000000000000000000000000173",
+      "roundId": "round16",
+      "matchId": "m79",
+      "teamId": "germany"
+    },
+    {
+      "id": "dev-r16-m80-w1",
+      "revealIndex": 7,
+      "prizeSlotIndex": 0,
+      "ticketNumber": "184",
+      "walletAddress": "0x0000000000000000000000000000000000000184",
+      "roundId": "round16",
+      "matchId": "m80",
+      "teamId": "netherlands"
+    }
+  ],
+  "winnersBySlot": [],
+  "alternates": [],
+  "draws": []
+}

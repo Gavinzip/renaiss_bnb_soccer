@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { AnimatedContent } from "../AnimatedContent";
 import { GlareHover } from "../GlareHover";
-import { formatNumber } from "../../data/ticketMath";
+import { formatNumber, formatPrizeMoney } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 
 const ruleFlowBlueprint = [
@@ -52,14 +52,13 @@ const DEFAULT_PRIZE_CURRENCY = "USDT";
 function getMatchPrize(match, round) {
   const amount = Number(match?.prizeAmount ?? round?.matchPrizeAmount ?? DEFAULT_MATCH_PRIZE_AMOUNT);
   return {
-    amount: Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0)),
+    amount: Math.max(0, Number.isFinite(amount) ? amount : 0),
     currency: String(match?.prizeCurrency ?? round?.prizeCurrency ?? DEFAULT_PRIZE_CURRENCY),
   };
 }
 
-function formatPrizeAmount(amount, currency, number) {
-  const displayCurrency = currency === "USDT" ? "U" : currency;
-  return `${number(amount)}${displayCurrency}`;
+function formatPrizeAmount(amount, currency, locale) {
+  return formatPrizeMoney(amount, currency, locale);
 }
 
 function RulesFlowChart({ copy }) {
@@ -94,7 +93,7 @@ function RulesFlowChart({ copy }) {
 }
 
 function RulesRewardMap({ activeRound, matches, totalPrizeSlots, copy }) {
-  const { number, roundLabel, t } = copy;
+  const { locale, number, roundLabel, t } = copy;
   const prizeRows = matches.map((match) => ({
     id: match.id,
     prize: getMatchPrize(match, activeRound),
@@ -102,12 +101,12 @@ function RulesRewardMap({ activeRound, matches, totalPrizeSlots, copy }) {
   const currencies = new Set(prizeRows.map((row) => row.prize.currency));
   const totalPrizeAmount = prizeRows.reduce((total, row) => total + row.prize.amount, 0);
   const totalPrizeLabel = currencies.size === 1
-    ? formatPrizeAmount(totalPrizeAmount, prizeRows[0]?.prize.currency ?? DEFAULT_PRIZE_CURRENCY, number)
+    ? formatPrizeAmount(totalPrizeAmount, prizeRows[0]?.prize.currency ?? DEFAULT_PRIZE_CURRENCY, locale)
     : t("rules.mixedPrizeTotal");
   const defaultPrizeLabel = formatPrizeAmount(
     activeRound?.matchPrizeAmount ?? DEFAULT_MATCH_PRIZE_AMOUNT,
     activeRound?.prizeCurrency ?? DEFAULT_PRIZE_CURRENCY,
-    number,
+    locale,
   );
   const matchCountLabel = t("rules.matchCountValue", { count: number(prizeRows.length) });
   const roundLabelText = activeRound ? roundLabel(activeRound) : "-";

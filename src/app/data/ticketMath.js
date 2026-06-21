@@ -61,6 +61,22 @@ export function formatNumber(value, locale = "en-US") {
   return new Intl.NumberFormat(normalizeIntlLocale(locale)).format(Math.max(0, Math.floor(Number(value) || 0)));
 }
 
+export function formatCurrencyAmount(value, locale = "en-US") {
+  const amount = Math.max(0, Number(value) || 0);
+  const hasFraction = Math.abs(amount - Math.round(amount)) > Number.EPSILON;
+  return new Intl.NumberFormat(normalizeIntlLocale(locale), {
+    minimumFractionDigits: hasFraction ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+export function formatPrizeMoney(value, currency = "USDT", locale = "en-US") {
+  const amount = formatCurrencyAmount(value, locale);
+  const normalizedCurrency = String(currency || "USDT").toUpperCase();
+  if (normalizedCurrency === "USDT" || normalizedCurrency === "USD") return `US$${amount}`;
+  return `${amount} ${currency}`;
+}
+
 export function formatCompactVoteCount(value, locale = "zh-Hant") {
   const count = Math.max(0, Math.floor(Number(value) || 0));
   return new Intl.NumberFormat(normalizeIntlLocale(locale), {

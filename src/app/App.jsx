@@ -110,7 +110,8 @@ function AppContent() {
     || (import.meta.env.PROD ? "/api/vote-preview" : "/mock-api/vote-preview.json");
   const voteSubmitUrl = import.meta.env.VITE_VOTE_SUBMIT_URL || (import.meta.env.PROD ? "/api/votes" : "");
   const winnerRevealVideoUrl = import.meta.env.VITE_WINNER_REVEAL_VIDEO_URL || DEFAULT_WINNER_REVEAL_VIDEO_URL;
-  const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL || (import.meta.env.PROD ? "/api/draw-winners" : "");
+  const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL
+    || (import.meta.env.PROD ? "/api/draw-winners" : "/mock-api/draw-winners.json");
   const authMeUrl = import.meta.env.VITE_AUTH_ME_URL || (import.meta.env.PROD ? "/api/auth/me" : "");
   const [ledger, setLedger] = useState(verifiedLedgerSnapshot);
   const [selectedLedgerEntry, setSelectedLedgerEntry] = useState(null);
@@ -616,6 +617,7 @@ function AppContent() {
   }
 
   function applyLocalPreviewVote({ tickets }) {
+    const submittedAt = new Date().toISOString();
     setPreviewAllocations((current) => {
       const existingIndex = current.findIndex((allocation) => (
         allocation.walletAddress === selectedWallet
@@ -627,7 +629,7 @@ function AppContent() {
       if (existingIndex >= 0) {
         return current.map((allocation, index) => (
           index === existingIndex
-            ? { ...allocation, tickets: allocation.tickets + tickets }
+            ? { ...allocation, tickets: allocation.tickets + tickets, updatedAt: submittedAt }
             : allocation
         ));
       }
@@ -643,6 +645,8 @@ function AppContent() {
           tickets,
           source: "local-preview",
           official: false,
+          createdAt: submittedAt,
+          updatedAt: submittedAt,
         },
       ];
     });

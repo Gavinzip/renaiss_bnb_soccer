@@ -745,6 +745,8 @@ export function ControlRoom({
 
           {activeViewId === "winners" ? (
             <LazyWinnersRoom
+              rounds={rounds}
+              matches={matches}
               winnerRevealData={winnerRevealData}
               winnerRevealIssue={winnerRevealIssue}
             />
