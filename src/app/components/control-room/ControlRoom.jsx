@@ -747,6 +747,7 @@ export function ControlRoom({
             <LazyWinnersRoom
               rounds={rounds}
               matches={matches}
+              drawStats={drawStats}
               winnerRevealData={winnerRevealData}
               winnerRevealIssue={winnerRevealIssue}
             />

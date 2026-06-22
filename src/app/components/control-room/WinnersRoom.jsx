@@ -1,8 +1,9 @@
-import { Award, CirclePlay, RotateCcw, Ticket, Trophy } from "lucide-react";
+import { Award, CirclePlay, RotateCcw, Ticket } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import revealBackdrop from "../../assets/championship-trophy-renaiss-mark.webp";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+import SideRays from "../SideRays/SideRays";
 
 const FALLBACK_ROUND_ORDER = ["round32", "round16", "quarterFinal", "semiFinal", "final"];
 const WINNER_ROUND_LABEL_KEYS = {
@@ -108,8 +109,8 @@ function WinnerRevealRow({ winner, index, visible, active, matchLabel }) {
   );
 }
 
-export function WinnersRoom({ winnerRevealData, winnerRevealIssue, rounds = [], matches = [] }) {
-  const { t, dateTime, roundLabel } = useCampaignCopy();
+export function WinnersRoom({ winnerRevealData, winnerRevealIssue, rounds = [], matches = [], drawStats = [] }) {
+  const { t, roundLabel } = useCampaignCopy();
   const videoRef = useRef(null);
   const listRef = useRef(null);
   const [selectedRoundId, setSelectedRoundId] = useState("");
@@ -127,6 +128,7 @@ export function WinnersRoom({ winnerRevealData, winnerRevealIssue, rounds = [], 
     () => buildWinnerRoundOptions(winnerRoundGroups, rounds, t, roundLabel),
     [roundLabel, rounds, t, winnerRoundGroups],
   );
+  const drawStatByRoundId = useMemo(() => new Map(drawStats.map((draw) => [draw.id, draw])), [drawStats]);
   const latestRevealedRoundId = useMemo(() => {
     const revealedOptions = roundOptions.filter((option) => option.count > 0);
     return revealedOptions[revealedOptions.length - 1]?.id || roundOptions[0]?.id || "";
@@ -137,10 +139,9 @@ export function WinnersRoom({ winnerRevealData, winnerRevealIssue, rounds = [], 
     || null;
   const selectedRoundWinners = selectedRound?.winners || [];
   const selectedRoundHasWinners = hasOfficialWinners && selectedRoundWinners.length > 0;
-  const selectedActiveWinnerIndex = selectedRoundHasWinners
+  const selectedActiveRowIndex = selectedRoundHasWinners
     ? Math.max(0, Math.min(visibleCount - 1, selectedRoundWinners.length - 1))
     : -1;
-  const selectedActiveWinner = selectedActiveWinnerIndex >= 0 ? selectedRoundWinners[selectedActiveWinnerIndex]?.winner : null;
   const selectedRevealComplete = selectedRoundHasWinners && visibleCount >= selectedRoundWinners.length;
 
   useEffect(() => {
@@ -215,6 +216,24 @@ export function WinnersRoom({ winnerRevealData, winnerRevealIssue, rounds = [], 
         onError={() => setMediaIssue(t("winnerReveal.videoIssue"))}
       />
       <div className="winner-stage-reveal-bg" style={{ backgroundImage: `url(${revealBackdrop})` }} aria-hidden="true" />
+      <div className="winner-stage-grid" aria-hidden="true" />
+      {revealStarted ? (
+        <div className="winner-stage-side-rays" aria-hidden="true">
+          <SideRays
+            speed={2.5}
+            rayColor1="#EAB308"
+            rayColor2="#96c8ff"
+            intensity={2}
+            spread={2}
+            origin="top-left"
+            tilt={0}
+            saturation={1.5}
+            blend={0.75}
+            falloff={1.6}
+            opacity={1}
+          />
+        </div>
+      ) : null}
       <div className="winner-stage-scrim" aria-hidden="true" />
 
       <section className="winner-stage-intro" aria-hidden={revealStarted}>
@@ -239,88 +258,51 @@ export function WinnersRoom({ winnerRevealData, winnerRevealIssue, rounds = [], 
         )}
       </section>
 
-      <section className="winner-stage-reveal" aria-live="polite" aria-hidden={!revealStarted}>
-        <aside className="winner-stage-reveal__story">
-          <figure className="winner-stage-trophy" aria-hidden="true">
-            <img src={revealBackdrop} alt="" />
-          </figure>
-          <header className="winner-stage-reveal__head">
-            <span>
-              <Trophy size={17} strokeWidth={2.25} />
-              {hasOfficialWinners ? t("winnerReveal.boardEyebrow") : t("winnerReveal.pending")}
-            </span>
-            <h2>{hasOfficialWinners ? t("winnerReveal.boardTitle") : t("winnerReveal.pendingTitle")}</h2>
-            <p>{hasOfficialWinners ? t("winnerReveal.boardBody") : t("winnerReveal.pendingBody")}</p>
-            <dl>
-              <div>
-                <dt>{t("winnerReveal.revealedCount")}</dt>
-                <dd>{formatNumber(visibleCount)} / {formatNumber(selectedRoundWinners.length)}</dd>
-              </div>
-              <div>
-                <dt>{t("winnerReveal.selectedRound")}</dt>
-                <dd>{selectedRound?.label || "-"}</dd>
-              </div>
-              <div>
-                <dt>{t("winnerReveal.generatedAt")}</dt>
-                <dd>{winnerRevealData.generatedAt ? dateTime(winnerRevealData.generatedAt) : "-"}</dd>
-              </div>
-            </dl>
-          </header>
-        </aside>
+      {hasOfficialWinners ? (
+        <section className="round-simulator winner-round-simulator" aria-label={t("winnerReveal.roundSelectorAria")} aria-hidden={!revealStarted}>
+          <ol className="round-switch round-switch--read-only" aria-label={t("common.round")}>
+            {roundOptions.map((option) => {
+              const isActive = option.id === selectedRound?.id;
+              const hasRoundWinners = option.count > 0;
 
-        <section className="winner-stage-board" aria-label={t("winnerReveal.listAria")}>
-          {hasOfficialWinners ? (
-            <nav className="winner-round-rail" aria-label={t("winnerReveal.roundSelectorAria")}>
-              {roundOptions.map((option) => (
-                <button
-                  type="button"
+              return (
+                <li
                   className={[
-                    option.id === selectedRound?.id ? "is-active" : "",
-                    option.count > 0 ? "has-winners" : "is-empty",
+                    "round-switch__item",
+                    isActive ? "is-active" : "",
+                    hasRoundWinners ? "is-inspectable has-eligible" : "is-future-locked has-scheduled",
+                    option.id === "final" ? "is-final-round" : "",
                   ].filter(Boolean).join(" ")}
-                  onClick={() => setSelectedRoundId(option.id)}
-                  aria-pressed={option.id === selectedRound?.id}
+                  aria-current={isActive ? "step" : undefined}
                   key={option.id}
                 >
-                  <span>{option.label}</span>
-                  <strong>{formatNumber(option.count)}</strong>
-                  <small>{option.count > 0 ? t("winnerReveal.revealed") : t("winnerReveal.waitingReveal")}</small>
-                  <i aria-hidden="true" />
-                </button>
-              ))}
-            </nav>
-          ) : null}
+                  <button
+                    className="round-switch__stage"
+                    type="button"
+                    disabled={!hasRoundWinners}
+                    onClick={() => {
+                      if (hasRoundWinners) setSelectedRoundId(option.id);
+                    }}
+                  >
+                    <span className="round-switch__label">{option.label}</span>
+                    <strong className="round-switch__metric">
+                      <span>{formatNumber(drawStatByRoundId.get(option.id)?.matchCount ?? 0)}</span>
+                      <small>{t("roundRail.matchUnit")}</small>
+                    </strong>
+                    <span className="round-switch__detail">
+                      {hasRoundWinners ? t("winnerReveal.roundGroupCount", { count: formatNumber(option.count) }) : t("roundRail.futureLocked")}
+                    </span>
+                    <span className="round-switch__track" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ) : null}
 
-          {selectedRoundHasWinners ? (
-            <section
-              className={[
-                "winner-spotlight",
-                selectedActiveWinner ? "has-active" : "",
-                selectedRevealComplete ? "is-complete" : "is-running",
-              ].filter(Boolean).join(" ")}
-              aria-label={t("winnerReveal.currentWinnerAria")}
-            >
-              <div className="winner-spotlight__beam" aria-hidden="true" />
-              <div className="winner-spotlight__kicker">
-                <span>{selectedRevealComplete ? t("winnerReveal.revealComplete") : t("winnerReveal.currentWinner")}</span>
-                <strong>{String(selectedActiveWinnerIndex + 1).padStart(2, "0")}</strong>
-              </div>
-              <strong className="winner-spotlight__wallet">
-                {selectedActiveWinner ? winnerWalletLabel(selectedActiveWinner) : t("winnerReveal.waitingReveal")}
-              </strong>
-              <dl>
-                <div>
-                  <dt>{t("winnerReveal.prize")}</dt>
-                  <dd>{selectedActiveWinner ? t("winnerReveal.prizeSlot", { slot: formatNumber(selectedActiveWinner.prizeSlotIndex + 1) }) : "-"}</dd>
-                </div>
-                <div>
-                  <dt>{t("winnerReveal.ticket")}</dt>
-                  <dd>{selectedActiveWinner ? t("winnerReveal.ticketNumber", { ticket: selectedActiveWinner.ticketNumber }) : "-"}</dd>
-                </div>
-              </dl>
-            </section>
-          ) : null}
-
+      <section className="winner-stage-reveal" aria-live="polite" aria-hidden={!revealStarted}>
+        <section className="winner-stage-board" aria-label={t("winnerReveal.listAria")}>
           {selectedRoundHasWinners ? (
             <section
               ref={listRef}
@@ -339,7 +321,7 @@ export function WinnersRoom({ winnerRevealData, winnerRevealIssue, rounds = [], 
                       index={index}
                       matchLabel={matchLabel}
                       visible={index < visibleCount}
-                      active={index === selectedActiveWinnerIndex && !selectedRevealComplete}
+                      active={index === selectedActiveRowIndex && !selectedRevealComplete}
                       key={winner.id}
                     />
                   ))}
