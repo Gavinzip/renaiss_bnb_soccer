@@ -30,6 +30,7 @@ import {
 import {
   clearOAuthTokensForSession,
   createOAuthTokenConfig,
+  readOAuthToken,
   saveOAuthToken,
 } from './oauth-token-store.mjs'
 import {
@@ -343,6 +344,27 @@ async function createSessionForIdentity({ auth, request, response, identity }) {
   return { session, resolver }
 }
 
+async function createRenaissEndSessionUrl(auth, request, session, returnTo) {
+  if (session?.identity?.provider !== 'renaiss') return ''
+  const token = readOAuthToken(auth.oauthTokenConfig, session, 'renaiss')
+  const idToken = String(token?.id_token || '').trim()
+  if (!idToken) return ''
+
+  const config = auth.providerConfig.renaiss
+  if (!providerConfigured(auth.providerConfig, 'renaiss')) return ''
+
+  const { doc } = await getRenaissDiscovery(config)
+  const endpoint = String(doc.end_session_endpoint || '').trim()
+  if (!endpoint) return ''
+
+  const origin = auth.env.PUBLIC_APP_ORIGIN || auth.env.AUTH_PUBLIC_ORIGIN || getRequestOrigin(request)
+  const redirectPath = safeReturnTo(returnTo) || '/'
+  const logoutUrl = new URL(endpoint)
+  logoutUrl.searchParams.set('id_token_hint', idToken)
+  logoutUrl.searchParams.set('post_logout_redirect_uri', new URL(redirectPath, origin).toString())
+  return logoutUrl.toString()
+}
+
 export function createAuthContext({ dataDir, env = process.env }) {
   const authDir = env.SOCCER_AUTH_DIR || join(dataDir, 'auth')
   const sessionSecret = env.AUTH_SESSION_SECRET || env.SESSION_SECRET || ''
@@ -489,15 +511,27 @@ export async function handleAuthRoute({
   }
 
   if (routePathname === '/api/auth/logout') {
-    if (request.method !== 'POST') {
-      sendJsonResponse(sendJson, request, response, 405, { error: 'POST required.' })
+    if (request.method !== 'POST' && request.method !== 'GET') {
+      sendJsonResponse(sendJson, request, response, 405, { error: 'POST or GET required.' })
       return true
     }
     const session = readAuthSession(auth, request)
+    let upstreamLogoutUrl = ''
+    try {
+      upstreamLogoutUrl = await createRenaissEndSessionUrl(auth, request, session, url.searchParams.get('return_to'))
+    } catch (error) {
+      console.warn('[auth] renaiss end-session URL failed', {
+        message: sanitizeAuthError(error),
+      })
+    }
     clearSession(auth.sessionConfig, request, response)
     clearOAuthTokensForSession(auth.oauthTokenConfig, session?.id)
     const currentSetCookie = response.getHeader('set-cookie')
     const headers = appendSetCookie({ 'set-cookie': currentSetCookie }, clearXFollowSkipCookie(auth))
+    if (request.method === 'GET') {
+      redirect(response, upstreamLogoutUrl || safeReturnTo(url.searchParams.get('return_to')) || '/', headers)
+      return true
+    }
     sendJsonResponse(sendJson, request, response, 200, { ok: true }, headers)
     return true
   }
@@ -619,7 +653,7 @@ export async function handleAuthRoute({
         failureStage = 'session_create'
         const result = await createSessionForIdentity({ auth, request, response, identity })
         session = result.session
-        if (provider === 'x') {
+        if (provider === 'x' || auth.providerConfig[provider]?.oidc) {
           saveOAuthToken(auth.oauthTokenConfig, session, provider, token, { identity })
         }
       }

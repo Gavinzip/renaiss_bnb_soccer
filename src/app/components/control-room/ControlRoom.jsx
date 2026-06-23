@@ -544,18 +544,12 @@ export function ControlRoom({
     && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
     && (voteRequiresXFollow || (showOptionalXFollowButton && xFollowPanelOpen));
 
-  async function handleLogout() {
-    try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "same-origin",
-      });
-    } finally {
-      const refreshed = await onRefreshAuth?.();
-      if (!refreshed?.authenticated) {
-        onSelectWallet?.(ledger.leaderboardEntries[0]?.userAddress || "");
-      }
-    }
+  function handleLogout() {
+    if (typeof window === "undefined") return;
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    const logoutUrl = new URL("/api/auth/logout", window.location.origin);
+    logoutUrl.searchParams.set("return_to", returnTo);
+    window.location.assign(`${logoutUrl.pathname}${logoutUrl.search}`);
   }
 
   useEffect(() => {

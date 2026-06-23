@@ -118,6 +118,7 @@ export function saveOAuthToken(config, session, provider, tokenPayload, options 
     identity,
     encrypted: encryptPayload(config.sessionSecret, {
       access_token: tokenPayload.access_token,
+      id_token: tokenPayload.id_token || null,
       refresh_token: tokenPayload.refresh_token || null,
       expires_in: tokenPayload.expires_in || null,
       scope: tokenPayload.scope || null,
