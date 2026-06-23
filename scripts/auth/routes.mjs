@@ -49,6 +49,7 @@ const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const AUTH_STATE_COOKIE_PREFIX = 'renaiss_auth_state_'
 const OAUTH_PROVIDER_IDS = ['google', 'x', 'discord', 'renaiss']
+const RENAISS_PROMPT_VALUES = new Set(['login', 'consent', 'create', 'select_account', 'none'])
 
 function normalizeAddress(value) {
   const address = String(value || '').trim()
@@ -66,6 +67,12 @@ function checksumAddress(value) {
 function normalizeEmail(value) {
   const email = String(value || '').trim().toLowerCase()
   return EMAIL_PATTERN.test(email) ? email : ''
+}
+
+function readRenaissPromptOverride(url, provider) {
+  if (provider !== 'renaiss') return ''
+  const prompt = String(url.searchParams.get('prompt') || '').trim()
+  return RENAISS_PROMPT_VALUES.has(prompt) ? prompt : ''
 }
 
 function createPkcePair() {
@@ -534,6 +541,9 @@ export async function handleAuthRoute({
     })
 
     const authorizeUrl = new URL(authorizationEndpoint)
+    const authParams = { ...(config.authParams || {}) }
+    const promptOverride = readRenaissPromptOverride(url, provider)
+    if (promptOverride) authParams.prompt = promptOverride
     authorizeUrl.searchParams.set('response_type', 'code')
     authorizeUrl.searchParams.set('client_id', config.clientId)
     authorizeUrl.searchParams.set('redirect_uri', redirectUri)
@@ -542,7 +552,7 @@ export async function handleAuthRoute({
     authorizeUrl.searchParams.set('code_challenge', codeChallenge)
     authorizeUrl.searchParams.set('code_challenge_method', 'S256')
     if (nonce) authorizeUrl.searchParams.set('nonce', nonce)
-    for (const [key, value] of Object.entries(config.authParams || {})) {
+    for (const [key, value] of Object.entries(authParams)) {
       if (value) authorizeUrl.searchParams.set(key, value)
     }
 

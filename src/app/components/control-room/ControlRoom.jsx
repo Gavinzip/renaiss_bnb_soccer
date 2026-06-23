@@ -551,7 +551,10 @@ export function ControlRoom({
         credentials: "same-origin",
       });
     } finally {
-      await onRefreshAuth?.();
+      const refreshed = await onRefreshAuth?.();
+      if (!refreshed?.authenticated) {
+        onSelectWallet?.(ledger.leaderboardEntries[0]?.userAddress || "");
+      }
     }
   }
 

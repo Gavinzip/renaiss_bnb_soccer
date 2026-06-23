@@ -81,7 +81,28 @@ function buildRenaissLoginUrl() {
   const authOrigin = localCallbackHostnames.has(window.location.hostname) ? "http://localhost:5173" : window.location.origin;
   const url = new URL("/api/auth/renaiss/start", authOrigin);
   url.searchParams.set("return_to", returnTo);
+  url.searchParams.set("prompt", "select_account");
   return url.origin === window.location.origin ? `${url.pathname}${url.search}` : url.toString();
+}
+
+function createEmptyLedgerEntry(walletAddress) {
+  const userAddress = normalizeWalletAddress(walletAddress);
+  return {
+    rank: null,
+    userAddress,
+    sourceAddresses: userAddress ? [userAddress] : [],
+    packs: {},
+    rawTickets: 0,
+    bonusTickets: 0,
+    finalTickets: 0,
+    sbt: "none",
+    sbtMultiplier: 1,
+    eventCount: 0,
+    firstBuybackAt: 0,
+    lastBuybackAt: 0,
+    ticketStart: null,
+    ticketEnd: null,
+  };
 }
 
 function normalizeLedgerEntryPayload(payload) {
@@ -425,7 +446,7 @@ function AppContent() {
   const activeEntry = useMemo(
     () => selectedLedgerEntry
       ?? ledger.leaderboardEntries.find((entry) => entry.userAddress === selectedWallet)
-      ?? ledger.leaderboardEntries[0],
+      ?? createEmptyLedgerEntry(selectedWallet),
     [ledger.leaderboardEntries, selectedLedgerEntry, selectedWallet],
   );
   const walletAllocations = useMemo(

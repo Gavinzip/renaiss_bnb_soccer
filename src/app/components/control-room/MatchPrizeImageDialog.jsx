@@ -5,6 +5,8 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import matchPrizeCardImage from "../../assets/match-prize-card.webp";
 import matchPrizeOriginalImage from "../../assets/match-prize-card-original.webp";
 
+const HOVER_OPEN_DELAY_MS = 300;
+
 function getDialogTargetSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
@@ -21,8 +23,8 @@ function getDialogTargetSize() {
 function getOriginFrame(geometry) {
   return {
     opacity: 0.98,
-    x: geometry.origin.left + (geometry.origin.width / 2) - (geometry.viewportWidth / 2),
-    y: geometry.origin.top + (geometry.origin.height / 2) - (geometry.viewportHeight / 2),
+    left: geometry.origin.left,
+    top: geometry.origin.top,
     width: geometry.origin.width,
     height: geometry.origin.height,
     borderRadius: 8,
@@ -34,16 +36,25 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
   const [open, setOpen] = useState(false);
   const [dialogGeometry, setDialogGeometry] = useState(null);
   const triggerRef = useRef(null);
+  const hoverOpenTimeoutRef = useRef(0);
   const prefersReducedMotion = useReducedMotion();
   const matchLabel = String(matchId || "").toUpperCase();
   const zoomTransition = prefersReducedMotion
     ? { duration: 0 }
-    : { type: "spring", bounce: 0.02, duration: 0.62 };
+    : { duration: 0.32, ease: [0.16, 1, 0.3, 1] };
+
+  const clearHoverOpenTimer = useCallback(() => {
+    if (!hoverOpenTimeoutRef.current) return;
+    window.clearTimeout(hoverOpenTimeoutRef.current);
+    hoverOpenTimeoutRef.current = 0;
+  }, []);
 
   const openDialog = useCallback(() => {
+    clearHoverOpenTimer();
     const triggerRect = triggerRef.current?.getBoundingClientRect();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const targetSize = getDialogTargetSize();
 
     setDialogGeometry(triggerRect ? {
       origin: {
@@ -52,17 +63,33 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
         width: triggerRect.width,
         height: triggerRect.height,
       },
-      targetSize: getDialogTargetSize(),
+      target: {
+        left: Math.max(0, (viewportWidth - targetSize) / 2),
+        top: Math.max(0, (viewportHeight - targetSize) / 2),
+        size: targetSize,
+      },
       viewportWidth,
       viewportHeight,
     } : null);
     setOpen(true);
-  }, []);
+  }, [clearHoverOpenTimer]);
 
   const closeDialog = useCallback(() => {
+    clearHoverOpenTimer();
     setOpen(false);
     window.requestAnimationFrame(() => triggerRef.current?.focus());
-  }, []);
+  }, [clearHoverOpenTimer]);
+
+  const scheduleMouseHoverOpen = useCallback(() => {
+    if (open) return;
+    clearHoverOpenTimer();
+    hoverOpenTimeoutRef.current = window.setTimeout(openDialog, HOVER_OPEN_DELAY_MS);
+  }, [clearHoverOpenTimer, open, openDialog]);
+
+  const schedulePointerHoverOpen = useCallback((event) => {
+    if (event.pointerType === "touch") return;
+    scheduleMouseHoverOpen();
+  }, [scheduleMouseHoverOpen]);
 
   const originFrame = dialogGeometry ? getOriginFrame(dialogGeometry) : null;
   const zoomFrameMotion = !prefersReducedMotion && dialogGeometry ? {
@@ -71,10 +98,10 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
     },
     animate: {
       opacity: 1,
-      x: 0,
-      y: 0,
-      width: dialogGeometry.targetSize,
-      height: dialogGeometry.targetSize,
+      left: dialogGeometry.target.left,
+      top: dialogGeometry.target.top,
+      width: dialogGeometry.target.size,
+      height: dialogGeometry.target.size,
       borderRadius: 18,
     },
     exit: {
@@ -104,13 +131,26 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
             aria-modal="true"
             aria-label={t("vote.matchPrizeImageDialogAria", { match: matchLabel })}
             onClick={(event) => event.stopPropagation()}
+            style={dialogGeometry ? {
+              "--match-prize-dialog-left": `${dialogGeometry.target.left}px`,
+              "--match-prize-dialog-top": `${dialogGeometry.target.top}px`,
+              "--match-prize-dialog-size": `${dialogGeometry.target.size}px`,
+            } : undefined}
           >
-            <motion.div
+            <motion.button
+              type="button"
               initial={zoomFrameMotion.initial}
               animate={zoomFrameMotion.animate}
               exit={zoomFrameMotion.exit}
               transition={zoomTransition}
               className="match-prize-dialog__image-frame"
+              onClick={closeDialog}
+              aria-label={t("vote.closePrizeImage")}
+              style={dialogGeometry ? {
+                "--match-prize-dialog-left": `${dialogGeometry.target.left}px`,
+                "--match-prize-dialog-top": `${dialogGeometry.target.top}px`,
+                "--match-prize-dialog-size": `${dialogGeometry.target.size}px`,
+              } : undefined}
             >
               <img
                 className="match-prize-dialog__image"
@@ -118,7 +158,7 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
                 alt={t("vote.matchPrizeOriginalAlt")}
                 decoding="async"
               />
-            </motion.div>
+            </motion.button>
             <button
               type="button"
               className="match-prize-dialog__close"
@@ -150,6 +190,8 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
     };
   }, [closeDialog, open]);
 
+  useEffect(() => clearHoverOpenTimer, [clearHoverOpenTimer]);
+
   return (
     <>
       <button
@@ -157,6 +199,11 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
         type="button"
         className="match-prize-lane__prize-trigger"
         onClick={openDialog}
+        onMouseEnter={scheduleMouseHoverOpen}
+        onMouseLeave={clearHoverOpenTimer}
+        onPointerEnter={schedulePointerHoverOpen}
+        onPointerLeave={clearHoverOpenTimer}
+        onPointerCancel={clearHoverOpenTimer}
         aria-label={t("vote.openPrizeImage", { match: matchLabel })}
         aria-haspopup="dialog"
         aria-expanded={open}

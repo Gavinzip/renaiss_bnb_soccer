@@ -27822,7 +27822,7 @@ body {
     0 18px 48px rgba(0, 0, 0, 0.18) !important;
 }
 
-/* Vote summary rail: remove heavy numeral backing and use restrained Renaiss color energy lines. */
+/* Vote summary rail: remove heavy numeral backing and use restrained metal light lines. */
 .control-room[data-view="vote"] .vote-stage-summary output {
   isolation: isolate;
 }
@@ -27835,7 +27835,15 @@ body {
   width: auto !important;
   height: 1px !important;
   border-radius: 999px !important;
-  background: rgba(245, 246, 241, 0.09) !important;
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(245, 246, 241, 0.1) 16%,
+      rgba(240, 209, 139, 0.18) 50%,
+      rgba(245, 246, 241, 0.08) 84%,
+      transparent
+    ) !important;
 }
 
 .control-room[data-view="vote"] .vote-stage-summary output::after {
@@ -27843,21 +27851,23 @@ body {
   bottom: 3px !important;
   left: clamp(16px, 2vw, 28px) !important;
   width: auto !important;
-  height: 3px !important;
+  height: 2px !important;
   border-radius: 999px !important;
   background:
     linear-gradient(
       90deg,
-      rgba(66, 245, 215, 0.9) 0%,
-      rgba(240, 209, 139, 0.92) 34%,
-      rgba(246, 92, 164, 0.78) 62%,
-      rgba(139, 114, 255, 0.72) 80%,
-      rgba(255, 107, 74, 0.78) 100%
+      transparent 0%,
+      rgba(240, 209, 139, 0.14) 12%,
+      rgba(240, 209, 139, 0.62) 34%,
+      rgba(255, 246, 218, 0.76) 50%,
+      rgba(188, 204, 186, 0.32) 66%,
+      rgba(240, 209, 139, 0.16) 88%,
+      transparent 100%
     ) !important;
   box-shadow:
-    0 0 12px rgba(66, 245, 215, 0.1),
-    0 0 16px rgba(246, 92, 164, 0.08) !important;
-  opacity: 0.76 !important;
+    0 0 10px rgba(240, 209, 139, 0.08),
+    0 0 18px rgba(255, 246, 218, 0.04) !important;
+  opacity: 0.9 !important;
 }
 
 .control-room[data-view="vote"] .vote-stage-summary .is-remaining::after {
@@ -28228,26 +28238,36 @@ body {
 }
 
 .match-prize-dialog {
-  position: relative;
-  max-width: min(88vw, 760px);
-  max-height: min(88vh, 840px);
-  display: grid;
-  place-items: center;
+  position: fixed;
+  inset: 0;
+  display: block;
+  pointer-events: none;
 }
 
 .match-prize-dialog__image-frame {
-  width: min(88vw, 760px);
-  max-width: min(88vw, 760px);
+  position: fixed;
+  top: var(--match-prize-dialog-top, 50%);
+  left: var(--match-prize-dialog-left, 50%);
+  width: var(--match-prize-dialog-size, min(88vw, 760px));
+  height: var(--match-prize-dialog-size, min(88vw, 760px));
+  max-width: none;
   aspect-ratio: 1;
-  max-height: min(88vh, 840px);
+  max-height: none;
   display: grid;
   place-items: center;
   overflow: hidden;
+  border: 0;
   border-radius: 18px;
+  padding: 0;
   background: rgba(4, 5, 5, 0.82);
   box-shadow:
     0 36px 120px rgba(0, 0, 0, 0.54),
     0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: zoom-out;
+  pointer-events: auto;
+  transform-origin: 0 0;
+  will-change: top, left, width, height, border-radius, opacity;
 }
 
 .match-prize-dialog__image {
@@ -28257,10 +28277,15 @@ body {
   object-fit: contain;
 }
 
+.match-prize-dialog__image-frame:focus-visible {
+  outline: 2px solid rgba(240, 209, 139, 0.72);
+  outline-offset: 4px;
+}
+
 .match-prize-dialog__close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
+  position: fixed;
+  top: calc(var(--match-prize-dialog-top, 42px) + 12px);
+  left: calc(var(--match-prize-dialog-left, 42px) + var(--match-prize-dialog-size, min(88vw, 760px)) - 54px);
   width: 42px;
   height: 42px;
   display: grid;
@@ -28271,6 +28296,7 @@ body {
   background: rgba(6, 8, 8, 0.68);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
   cursor: pointer;
+  pointer-events: auto;
   backdrop-filter: blur(16px) saturate(1.08);
   -webkit-backdrop-filter: blur(16px) saturate(1.08);
 }
@@ -28525,7 +28551,11 @@ body {
     padding: 14px;
   }
 
-  .match-prize-dialog,
+  .match-prize-dialog {
+    max-width: none;
+    max-height: none;
+  }
+
   .match-prize-dialog__image-frame {
     max-width: calc(100vw - 28px);
     max-height: 82vh;
@@ -28536,8 +28566,9 @@ body {
   }
 
   .match-prize-dialog__close {
-    top: 8px;
-    right: 8px;
+    top: calc(var(--match-prize-dialog-top, 14px) + 8px);
+    right: auto;
+    left: calc(var(--match-prize-dialog-left, 14px) + var(--match-prize-dialog-size, calc(100vw - 28px)) - 46px);
     width: 38px;
     height: 38px;
   }
