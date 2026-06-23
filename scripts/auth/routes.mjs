@@ -33,6 +33,11 @@ import {
   saveOAuthToken,
 } from './oauth-token-store.mjs'
 import {
+  createRenaissProviderConfig,
+  exchangeRenaissOidcCode,
+  getRenaissDiscovery,
+} from './renaiss-oidc.mjs'
+import {
   clearXFollowSkipCookie,
   createXFollowGateConfig,
   getXFollowStatus,
@@ -43,7 +48,7 @@ import {
 const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const AUTH_STATE_COOKIE_PREFIX = 'renaiss_auth_state_'
-const OAUTH_PROVIDER_IDS = ['google', 'x', 'discord']
+const OAUTH_PROVIDER_IDS = ['google', 'x', 'discord', 'renaiss']
 
 function normalizeAddress(value) {
   const address = String(value || '').trim()
@@ -80,6 +85,7 @@ function createRedirectUri(provider, request, env) {
   const explicit = env[`${upper}_REDIRECT_URI`] || env[`AUTH_${upper}_REDIRECT_URI`]
   if (explicit) return explicit
   const origin = env.PUBLIC_APP_ORIGIN || env.AUTH_PUBLIC_ORIGIN || getRequestOrigin(request)
+  if (provider === 'renaiss') return `${origin}/auth/callback`
   return `${origin}/api/auth/${provider}/callback`
 }
 
@@ -181,12 +187,17 @@ function buildProviderConfig(env) {
       requiresClientSecret: true,
       tokenAuthMethod: 'body',
     },
+    renaiss: createRenaissProviderConfig(env),
   }
 }
 
 function providerConfigured(providerConfig, provider) {
   const config = providerConfig[provider]
-  return Boolean(config?.clientId && (!config.requiresClientSecret || config.clientSecret))
+  return Boolean(
+    config?.clientId
+    && (!config.requiresClientSecret || config.clientSecret)
+    && (!config.requiresRedirectUri || config.redirectUri),
+  )
 }
 
 function parseOAuthRoute(pathname) {
@@ -350,6 +361,7 @@ export function createAuthContext({ dataDir, env = process.env }) {
     identityResolverConfig,
     emailConfig,
     providers: {
+      renaiss: providerConfigured(providerConfig, 'renaiss'),
       google: providerConfigured(providerConfig, 'google'),
       x: providerConfigured(providerConfig, 'x'),
       discord: providerConfigured(providerConfig, 'discord'),
@@ -388,9 +400,10 @@ export async function handleAuthRoute({
   readJsonBody,
   sendJson,
 }) {
-  if (!url.pathname.startsWith('/api/auth/')) return false
+  const routePathname = url.pathname === '/auth/callback' ? '/api/auth/renaiss/callback' : url.pathname
+  if (!routePathname.startsWith('/api/auth/')) return false
 
-  if (url.pathname === '/api/auth/me') {
+  if (routePathname === '/api/auth/me') {
     const session = readAuthSession(auth, request)
     sendJsonResponse(sendJson, request, response, 200, {
       authenticated: Boolean(session),
@@ -404,13 +417,13 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/x-follow/status') {
+  if (routePathname === '/api/auth/x-follow/status') {
     const session = readAuthSession(auth, request)
     sendJsonResponse(sendJson, request, response, 200, getXFollowStatus(auth, session, request))
     return true
   }
 
-  if (url.pathname === '/api/auth/x-follow/verify') {
+  if (routePathname === '/api/auth/x-follow/verify') {
     if (request.method !== 'POST') {
       sendJsonResponse(sendJson, request, response, 405, { ok: false, error: 'POST required.' })
       return true
@@ -438,7 +451,7 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/x-follow/skip') {
+  if (routePathname === '/api/auth/x-follow/skip') {
     if (request.method !== 'POST') {
       sendJsonResponse(sendJson, request, response, 405, { ok: false, error: 'POST required.' })
       return true
@@ -467,7 +480,7 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/logout') {
+  if (routePathname === '/api/auth/logout') {
     if (request.method !== 'POST') {
       sendJsonResponse(sendJson, request, response, 405, { error: 'POST required.' })
       return true
@@ -481,7 +494,7 @@ export async function handleAuthRoute({
     return true
   }
 
-  const oauthRoute = parseOAuthRoute(url.pathname)
+  const oauthRoute = parseOAuthRoute(routePathname)
 
   if (oauthRoute?.action === 'start') {
     const provider = oauthRoute.provider
@@ -496,24 +509,39 @@ export async function handleAuthRoute({
 
     const currentSession = readAuthSession(auth, request)
     const connectRequested = provider === 'x' && url.searchParams.get('connect') === '1'
-    const redirectUri = createRedirectUri(provider, request, auth.env)
-    const { verifier, challenge } = createPkcePair()
+    const config = auth.providerConfig[provider]
+    const redirectUri = config.redirectUri || createRedirectUri(provider, request, auth.env)
+    const { verifier, challenge: codeChallenge } = createPkcePair()
+    const nonce = config.oidc ? randomBytes(16).toString('base64url') : null
+    let authorizationEndpoint = config.authUrl
+    try {
+      if (config.oidc) {
+        const { doc } = await getRenaissDiscovery(config)
+        authorizationEndpoint = doc.authorization_endpoint
+      }
+    } catch (error) {
+      logOAuthCallbackFailure(provider, 'discovery', error)
+      redirect(response, authErrorRedirect(auth.env, 'oauth_failed', { provider, stage: 'discovery' }))
+      return true
+    }
+
     const stateToken = createOauthChallenge(auth.stateConfig, provider, {
       codeVerifier: verifier,
       redirectUri,
+      nonce,
       returnTo: safeReturnTo(url.searchParams.get('return_to')),
       connectSessionId: connectRequested && currentSession?.id ? currentSession.id : null,
     })
 
-    const config = auth.providerConfig[provider]
-    const authorizeUrl = new URL(config.authUrl)
+    const authorizeUrl = new URL(authorizationEndpoint)
     authorizeUrl.searchParams.set('response_type', 'code')
     authorizeUrl.searchParams.set('client_id', config.clientId)
     authorizeUrl.searchParams.set('redirect_uri', redirectUri)
     authorizeUrl.searchParams.set('scope', config.scope)
     authorizeUrl.searchParams.set('state', stateToken)
-    authorizeUrl.searchParams.set('code_challenge', challenge)
+    authorizeUrl.searchParams.set('code_challenge', codeChallenge)
     authorizeUrl.searchParams.set('code_challenge_method', 'S256')
+    if (nonce) authorizeUrl.searchParams.set('nonce', nonce)
     for (const [key, value] of Object.entries(config.authParams || {})) {
       if (value) authorizeUrl.searchParams.set(key, value)
     }
@@ -546,13 +574,26 @@ export async function handleAuthRoute({
       failureStage = 'state_lookup'
       if (!challenge) throw new Error('OAuth state expired.')
       failureStage = 'token_exchange'
-      const token = await exchangeOAuthCode(provider, auth.providerConfig, {
-        code,
-        codeVerifier: challenge.codeVerifier,
-        redirectUri: challenge.redirectUri,
-      })
-      failureStage = 'userinfo'
-      const identity = await fetchOAuthIdentity(provider, auth.providerConfig, token.access_token)
+      let token = null
+      let identity = null
+      if (auth.providerConfig[provider]?.oidc) {
+        const result = await exchangeRenaissOidcCode(auth.providerConfig[provider], {
+          code,
+          codeVerifier: challenge.codeVerifier,
+          redirectUri: challenge.redirectUri,
+          nonce: challenge.nonce,
+        })
+        token = result.token
+        identity = result.identity
+      } else {
+        token = await exchangeOAuthCode(provider, auth.providerConfig, {
+          code,
+          codeVerifier: challenge.codeVerifier,
+          redirectUri: challenge.redirectUri,
+        })
+        failureStage = 'userinfo'
+        identity = await fetchOAuthIdentity(provider, auth.providerConfig, token.access_token)
+      }
       if (!identity.providerUserId) throw new Error('OAuth identity missing stable user id.')
       const currentSession = readAuthSession(auth, request)
       let session = null
@@ -582,7 +623,7 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/wallet/nonce') {
+  if (routePathname === '/api/auth/wallet/nonce') {
     if (!auth.sessionConfigured) {
       sendJsonResponse(sendJson, request, response, 503, { error: 'AUTH_SESSION_SECRET is not configured.' })
       return true
@@ -618,7 +659,7 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/wallet/verify') {
+  if (routePathname === '/api/auth/wallet/verify') {
     if (request.method !== 'POST') {
       sendJsonResponse(sendJson, request, response, 405, { error: 'POST required.' })
       return true
@@ -669,7 +710,7 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/email/start') {
+  if (routePathname === '/api/auth/email/start') {
     if (request.method !== 'POST') {
       sendJsonResponse(sendJson, request, response, 405, { error: 'POST required.' })
       return true
@@ -698,7 +739,7 @@ export async function handleAuthRoute({
     return true
   }
 
-  if (url.pathname === '/api/auth/email/verify') {
+  if (routePathname === '/api/auth/email/verify') {
     if (request.method !== 'POST') {
       sendJsonResponse(sendJson, request, response, 405, { error: 'POST required.' })
       return true

@@ -177,6 +177,8 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
   applyDefaultEnv('SIWE_DOMAIN', new URL(localOrigin).host, { replace: ['renaiss-worldcup.zeabur.app'] })
   applyDefaultEnv('AUTH_COOKIE_SECURE', '0', { replace: ['1'] })
   applyDefaultEnv('AUTH_REQUIRE_SESSION_FOR_VOTES', '0', { replace: ['1'] })
+  applyDefaultEnv('X_FOLLOW_GATE_REQUIRED', '0', { replace: ['1'] })
+  applyDefaultEnv('X_FOLLOW_SKIP_ENABLED', '1', { replace: ['0'] })
 
   applyDefaultEnv('LUCKY_DRAW_REFRESH_ENABLED', '0')
   applyDefaultEnv('LUCKY_DRAW_REFRESH_ON_STARTUP', '0')

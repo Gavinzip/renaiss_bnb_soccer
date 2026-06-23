@@ -3,8 +3,9 @@ import {
   ShieldCheck,
   Ticket,
 } from "lucide-react";
-import { Fragment } from "react";
-import { formatNumber, formatPrizeMoney } from "../../data/ticketMath";
+import { Fragment, useEffect, useRef } from "react";
+import { formatNumber } from "../../data/ticketMath";
+import { MatchPrizeImageDialog } from "./MatchPrizeImageDialog";
 
 const voteableStatuses = new Set(["open", "closing_soon"]);
 
@@ -32,25 +33,18 @@ function getMatchPhase(match) {
   };
 }
 
-function getMatchPrize(match, activeRound) {
-  return {
-    amount: match?.matchPrizeAmount ?? activeRound?.matchPrizeAmount,
-    currency: match?.prizeCurrency ?? activeRound?.prizeCurrency,
-  };
-}
-
-function formatPrizeAmount(match, activeRound, locale) {
-  const prize = getMatchPrize(match, activeRound);
-  if (!Number.isFinite(prize.amount) || !prize.currency) return null;
-  return formatPrizeMoney(prize.amount, prize.currency, locale);
-}
-
 function getTeamVoteOutcome(roundVoteOutcomes, matchId, teamId) {
   return roundVoteOutcomes.find((outcome) => outcome.matchId === matchId && outcome.teamId === teamId) ?? null;
 }
 
 function getTeamAllocation(roundAllocations, matchId, teamId) {
   return roundAllocations.find((entry) => entry.matchId === matchId && entry.teamId === teamId) ?? null;
+}
+
+function getScrollInsetTop(element) {
+  const value = window.getComputedStyle(element).scrollPaddingTop;
+  const inset = Number.parseFloat(value);
+  return Number.isFinite(inset) ? inset : 0;
 }
 
 export function MatchPrizeList({
@@ -66,18 +60,48 @@ export function MatchPrizeList({
   onSelectTeam,
   copy,
 }) {
-  const { compactVotes, locale, roundLabel, t, teamName } = copy;
-  const roundPrizeAmount = formatPrizeAmount(matches[0], activeRound, locale);
+  const { compactVotes, roundLabel, t, teamName } = copy;
+  const selectedLaneRef = useRef(null);
+
+  useEffect(() => {
+    const selectedLane = selectedLaneRef.current;
+    const scrollContainer = selectedLane?.closest(".match-prize-list-view__matches");
+    if (!selectedLane || !scrollContainer) return undefined;
+
+    let mobileScrollTimeoutId = 0;
+    const animationFrameId = window.requestAnimationFrame(() => {
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const laneRect = selectedLane.getBoundingClientRect();
+      const scrollInsetTop = getScrollInsetTop(scrollContainer);
+      scrollContainer.scrollTo({
+        top: Math.max(0, scrollContainer.scrollTop + laneRect.top - containerRect.top - scrollInsetTop),
+        behavior: "smooth",
+      });
+
+      if (window.matchMedia("(max-width: 760px)").matches) {
+        mobileScrollTimeoutId = window.setTimeout(() => {
+          const nextLaneRect = selectedLane.getBoundingClientRect();
+          const headerOffset = 16;
+          if (nextLaneRect.top < headerOffset || nextLaneRect.bottom > window.innerHeight) {
+            window.scrollTo({
+              top: Math.max(0, window.scrollY + nextLaneRect.top - headerOffset),
+              behavior: "smooth",
+            });
+          }
+        }, 260);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      if (mobileScrollTimeoutId) window.clearTimeout(mobileScrollTimeoutId);
+    };
+  }, [selectedMatchId]);
 
   return (
     <section className="match-prize-list-view" aria-label={t("vote.matchPrizeListAria", { round: roundLabel(activeRound) })}>
       <header className="match-prize-list-view__head">
         <span>{t("vote.matchPrizeListTitle", { round: roundLabel(activeRound, "advanceLabel") })}</span>
-        <strong>
-          {roundPrizeAmount
-            ? t("vote.matchPrizePerMatch", { amount: roundPrizeAmount })
-            : t("vote.matchPrizeMissing")}
-        </strong>
         <p>{t("vote.matchPrizeListBody")}</p>
       </header>
 
@@ -85,19 +109,15 @@ export function MatchPrizeList({
         {matches.map((match, matchIndex) => {
           const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
           const matchAllocations = roundAllocations.filter((entry) => entry.matchId === match.id);
-          const matchTicketTotal = matchAllocations.reduce((total, entry) => total + entry.tickets, 0);
-          const allocationIndex = matchAllocations.length > 0
-            ? roundAllocations.findIndex((entry) => entry.id === matchAllocations[0].id)
-            : -1;
           const canPickMatch = voteableStatuses.has(match.status) && remainingRoundTickets > 0;
           const selected = selectedMatchId === match.id;
           const phase = getMatchPhase(match);
           const statusText = t(phase.labelKey);
           const MatchIcon = phase.icon;
-          const matchPrizeAmount = formatPrizeAmount(match, activeRound, locale);
 
           return (
             <li
+              ref={selected ? selectedLaneRef : null}
               className={[
                 "match-prize-lane",
                 selected ? "is-selected" : "",
@@ -111,20 +131,14 @@ export function MatchPrizeList({
               style={{ "--match-lane-index": matchIndex }}
             >
               <header className="match-prize-lane__head">
-                <span>{match.id.toUpperCase()}</span>
-                <strong>{matchPrizeAmount ?? t("vote.matchPrizeMissing")}</strong>
-                <small>
-                  <MatchIcon size={14} strokeWidth={2.35} />
-                  {statusText}
-                </small>
-                {matchAllocations.length > 0 ? (
-                  <em className="match-prize-lane__vote-mark">
-                    {t("vote.votedTicketBadge", {
-                      index: formatNumber(allocationIndex + 1),
-                      tickets: formatNumber(matchTicketTotal),
-                    })}
-                  </em>
-                ) : null}
+                <span className="match-prize-lane__meta">
+                  <span className="match-prize-lane__code">{match.id.toUpperCase()}</span>
+                  <small className="match-prize-lane__status">
+                    <MatchIcon size={13} strokeWidth={2.35} />
+                    {statusText}
+                  </small>
+                </span>
+                <MatchPrizeImageDialog copy={copy} matchId={match.id} />
               </header>
 
               <section className="match-prize-lane__teams" aria-label={t("schedule.teamsAria", { match: match.id.toUpperCase() })}>
@@ -136,14 +150,11 @@ export function MatchPrizeList({
                   const isWinner = match.advancingTeamId === team.id;
                   const isEliminated = Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);
                   const voteOutcome = getTeamVoteOutcome(roundVoteOutcomes, match.id, team.id);
-                  const voteOutcomeText = voteOutcome?.result === "lost"
-                    ? t("vote.myLostTickets", {
-                      tickets: formatNumber(voteOutcome.tickets),
-                      lost: formatNumber(voteOutcome.lostTickets || voteOutcome.tickets),
-                    })
-                    : voteOutcome
-                      ? t("vote.myWonTickets", { tickets: formatNumber(voteOutcome.tickets) })
-                      : "";
+                  const voteOutcomeStatusKey = voteOutcome?.result === "lost"
+                    ? "vote.voteOutcomeMiss"
+                    : voteOutcome?.result === "won"
+                      ? "vote.voteOutcomeHit"
+                      : "vote.voteOutcomePending";
 
                   return (
                     <Fragment key={team.id}>
@@ -175,7 +186,8 @@ export function MatchPrizeList({
                               `is-${voteOutcome.result}`,
                             ].join(" ")}
                             >
-                              {voteOutcomeText}
+                              <span>{t("vote.voteOutcomeTickets", { tickets: formatNumber(voteOutcome.tickets) })}</span>
+                              <span>{t(voteOutcomeStatusKey)}</span>
                             </b>
                           ) : null}
                         </span>

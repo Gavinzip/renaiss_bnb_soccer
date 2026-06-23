@@ -246,11 +246,15 @@ function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTi
         }}
       >
         <header className="hero-milestone-command__head">
-          <span>
+          <span className="hero-milestone-command__title">
             <Gem size={15} strokeWidth={2.25} />
             {t("home.prizeLadder")}
           </span>
-          <em>{t("home.milestoneCurrentTickets", { count: formatNumber(currentValue) })}</em>
+          <em className="hero-milestone-command__current">
+            <span>{t("home.milestoneCurrentLabel")}</span>
+            <strong>{formatNumber(currentValue)}</strong>
+            <small>{t("common.tickets")}</small>
+          </em>
         </header>
 
         <p className="hero-milestone-command__caption">

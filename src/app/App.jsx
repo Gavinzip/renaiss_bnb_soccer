@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AuthModal } from "./components/control-room/AuthModal";
 import { ControlRoom } from "./components/control-room/ControlRoom";
 import { preloadHomeRoomAssets } from "./components/control-room/HomeRoom";
 import { VoteConfirmModal } from "./components/control-room/VoteConfirmModal";
@@ -75,6 +74,16 @@ function urlWithWalletQuery(baseUrl, walletAddress) {
   return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : url.toString();
 }
 
+function buildRenaissLoginUrl() {
+  if (typeof window === "undefined") return "/api/auth/renaiss/start";
+  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const localCallbackHostnames = new Set(["127.0.0.1", "0.0.0.0", "::1"]);
+  const authOrigin = localCallbackHostnames.has(window.location.hostname) ? "http://localhost:5173" : window.location.origin;
+  const url = new URL("/api/auth/renaiss/start", authOrigin);
+  url.searchParams.set("return_to", returnTo);
+  return url.origin === window.location.origin ? `${url.pathname}${url.search}` : url.toString();
+}
+
 function normalizeLedgerEntryPayload(payload) {
   const entry = payload?.entry;
   if (!entry || typeof entry !== "object") return null;
@@ -129,7 +138,6 @@ function AppContent() {
   const [authSession, setAuthSession] = useState({ authenticated: false, config: null });
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [activeViewId, setActiveViewId] = useState(readInitialViewId);
   const [simulationMode, setSimulationMode] = useState("scenario");
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
@@ -607,9 +615,14 @@ function AppContent() {
     setSelectedTeamId(teamId);
   }
 
+  function redirectToRenaissLogin() {
+    if (typeof window === "undefined") return;
+    window.location.assign(buildRenaissLoginUrl());
+  }
+
   function handleRequestPreviewVote(amount) {
     if (voteSubmitUrl && authMeUrl && !authSession?.walletAddress) {
-      setAuthModalOpen(true);
+      redirectToRenaissLogin();
       return;
     }
     if (!selectedTeamId || remainingRoundTickets <= 0) return;
@@ -679,7 +692,7 @@ function AppContent() {
         setPreviewVoteIssue("");
       } catch (error) {
         setPreviewVoteIssue(t("data.previewVoteIssue", { message: error.message }));
-        if (/login|required|linked/i.test(error.message)) setAuthModalOpen(true);
+        if (/login|required|linked/i.test(error.message)) redirectToRenaissLogin();
         setPendingVoteAmount(null);
         return;
       }
@@ -729,7 +742,7 @@ function AppContent() {
         authConfig={authSession?.config}
         authIssue={authIssue}
         authEndpointReady={Boolean(authMeUrl)}
-        onOpenAuthModal={() => setAuthModalOpen(true)}
+        onRequestLogin={redirectToRenaissLogin}
         onRefreshAuth={refreshAuthSession}
         onSelectView={handleSelectView}
         onToggleMobileNav={() => setMobileNavOpen((current) => !current)}
@@ -748,15 +761,6 @@ function AppContent() {
         team={teamsById.get(selectedTeamId)}
         onCancel={() => setPendingVoteAmount(null)}
         onConfirm={() => handleConfirmPreviewVote(pendingVoteAmount)}
-      />
-      <AuthModal
-        open={authModalOpen}
-        authSession={authSession}
-        authConfig={authSession?.config}
-        authIssue={authIssue}
-        authEndpointReady={Boolean(authMeUrl)}
-        onClose={() => setAuthModalOpen(false)}
-        onRefresh={refreshAuthSession}
       />
     </>
   );

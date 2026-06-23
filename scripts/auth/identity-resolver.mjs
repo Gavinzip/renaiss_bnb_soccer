@@ -41,6 +41,33 @@ export async function resolveIdentityToWallet(config, identity) {
     }
   }
 
+  if (identity?.provider === 'renaiss') {
+    const walletAddress = normalizeAddress(identity.safeWalletAddress)
+    if (walletAddress) {
+      return {
+        status: 'resolved',
+        source: 'renaiss-sso',
+        walletAddress,
+        reason: null,
+        resolverId: identity.providerUserId || null,
+        legacyWalletAddress: normalizeAddress(identity.legacyWalletAddress) || null,
+        chainId: identity.chainId || null,
+      }
+    }
+
+    return {
+      status: identity.userinfoError ? 'error' : 'unresolved',
+      source: 'renaiss-sso',
+      walletAddress: null,
+      reason: identity.userinfoError || (identity.safeWalletInvalid
+        ? 'invalid-renaiss-safe-wallet-address'
+        : (identity.safeWalletClaimPresent ? 'renaiss-safe-wallet-not-ready' : 'renaiss-safe-wallet-missing')),
+      resolverId: identity.providerUserId || null,
+      legacyWalletAddress: normalizeAddress(identity.legacyWalletAddress) || null,
+      chainId: identity.chainId || null,
+    }
+  }
+
   if (!identityResolverConfigured(config)) {
     return {
       status: 'unresolved',

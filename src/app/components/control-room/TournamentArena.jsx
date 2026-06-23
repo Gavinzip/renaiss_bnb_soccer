@@ -1,13 +1,10 @@
 import {
-  ArrowRight,
   CheckCircle2,
   CircleDollarSign,
   Clock3,
   LockKeyhole,
   Plus,
   Send,
-  Trophy,
-  WalletCards,
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -30,13 +27,19 @@ const trophyVisibleBounds = {
   right: 321 / 1122,
 };
 const routeLaneCurve = 0.82;
+const pairAccentColors = [
+  "239, 191, 102",
+  "106, 224, 176",
+  "112, 173, 255",
+  "233, 134, 166",
+  "196, 154, 255",
+  "255, 151, 109",
+  "145, 219, 255",
+  "211, 224, 128",
+];
 
 export function preloadTournamentArenaAssets() {
   return preloadImage(trophyImage);
-}
-
-function clampPercent(value) {
-  return Math.max(8, Math.min(92, value));
 }
 
 function displayPoolForMatch(match, teamsById) {
@@ -467,6 +470,7 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
     <section className={`arena-side is-${side}`} aria-label={copy.t(side === "left" ? "schedule.leftBracket" : "schedule.rightBracket")}>
       {matches.map((match, index) => {
         const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
+        const pairAccent = pairAccentColors[index % pairAccentColors.length];
         return (
           <article
             className={[
@@ -476,7 +480,7 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
             ].filter(Boolean).join(" ")}
             key={match.id}
             data-route-match-id={match.id}
-            style={{ "--pair-index": index }}
+            style={{ "--pair-index": index, "--pair-rgb": pairAccent }}
           >
             <span className="arena-pair__match">{match.id.toUpperCase()}</span>
             {teams.map((team) => (
@@ -500,39 +504,14 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
   );
 }
 
-function ArenaCenter({ roundMatches, teamsById, allocations, activeRound, detailMatch, detailTeam, copy }) {
-  const { compactVotes, roundLabel, t, teamName } = copy;
-  const roundTeams = roundMatches.flatMap((match) => match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean));
-  const strongestTeam = roundTeams.reduce((best, team) => (!best || (team.votes ?? 0) > (best.votes ?? 0) ? team : best), null);
-  const displayPool = roundMatches.reduce((total, match) => total + displayPoolForMatch(match, teamsById), 0);
-  const effectiveTickets = allocations.reduce((total, allocation) => total + allocation.tickets, 0);
-  const focusedTeam = detailTeam ?? strongestTeam;
+function ArenaCenter({ copy }) {
+  const { t } = copy;
 
   return (
     <figure className="arena-center" aria-label={t("schedule.bracketCenterAria")}>
       <span className="arena-center__route is-left" aria-hidden="true" />
       <span className="arena-center__route is-right" aria-hidden="true" />
       <img src={trophyImage} alt="" aria-hidden="true" data-route-target="trophy" />
-      <figcaption>
-        <span>{t("schedule.championPick")}</span>
-        <strong>{focusedTeam ? teamName(focusedTeam) : t("schedule.awaitingVote")}</strong>
-        <small>{roundLabel(activeRound, "advanceLabel")}</small>
-      </figcaption>
-      <dl>
-        <div>
-          <dt>{t("schedule.topConfidence")}</dt>
-          <dd>{strongestTeam ? `${teamName(strongestTeam)} ${compactVotes(strongestTeam.votes)}` : "-"}</dd>
-        </div>
-        <div>
-          <dt>{t("schedule.totalVotes")}</dt>
-          <dd>{formatNumber(displayPool)}</dd>
-        </div>
-        <div>
-          <dt>{t("schedule.myValidVotes")}</dt>
-          <dd>{formatNumber(effectiveTickets)}</dd>
-        </div>
-      </dl>
-      <p>{detailMatch ? t("schedule.selectedMatchRecord", { match: detailMatch.id.toUpperCase() }) : t("schedule.noWinnerConfirmed")}</p>
     </figure>
   );
 }
@@ -648,8 +627,8 @@ function ArenaDetailPanel({
   const opponentVotes = opponentTeam.votes ?? 0;
   const displayPool = displayPoolForMatch(detailMatch, teamsById);
   const totalVotes = Math.max(1, teamVotes + opponentVotes);
-  const teamShare = clampPercent(Math.round((teamVotes / totalVotes) * 100));
-  const visibleRounds = detailMatch.status === "official_final" ? 1 : voteableStatuses.has(detailMatch.status) ? 2 : 1;
+  const teamShare = Math.round((teamVotes / totalVotes) * 100);
+  const opponentShare = 100 - teamShare;
   const simulatedVoters = Math.max(4, Math.round(displayPool / 45));
   const canSubmit = mode === "vote" && voteableStatuses.has(detailMatch.status) && remainingRoundTickets > 0;
   const canOpenVote = mode === "schedule" && voteableStatuses.has(detailMatch.status) && Boolean(onOpenVote);
@@ -668,13 +647,7 @@ function ArenaDetailPanel({
       </button>
       <header>
         <span>{t("schedule.teamVoteDetails")}</span>
-        <strong>
-          <img src={detailTeam.flagSrc} alt="" aria-hidden="true" />
-          {teamName(detailTeam)}
-          <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
-          <Trophy size={18} strokeWidth={2.2} aria-hidden="true" />
-          {detailMatch.advancingTeamId === detailTeam.id ? t("common.advancing") : t("schedule.championPick")}
-        </strong>
+        <strong>{detailMatch.id.toUpperCase()} · {matchStatus(detailMatch.status)}</strong>
       </header>
       <p>
         {t("schedule.panelState", {
@@ -684,11 +657,7 @@ function ArenaDetailPanel({
       </p>
       <dl>
         <div>
-          <dt>{t("schedule.visibleRounds")}</dt>
-          <dd>{formatNumber(visibleRounds)}</dd>
-        </div>
-        <div>
-          <dt>{t("schedule.accelerationVotes")}</dt>
+          <dt>{t("schedule.totalVotes")}</dt>
           <dd>{formatNumber(Math.max(displayPool, allocation?.tickets ?? 0))}</dd>
         </div>
         <div>
@@ -696,26 +665,31 @@ function ArenaDetailPanel({
           <dd>{formatNumber(simulatedVoters)}</dd>
         </div>
       </dl>
-      <section className="arena-vote-ratio" aria-label={t("schedule.voteShare")}>
-        <header>
+      <section
+        className="arena-vs-breakdown"
+        aria-label={t("schedule.voteShare")}
+        style={{ "--focused-share": `${teamShare}%`, "--opponent-share": `${opponentShare}%` }}
+      >
+        <article className="is-focused">
+          <img src={detailTeam.flagSrc} alt="" aria-hidden="true" />
           <span>{teamName(detailTeam)}</span>
-          <strong>{teamShare}%</strong>
+          <strong>{compactVotes(teamVotes)}</strong>
+          <small>{teamShare}%</small>
+        </article>
+        <div className="arena-vs-share" aria-hidden="true">
+          <span className="arena-vs-share__label">{t("vote.versusShort")}</span>
+          <span className="arena-vs-share__track">
+            <i />
+          </span>
+        </div>
+        <article>
+          <img src={opponentTeam.flagSrc} alt="" aria-hidden="true" />
           <span>{teamName(opponentTeam)}</span>
-        </header>
-        <span className="arena-vote-ratio__track">
-          <i style={{ width: `${teamShare}%` }} />
-        </span>
-        <footer>
-          <span>{compactVotes(teamVotes)}</span>
-          <span>{compactVotes(opponentVotes)}</span>
-        </footer>
+          <strong>{compactVotes(opponentVotes)}</strong>
+          <small>{opponentShare}%</small>
+        </article>
       </section>
-      <section className="arena-panel-wallet">
-        <span>
-          <WalletCards size={15} strokeWidth={2.25} />
-          {t("schedule.supportedWallets")}
-        </span>
-        <strong>{formatNumber(Math.max(1, Math.round(simulatedVoters / 22)))}</strong>
+      <section className="arena-detail-actions">
         <Magnet
           as="button"
           type="button"
@@ -883,12 +857,6 @@ export function TournamentArena({
             copy={copy}
           />
           <ArenaCenter
-            roundMatches={roundMatches}
-            teamsById={teamsById}
-            allocations={roundAllocations}
-            activeRound={activeRound}
-            detailMatch={activeDetailMatch}
-            detailTeam={activeDetailTeam}
             copy={copy}
           />
           <ArenaSide
@@ -902,13 +870,15 @@ export function TournamentArena({
           />
         </section>
       </section>
-      <footer className="tournament-arena__footer">
-        <span>{activeDetailMatch?.id?.toUpperCase()} · {activeDetailMatch ? venueName(activeDetailMatch.venue) : ""}</span>
-        <strong>
-          {activeDetailMatch?.teams?.map((teamId) => teamName(teamsById.get(teamId))).join(` ${t("vote.versusShort")} `)}
-        </strong>
-        <em>{t("schedule.tapTeamHint")}</em>
-      </footer>
+      {mode === "vote" ? (
+        <footer className="tournament-arena__footer">
+          <span>{activeDetailMatch?.id?.toUpperCase()} · {activeDetailMatch ? venueName(activeDetailMatch.venue) : ""}</span>
+          <strong>
+            {activeDetailMatch?.teams?.map((teamId) => teamName(teamsById.get(teamId))).join(` ${t("vote.versusShort")} `)}
+          </strong>
+          <em>{t("schedule.tapTeamHint")}</em>
+        </footer>
+      ) : null}
       {detail ? (
       <ArenaDetailPanel
         mode={mode}

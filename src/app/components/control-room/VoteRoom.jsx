@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Clock3,
-  Coins,
   LockKeyhole,
   Minus,
   Plus,
@@ -10,20 +9,15 @@ import {
   Ticket,
   WalletCards,
 } from "lucide-react";
-import { useState } from "react";
-import { compactAddress, formatNumber, formatPrizeMoney } from "../../data/ticketMath";
-import { getPreviewNotice } from "../../data/campaignRuntime";
-import prizeBonneySlab from "../../assets/prize-bonney-slab.webp";
-import { preloadImage } from "../../utils/preloadAssets";
+import { useEffect, useMemo, useRef } from "react";
+import { compactAddress, formatNumber } from "../../data/ticketMath";
 import ElasticSlider from "../ElasticSlider/ElasticSlider";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { MatchPrizeList } from "./MatchPrizeList";
-import { PrizeMatchCarousel } from "./PrizeMatchCarousel";
 
 const voteableStatuses = new Set(["open", "closing_soon"]);
-const prizePresentationModes = ["showcase", "matchList"];
 const matchPhaseOrder = {
   official_final: 0,
   locked: 1,
@@ -33,7 +27,7 @@ const matchPhaseOrder = {
 };
 
 export function preloadRoomAssets() {
-  return preloadImage(prizeBonneySlab);
+  return Promise.resolve();
 }
 
 function clampTicketAmount(value, maxTickets) {
@@ -90,107 +84,6 @@ function getTeamTone(match, team, allocation, selectedTeamId) {
 
 function getTeamAllocation(roundAllocations, matchId, teamId) {
   return roundAllocations.find((allocation) => allocation.matchId === matchId && allocation.teamId === teamId) ?? null;
-}
-
-function allocationOrderTimestamp(allocation) {
-  return allocation?.createdAt || allocation?.updatedAt || allocation?.submittedAt || "";
-}
-
-function compareVoteTicketOrder(left, right) {
-  const leftTime = allocationOrderTimestamp(left);
-  const rightTime = allocationOrderTimestamp(right);
-  if (leftTime || rightTime) {
-    if (leftTime !== rightTime) return leftTime.localeCompare(rightTime);
-  } else {
-    return 0;
-  }
-  if (left.walletAddress !== right.walletAddress) return String(left.walletAddress || "").localeCompare(String(right.walletAddress || ""));
-  if (left.matchId !== right.matchId) return String(left.matchId || "").localeCompare(String(right.matchId || ""));
-  if (left.teamId !== right.teamId) return String(left.teamId || "").localeCompare(String(right.teamId || ""));
-  return String(left.id || "").localeCompare(String(right.id || ""));
-}
-
-function ticketRangeFromBounds(start, end) {
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end < start) return "";
-  return start === end ? `#${formatNumber(start)}` : `#${formatNumber(start)}-${formatNumber(end)}`;
-}
-
-function ticketsForAllocation(allocation) {
-  return Math.max(0, Math.floor(Number(allocation?.tickets) || 0));
-}
-
-function getMatchTeamAllocations(allocations, matchId, teamId) {
-  return allocations
-    .filter((allocation) => allocation.matchId === matchId && allocation.teamId === teamId)
-    .map((allocation, index) => ({ allocation, index }))
-    .sort((left, right) => compareVoteTicketOrder(left.allocation, right.allocation) || left.index - right.index);
-}
-
-function getAllocationMatchTeamTicketRange(allocation, allocations) {
-  const explicitStart = Math.floor(Number(allocation?.ticketStart) || 0);
-  const explicitEnd = Math.floor(Number(allocation?.ticketEnd) || 0);
-  if (explicitStart > 0 && explicitEnd >= explicitStart) return ticketRangeFromBounds(explicitStart, explicitEnd);
-
-  const orderedAllocations = getMatchTeamAllocations(allocations, allocation?.matchId, allocation?.teamId);
-  let cursor = 0;
-  for (const row of orderedAllocations) {
-    const allocationTickets = ticketsForAllocation(row.allocation);
-    const start = cursor + 1;
-    const end = cursor + allocationTickets;
-    cursor = end;
-    if (row.allocation === allocation || row.allocation.id === allocation?.id) return ticketRangeFromBounds(start, end);
-  }
-  return "";
-}
-
-function getProjectedMatchTeamTicketRange(allocations, matchId, teamId, ticketAmount) {
-  const currentTotal = getMatchTeamAllocations(allocations, matchId, teamId)
-    .reduce((total, row) => total + ticketsForAllocation(row.allocation), 0);
-  const tickets = Math.max(0, Math.floor(Number(ticketAmount) || 0));
-  if (!matchId || !teamId || tickets <= 0) return "";
-  return ticketRangeFromBounds(currentTotal + 1, currentTotal + tickets);
-}
-
-function getMatchPrize(match, round, locale) {
-  const amount = Number(match?.matchPrizeAmount ?? round?.matchPrizeAmount ?? 0);
-  const currency = String(match?.prizeCurrency ?? round?.prizeCurrency ?? "USDT");
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-
-  const approximate = Boolean(match?.matchPrizeApproximate ?? round?.matchPrizeApproximate);
-  const roundedAmount = Math.round(amount);
-  return {
-    amount,
-    amountLabel: formatPrizeMoney(amount, currency, locale),
-    currency,
-    approximate,
-    roundedLabel: approximate && Math.abs(roundedAmount - amount) > Number.EPSILON
-      ? formatPrizeMoney(roundedAmount, currency, locale)
-      : "",
-    roundPoolLabel: round?.roundPrizePool ? formatPrizeMoney(round.roundPrizePool, currency, locale) : "",
-    drawCount: Number(match?.drawCount ?? round?.drawCount ?? 0),
-    prizeSlotCount: Number(match?.matchPrizeSlotCount ?? round?.matchPrizeSlotCount ?? 1),
-    alternateCount: Number(match?.alternateCount ?? round?.alternateCount ?? 0),
-  };
-}
-
-function PrizePresentationSwitch({ mode, onChange, copy }) {
-  const { t } = copy;
-
-  return (
-    <nav className="vote-prize-mode-switch" aria-label={t("vote.prizeViewAria")}>
-      {prizePresentationModes.map((modeId) => (
-        <button
-          type="button"
-          className={mode === modeId ? "is-active" : ""}
-          key={modeId}
-          onClick={() => onChange(modeId)}
-          aria-pressed={mode === modeId}
-        >
-          {t(`vote.prizeView.${modeId}`)}
-        </button>
-      ))}
-    </nav>
-  );
 }
 
 function MatchVoteGroup({
@@ -299,14 +192,11 @@ function TicketAllocationPanel({
   ticketAmount,
   remainingRoundTickets,
   usedRoundTickets,
-  activeAllocation,
-  matchPrize,
-  roundAllocations = [],
   onSetTicketAmount,
   onConfirmPreviewVote,
   copy,
 }) {
-  const { number, roundLabel, t, teamName } = copy;
+  const { roundLabel, t, teamName } = copy;
   const maxTickets = Math.max(1, remainingRoundTickets);
   const boundedTicketAmount = clampTicketAmount(ticketAmount, maxTickets);
   const selectedTeamName = selectedTeam ? teamName(selectedTeam) : null;
@@ -318,9 +208,6 @@ function TicketAllocationPanel({
     && voteableStatuses.has(selectedMatch.status)
     && remainingRoundTickets > 0,
   );
-  const projectedTicketRange = canSubmit
-    ? getProjectedMatchTeamTicketRange(roundAllocations, selectedMatch.id, selectedTeam.id, boundedTicketAmount)
-    : "";
 
   function handleSetTicketAmount(value) {
     onSetTicketAmount(clampTicketAmount(value, maxTickets));
@@ -357,36 +244,6 @@ function TicketAllocationPanel({
             : t("vote.selectedTargetNoMatch")}
         </small>
       </section>
-
-      {matchPrize ? (
-        <section className="vote-match-prize-callout" aria-label={t("vote.matchPrizePoolAria")}>
-          <span>
-            <Coins size={15} strokeWidth={2.25} />
-            {matchPrize.approximate ? t("vote.matchPrizePoolApproxLabel") : t("vote.matchPrizePoolLabel")}
-          </span>
-          <strong>{matchPrize.amountLabel}</strong>
-          <p>{t("vote.matchPrizePoolHint")}</p>
-          <small>
-            {matchPrize.roundPoolLabel && matchPrize.drawCount
-              ? t("vote.matchPrizePoolMeta", {
-                pool: matchPrize.roundPoolLabel,
-                count: number(matchPrize.drawCount),
-              })
-              : t("vote.matchPrizePoolFixed")}
-            {matchPrize.prizeSlotCount
-              ? ` · ${t("vote.matchPrizeWinnerPolicy", {
-                winners: number(matchPrize.prizeSlotCount),
-              })}`
-              : ""}
-          </small>
-          {projectedTicketRange ? (
-            <small className="vote-match-prize-callout__ticket-range">
-              <Ticket size={14} strokeWidth={2.25} />
-              {t("vote.projectedMatchTeamTickets", { range: projectedTicketRange })}
-            </small>
-          ) : null}
-        </section>
-      ) : null}
 
       <section className="vote-allocation-status">
         <output>
@@ -460,32 +317,25 @@ function VoteWalletPanel({
   ledger,
   ledgerIssue,
   previewVoteIssue,
-  activeEntry,
   selectedWallet,
   authSession,
   authEndpointReady,
-  activeRound,
-  remainingRoundTickets,
-  usedRoundTickets,
-  roundAllocations,
-  matchesById,
-  teamsById,
   onSelectWallet,
-  onOpenAuthModal,
+  onRequestLogin,
   copy,
 }) {
-  const { roundLabel, teamName, t } = copy;
+  const { t } = copy;
   const authWalletLinked = Boolean(authSession?.walletAddress);
 
   return (
-    <aside className="vote-wallet-panel" aria-label={authEndpointReady ? t("auth.accountAria") : t("vote.previewWallet")}>
+    <aside className="vote-wallet-panel vote-wallet-panel--compact" aria-label={authEndpointReady ? t("auth.accountAria") : t("vote.previewWallet")}>
       <header>
         <span>
           <WalletCards size={15} strokeWidth={2.25} />
           {authEndpointReady ? t("auth.account") : t("vote.previewWallet")}
         </span>
         {authEndpointReady ? (
-          <button className="vote-wallet-panel__auth" type="button" onClick={onOpenAuthModal}>
+          <button className="vote-wallet-panel__auth" type="button" onClick={onRequestLogin}>
             <strong>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</strong>
             <small>{authWalletLinked ? t("auth.linked") : t("auth.loginDetail")}</small>
           </button>
@@ -499,52 +349,6 @@ function VoteWalletPanel({
           </select>
         )}
       </header>
-      <section className="vote-balance-strip" aria-label={t("vote.roundBalance", { round: roundLabel(activeRound) })}>
-        <output>
-          <span>{t("common.ticketsLeft")}</span>
-          <strong>{formatNumber(remainingRoundTickets)}</strong>
-        </output>
-        <output>
-          <span>{t("vote.previewUsed")}</span>
-          <strong>{formatNumber(usedRoundTickets)}</strong>
-        </output>
-        <output>
-          <span>{t("vote.walletTotalTickets")}</span>
-          <strong>{formatNumber(activeEntry?.finalTickets ?? 0)}</strong>
-        </output>
-      </section>
-      <section className="vote-preview-list" aria-label={t("vote.currentRoundSummary")}>
-        <header>
-          <span>{t("vote.pendingAllocationSummary")}</span>
-          <strong>{formatNumber(roundAllocations.length)}</strong>
-        </header>
-        {roundAllocations.length > 0 ? (
-          <ol>
-            {roundAllocations.map((allocation) => {
-              const match = matchesById.get(allocation.matchId);
-              const team = teamsById.get(allocation.teamId);
-              const matchTeams = match?.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean) ?? [];
-              const matchTitle = matchTeams.map((entry) => teamName(entry)).join(` ${t("vote.versusShort")} `);
-              const ticketRange = getAllocationMatchTeamTicketRange(allocation, roundAllocations);
-              return (
-                <li key={allocation.id}>
-                  <img src={team?.flagSrc} alt="" aria-hidden="true" />
-                  <span>
-                    <strong>{match?.id.toUpperCase()} · {matchTitle}</strong>
-                    <small>
-                      {teamName(team) || allocation.teamId} · {formatNumber(allocation.tickets)} {t("common.tickets")}
-                      {ticketRange ? ` · ${t("vote.matchTeamTicketRange", { range: ticketRange })}` : ""}
-                    </small>
-                  </span>
-                  <em>{getPreviewNotice(allocation, t)}</em>
-                </li>
-              );
-            })}
-          </ol>
-        ) : (
-          <p>{t("vote.noPreviewAllocations")}</p>
-        )}
-      </section>
       {ledgerIssue ? (
         <p className="vote-issue">
           <AlertTriangle size={16} strokeWidth={2.35} />
@@ -582,112 +386,92 @@ export function VoteRoom({
   authSession,
   authEndpointReady = false,
   onSelectWallet,
-  onOpenAuthModal,
+  onRequestLogin,
   onSelectMatch,
   onSelectTeam,
   onSetTicketAmount,
   onConfirmPreviewVote,
 }) {
   const copy = useCampaignCopy();
-  const { roundLabel, t, teamName } = copy;
-  const [prizePresentationMode, setPrizePresentationMode] = useState("matchList");
-  const roundMatches = [...matches]
-    .filter((match) => match.roundId === activeRoundId)
-    .sort(sortMatchesByDisplayPhase);
-  const matchesById = new Map(matches.map((match) => [match.id, match]));
-  const selectedRoundMatch = selectedMatch && roundMatches.some((match) => match.id === selectedMatch.id)
-    ? selectedMatch
-    : roundMatches[0];
-  const activeAllocation = selectedTeamId
-    ? getTeamAllocation(roundAllocations, selectedRoundMatch?.id, selectedTeamId)
-    : null;
+  const { roundLabel, t } = copy;
+  const autoSelectedRoundRef = useRef("");
+  const roundMatches = useMemo(
+    () => [...matches]
+      .filter((match) => match.roundId === activeRoundId)
+      .sort(sortMatchesByDisplayPhase),
+    [activeRoundId, matches],
+  );
+  const preferredRoundMatch = roundMatches.find((match) => voteableStatuses.has(match.status)) ?? roundMatches[0] ?? null;
+  const selectedMatchInRound = Boolean(selectedMatch && roundMatches.some((match) => match.id === selectedMatch.id));
+  const selectedRoundMatch = selectedMatchInRound ? selectedMatch : preferredRoundMatch;
   const selectedTeam = selectedRoundMatch?.teams.includes(selectedTeamId)
     ? teamsById.get(selectedTeamId)
     : null;
-  const voteableMatchCount = roundMatches.filter((match) => voteableStatuses.has(match.status)).length;
-  const selectedRoundMatchTitle = selectedRoundMatch
-    ? selectedRoundMatch.teams.map((teamId) => teamName(teamsById.get(teamId))).join(` ${t("vote.versusShort")} `)
-    : "";
-  const selectedRoundPrize = getMatchPrize(selectedRoundMatch, activeRound, copy.locale);
+  const activeRoundLabel = roundLabel(activeRound);
+  const activeRoundAdvanceLabel = roundLabel(activeRound, "advanceLabel");
+  const userTotalTickets = Math.max(0, Math.floor(Number(activeEntry?.finalTickets) || 0));
+
+  useEffect(() => {
+    const selectedIsVoteable = Boolean(
+      selectedMatchInRound
+      && selectedMatch
+      && voteableStatuses.has(selectedMatch.status),
+    );
+    if (!preferredRoundMatch || autoSelectedRoundRef.current === activeRoundId || selectedIsVoteable) return;
+
+    autoSelectedRoundRef.current = activeRoundId;
+    onSelectMatch?.(preferredRoundMatch.id);
+  }, [
+    activeRoundId,
+    onSelectMatch,
+    preferredRoundMatch,
+    selectedMatch,
+    selectedMatchInRound,
+  ]);
 
   return (
     <section
-      className={[
-        "vote-room vote-room-groups",
-        prizePresentationMode === "matchList" ? "is-match-prize-list" : "is-prize-showcase",
-      ].join(" ")}
+      className="vote-room vote-room-groups is-match-prize-list"
       aria-label={t("vote.roomAria")}
     >
       <header className="vote-stage-head">
-        <span>{roundLabel(activeRound, "englishLabel")}</span>
-        <h1>{t("vote.stageDeckTitle", { round: roundLabel(activeRound, "advanceLabel") })}</h1>
-        <p>{t("vote.stageDeckBody")}</p>
-        <section className="vote-stage-summary" aria-label={t("vote.currentRoundSummary")}>
-          <output>
-            <span>{t("common.ticketsLeft")}</span>
-            <strong>{formatNumber(remainingRoundTickets)}</strong>
-          </output>
-          <output>
-            <span>{t("vote.previewUsed")}</span>
-            <strong>{formatNumber(usedRoundTickets)}</strong>
-          </output>
-          <output>
-            <span>{t("vote.lostTickets")}</span>
-            <strong>{formatNumber(roundOutcomeSummary?.lostTickets ?? 0)}</strong>
-          </output>
-          <output>
-            <span>{t("common.matches")}</span>
-            <strong>{formatNumber(voteableMatchCount)} / {formatNumber(roundMatches.length)}</strong>
-          </output>
-        </section>
-        {selectedRoundMatch ? (
-          <strong className="vote-stage-head__current">
-            {selectedRoundMatch.id.toUpperCase()}
-            {prizePresentationMode === "matchList" && selectedRoundPrize
-              ? ` · ${selectedRoundPrize.approximate ? t("vote.matchPrizePillApprox", { amount: selectedRoundPrize.amountLabel }) : t("vote.matchPrizePill", { amount: selectedRoundPrize.amountLabel })}`
-              : ` · ${selectedRoundMatchTitle}`}
-          </strong>
-        ) : null}
+        <h1 className="vote-stage-head__sr-title">{t("vote.stageDeckTitle", { round: activeRoundAdvanceLabel })}</h1>
+        <div className="vote-stage-hero">
+          <section className="vote-stage-summary" aria-label={t("vote.currentRoundSummary")}>
+            <output className="is-round">
+              <span>{t("vote.stageSummaryRound")}</span>
+              <strong>{activeRoundLabel}</strong>
+              <small>{activeRoundAdvanceLabel}</small>
+            </output>
+            <output className="is-user-tickets">
+              <span>{t("vote.stageSummaryYourTickets")}</span>
+              <strong>{formatNumber(userTotalTickets)}</strong>
+              <small>{t("vote.stageSummaryWalletHint")}</small>
+            </output>
+            <output className="is-remaining">
+              <span>{t("vote.stageSummaryRemainingTickets")}</span>
+              <strong>{formatNumber(remainingRoundTickets)}</strong>
+              <small>{t("vote.stageSummaryUsedTickets", { tickets: formatNumber(usedRoundTickets) })}</small>
+            </output>
+          </section>
+        </div>
       </header>
 
       <section className="vote-room-grid">
         <section className="vote-prize-stage" aria-label={t("common.prizes")}>
-          <header className="vote-prize-stage__toolbar">
-            <span>{t("vote.prizeViewLabel")}</span>
-            <PrizePresentationSwitch
-              mode={prizePresentationMode}
-              onChange={setPrizePresentationMode}
-              copy={copy}
-            />
-          </header>
-          {prizePresentationMode === "showcase" ? (
-            <PrizeMatchCarousel
-              matches={roundMatches}
-              teamsById={teamsById}
-              selectedMatchId={selectedRoundMatch?.id}
-              selectedTeamId={selectedTeamId}
-              roundAllocations={roundAllocations}
-              remainingRoundTickets={remainingRoundTickets}
-              prizeSrc={prizeBonneySlab}
-              onSelectMatch={onSelectMatch}
-              onSelectTeam={onSelectTeam}
-              copy={copy}
-            />
-          ) : (
-            <MatchPrizeList
-              activeRound={activeRound}
-              matches={roundMatches}
-              teamsById={teamsById}
-              selectedMatchId={selectedRoundMatch?.id}
-              selectedTeamId={selectedTeamId}
-              roundAllocations={roundAllocations}
-              roundVoteOutcomes={roundVoteOutcomes}
-              remainingRoundTickets={remainingRoundTickets}
-              onSelectMatch={onSelectMatch}
-              onSelectTeam={onSelectTeam}
-              copy={copy}
-            />
-          )}
+          <MatchPrizeList
+            activeRound={activeRound}
+            matches={roundMatches}
+            teamsById={teamsById}
+            selectedMatchId={selectedRoundMatch?.id}
+            selectedTeamId={selectedTeamId}
+            roundAllocations={roundAllocations}
+            roundVoteOutcomes={roundVoteOutcomes}
+            remainingRoundTickets={remainingRoundTickets}
+            onSelectMatch={onSelectMatch}
+            onSelectTeam={onSelectTeam}
+            copy={copy}
+          />
         </section>
 
         <GlareHover as="aside" className="vote-side-rail">
@@ -698,9 +482,6 @@ export function VoteRoom({
             ticketAmount={ticketAmount}
             remainingRoundTickets={remainingRoundTickets}
             usedRoundTickets={usedRoundTickets}
-            activeAllocation={activeAllocation}
-            matchPrize={selectedRoundPrize}
-            roundAllocations={roundAllocations}
             onSetTicketAmount={onSetTicketAmount}
             onConfirmPreviewVote={onConfirmPreviewVote}
             copy={copy}
@@ -710,18 +491,11 @@ export function VoteRoom({
             ledger={ledger}
             ledgerIssue={ledgerIssue}
             previewVoteIssue={previewVoteIssue}
-            activeEntry={activeEntry}
             selectedWallet={selectedWallet}
             authSession={authSession}
             authEndpointReady={authEndpointReady}
-            activeRound={activeRound}
-            remainingRoundTickets={remainingRoundTickets}
-            usedRoundTickets={usedRoundTickets}
-            roundAllocations={roundAllocations}
-            matchesById={matchesById}
-            teamsById={teamsById}
             onSelectWallet={onSelectWallet}
-            onOpenAuthModal={onOpenAuthModal}
+            onRequestLogin={onRequestLogin}
             copy={copy}
           />
         </GlareHover>

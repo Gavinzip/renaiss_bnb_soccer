@@ -11,7 +11,6 @@ import {
   Vote,
 } from "lucide-react";
 import { AnimatedContent } from "../AnimatedContent";
-import { GlareHover } from "../GlareHover";
 import { formatNumber, formatPrizeMoney } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 
@@ -65,7 +64,7 @@ function RulesFlowChart({ copy }) {
   const { copyList, t } = copy;
 
   return (
-    <GlareHover as="article" className="rules-flow-map">
+    <article className="rules-flow-map">
       <header>
         <span>{t("rules.lifecycleEyebrow")}</span>
         <h2>{t("rules.lifecycleTitle")}</h2>
@@ -88,7 +87,7 @@ function RulesFlowChart({ copy }) {
           );
         })}
       </ol>
-    </GlareHover>
+    </article>
   );
 }
 
@@ -112,7 +111,7 @@ function RulesRewardMap({ activeRound, matches, totalPrizeSlots, copy }) {
   const roundLabelText = activeRound ? roundLabel(activeRound) : "-";
 
   return (
-    <GlareHover as="article" className="rules-reward-map">
+    <article className="rules-reward-map">
       <header>
         <span>{t("rules.currentPrizeDesk")}</span>
         <h2>{t("rules.heroTitle")}</h2>
@@ -146,7 +145,7 @@ function RulesRewardMap({ activeRound, matches, totalPrizeSlots, copy }) {
           <strong>{formatNumber(totalPrizeSlots)}</strong>
         </article>
       </section>
-    </GlareHover>
+    </article>
   );
 }
 

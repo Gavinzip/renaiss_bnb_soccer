@@ -7,13 +7,15 @@ import {
   Landmark,
   LogOut,
   LockKeyhole,
+  Menu,
   ShieldCheck,
   Ticket,
   Trophy,
   Vote,
   WalletCards,
+  X,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { commandViews } from "../../data/campaignRuntime";
@@ -74,6 +76,12 @@ function preloadInactiveRooms(activeViewId) {
   ));
 
   return () => cancelJobs.forEach((cancel) => cancel());
+}
+
+function isLocalTestOrigin() {
+  if (typeof window === "undefined") return false;
+  const { hostname } = window.location;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function RoomLoadingShell({ t }) {
@@ -408,7 +416,7 @@ function RoomCommandMast({
   );
 }
 
-function ViewMenu({ activeViewId, onSelectView, t }) {
+function ViewMenu({ activeViewId, id, onSelectView, t }) {
   const activeIndex = Math.max(0, commandViews.findIndex((view) => view.id === activeViewId));
 
   function handlePreload(viewId) {
@@ -418,7 +426,7 @@ function ViewMenu({ activeViewId, onSelectView, t }) {
   }
 
   return (
-    <menu className="command-menu pill-nav" aria-label={t("nav.aria")} data-active-index={activeIndex}>
+    <menu className="command-menu pill-nav" id={id} aria-label={t("nav.aria")} data-active-index={activeIndex}>
       <span className="command-menu__indicator" aria-hidden="true" />
       {commandViews.map((view) => {
         const Icon = viewIcons[view.id] ?? Landmark;
@@ -496,7 +504,7 @@ export function ControlRoom({
   authConfig,
   authIssue,
   authEndpointReady,
-  onOpenAuthModal,
+  onRequestLogin,
   onRefreshAuth,
   onSelectView,
   onToggleMobileNav,
@@ -520,11 +528,20 @@ export function ControlRoom({
   const authWalletLinked = Boolean(authSession?.walletAddress);
   const showAuthState = Boolean(authEndpointReady);
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
+  const [xFollowOverlayDismissed, setXFollowOverlayDismissed] = useState(false);
   const xFollowGateRequired = authConfig?.xFollowGate?.required !== false;
   const voteRequiresXFollow = authEndpointReady && xFollowGateRequired && !authSession?.xFollow?.gatePassed;
   const showOptionalXFollowButton = authEndpointReady && !xFollowGateRequired && activeViewId === "vote";
+  const canDismissXFollowOverlay = !voteRequiresXFollow || isLocalTestOrigin();
+  const closeXFollowOverlay = useCallback(() => {
+    if (voteRequiresXFollow && canDismissXFollowOverlay) {
+      setXFollowOverlayDismissed(true);
+    }
+    setXFollowPanelOpen(false);
+  }, [canDismissXFollowOverlay, voteRequiresXFollow]);
   const showXFollowOverlay = activeViewId === "vote"
     && !authSession?.xFollow?.gatePassed
+    && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
     && (voteRequiresXFollow || (showOptionalXFollowButton && xFollowPanelOpen));
 
   async function handleLogout() {
@@ -551,25 +568,26 @@ export function ControlRoom({
   }, [activeViewId]);
 
   useEffect(() => {
-    if (activeViewId !== "vote" || authSession?.xFollow?.gatePassed) {
+    if (activeViewId !== "vote" || authSession?.xFollow?.gatePassed || !voteRequiresXFollow) {
       setXFollowPanelOpen(false);
+      setXFollowOverlayDismissed(false);
     }
-  }, [activeViewId, authSession?.xFollow?.gatePassed]);
+  }, [activeViewId, authSession?.xFollow?.gatePassed, voteRequiresXFollow]);
 
   useEffect(() => {
-    if (!showXFollowOverlay || voteRequiresXFollow) return undefined;
+    if (!showXFollowOverlay || !canDismissXFollowOverlay) return undefined;
 
     function handleKeyDown(event) {
-      if (event.key === "Escape") setXFollowPanelOpen(false);
+      if (event.key === "Escape") closeXFollowOverlay();
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showXFollowOverlay, voteRequiresXFollow]);
+  }, [showXFollowOverlay, canDismissXFollowOverlay, closeXFollowOverlay]);
 
   return (
     <main className="control-room" data-view={activeViewId} data-simulation={simulationMode}>
-      <header className="control-header" aria-label={t("nav.aria")}>
+      <header className={mobileNavOpen ? "control-header is-mobile-nav-open" : "control-header"} aria-label={t("nav.aria")}>
         <Magnet as="button" className="brand-lockup" type="button" strength={80} onClick={() => onSelectView("home")} aria-label={t("brand.homeAria")}>
           <img src={renaissLogo} alt="" aria-hidden="true" />
           <span>
@@ -577,13 +595,27 @@ export function ControlRoom({
             <small>{t("brand.product")}</small>
           </span>
         </Magnet>
-        <ViewMenu activeViewId={activeViewId} onSelectView={onSelectView} t={t} />
+        <button
+          type="button"
+          className="mobile-nav-toggle"
+          onClick={onToggleMobileNav}
+          aria-controls="control-view-menu"
+          aria-expanded={mobileNavOpen}
+          aria-label={mobileNavOpen ? t("common.close") : t("nav.aria")}
+        >
+          {mobileNavOpen ? <X size={18} strokeWidth={2.35} /> : <Menu size={18} strokeWidth={2.35} />}
+          <span>{t(`nav.${activeView.id}`)}</span>
+        </button>
+        <ViewMenu id="control-view-menu" activeViewId={activeViewId} onSelectView={onSelectView} t={t} />
         <LanguageSwitch />
         {showOptionalXFollowButton ? (
           <button
             type="button"
             className={authSession?.xFollow?.gatePassed ? "header-x-verify is-complete" : "header-x-verify"}
-            onClick={() => setXFollowPanelOpen((current) => !current)}
+            onClick={() => {
+              setXFollowOverlayDismissed(false);
+              setXFollowPanelOpen((current) => !current);
+            }}
             aria-expanded={xFollowPanelOpen}
           >
             <ShieldCheck size={16} strokeWidth={2.25} />
@@ -591,7 +623,7 @@ export function ControlRoom({
           </button>
         ) : null}
         <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
-          <button type="button" className="header-wallet__identity" onClick={showAuthState ? onOpenAuthModal : undefined}>
+          <button type="button" className="header-wallet__identity" onClick={showAuthState ? onRequestLogin : undefined}>
             <WalletCards size={18} strokeWidth={2.1} />
             {showAuthState ? (
               <>
@@ -695,7 +727,7 @@ export function ControlRoom({
               previewVoteIssue={previewVoteIssue}
               authSession={authSession}
               authEndpointReady={authEndpointReady}
-              onOpenAuthModal={onOpenAuthModal}
+              onRequestLogin={onRequestLogin}
               onSelectWallet={onSelectWallet}
               onSelectMatch={onSelectMatch}
               onSelectTeam={onSelectTeam}
@@ -706,18 +738,18 @@ export function ControlRoom({
 
           {showXFollowOverlay ? (
             <section
-              className={voteRequiresXFollow ? "x-follow-gate-overlay is-required" : "x-follow-gate-overlay is-optional"}
+              className={canDismissXFollowOverlay ? "x-follow-gate-overlay is-optional" : "x-follow-gate-overlay is-required"}
               aria-label={t("xFollowGate.aria")}
             >
-              {voteRequiresXFollow ? (
-                <div className="x-follow-gate-overlay__scrim" aria-hidden="true" />
-              ) : (
+              {canDismissXFollowOverlay ? (
                 <button
                   type="button"
                   className="x-follow-gate-overlay__scrim"
                   aria-label={t("xFollowGate.close")}
-                  onClick={() => setXFollowPanelOpen(false)}
+                  onClick={closeXFollowOverlay}
                 />
+              ) : (
+                <div className="x-follow-gate-overlay__scrim" aria-hidden="true" />
               )}
               <div className="x-follow-gate-overlay__sheet" role="dialog" aria-modal="true" aria-label={t("xFollowGate.aria")}>
                 <XFollowGate
@@ -725,7 +757,7 @@ export function ControlRoom({
                   authConfig={authConfig}
                   authEndpointReady={authEndpointReady}
                   onRefreshAuth={onRefreshAuth}
-                  onRequestClose={voteRequiresXFollow ? undefined : () => setXFollowPanelOpen(false)}
+                  onRequestClose={canDismissXFollowOverlay ? closeXFollowOverlay : undefined}
                 />
               </div>
             </section>

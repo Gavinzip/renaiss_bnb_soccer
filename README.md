@@ -21,7 +21,7 @@ the server keeps the production/server defaults and reads `/data/soccer`.
 
 ```sh
 cp .env.local.example .env.local
-# Fill GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET and DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET in .env.local if you want OAuth login locally.
+# Fill RENAISS_CLIENT_SECRET for Sign in with Renaiss. Fill Google/Discord/X values only if you want those providers locally.
 npm run local:seed
 npm run build
 npm run local:server
@@ -33,6 +33,9 @@ dev, keep `npm run local:server` running in another terminal and run:
 ```sh
 npm run local:dev
 ```
+
+The Vite dev server uses `http://localhost:5173` because the current Renaiss SSO
+local redirect URI is exact-match allowlisted as `http://localhost:5173/auth/callback`.
 
 `npm run local:seed` writes local-only demo data to `.local-data/soccer`:
 
@@ -173,6 +176,11 @@ AUTH_COOKIE_SECURE=1
 AUTH_SUCCESS_REDIRECT_PATH=/?auth=success
 AUTH_ERROR_REDIRECT_PATH=/?auth=error
 PUBLIC_APP_ORIGIN=https://renaiss-worldcup.zeabur.app
+RENAISS_ISSUER=https://feat-sso-oidc-provider.vercel.app/api/auth
+RENAISS_CLIENT_ID=renaiss-worldcup
+RENAISS_CLIENT_SECRET=...
+RENAISS_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/auth/callback
+RENAISS_SCOPE=openid profile email safe x
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 GOOGLE_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/google/callback
@@ -209,10 +217,12 @@ snapshots for exports and older readers; they are not used as a fallback when
 SQLite is configured.
 
 Production vote submission uses the signed auth session wallet when `AUTH_REQUIRE_SESSION_FOR_VOTES=1`; the server
-does not trust a client-supplied `walletAddress` for `POST /api/votes`. Google, X, Discord, and email logins create
-identity sessions first, then call `IDENTITY_RESOLVER_API_URL` to map that identity to a voting wallet. Wallet login
-verifies a signed message and can resolve directly to the signing address. If the resolver is not configured or
-returns no wallet, the user can be logged in but cannot submit votes.
+does not trust a client-supplied `walletAddress` for `POST /api/votes`. Renaiss SSO verifies the OIDC `id_token`
+and resolves `safe_wallet_address` directly into the voting wallet when that claim is present. Google, X, Discord,
+and email logins create identity sessions first, then call `IDENTITY_RESOLVER_API_URL` to map that identity to a
+voting wallet. Wallet login verifies a signed message and can resolve directly to the signing address. If Renaiss
+returns `safe_wallet_address: null`, or if another provider cannot resolve a wallet, the user can be logged in but
+cannot submit votes.
 
 ## Lucky Draw Tickets And Contract
 

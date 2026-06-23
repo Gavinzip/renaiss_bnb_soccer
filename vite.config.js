@@ -8,6 +8,10 @@ function localApiProxy(target) {
       target,
       changeOrigin: true,
     },
+    "/auth": {
+      target,
+      changeOrigin: true,
+    },
     "/health": {
       target,
       changeOrigin: true,
