@@ -49,7 +49,8 @@ const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const AUTH_STATE_COOKIE_PREFIX = 'renaiss_auth_state_'
 const OAUTH_PROVIDER_IDS = ['google', 'x', 'discord', 'renaiss']
-const RENAISS_PROMPT_VALUES = new Set(['login', 'consent', 'create', 'select_account', 'none'])
+// Renaiss discovery advertises select_account, but authorize currently rejects it.
+const RENAISS_PROMPT_VALUES = new Set(['login', 'consent', 'create', 'none'])
 
 function normalizeAddress(value) {
   const address = String(value || '').trim()

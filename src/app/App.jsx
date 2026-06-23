@@ -81,7 +81,7 @@ function buildRenaissLoginUrl() {
   const authOrigin = localCallbackHostnames.has(window.location.hostname) ? "http://localhost:5173" : window.location.origin;
   const url = new URL("/api/auth/renaiss/start", authOrigin);
   url.searchParams.set("return_to", returnTo);
-  url.searchParams.set("prompt", "select_account");
+  url.searchParams.set("prompt", "login");
   return url.origin === window.location.origin ? `${url.pathname}${url.search}` : url.toString();
 }
 
