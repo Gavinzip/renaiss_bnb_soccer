@@ -24,6 +24,12 @@ function readEnvString(env, names, fallback = '') {
   return fallback
 }
 
+function normalizeTokenAuthMethod(value) {
+  const method = String(value || '').trim().toLowerCase()
+  if (method === 'client_secret_post' || method === 'post' || method === 'body') return 'post'
+  return 'basic'
+}
+
 function parseJson(text) {
   try {
     return JSON.parse(text)
@@ -81,7 +87,7 @@ export function createRenaissProviderConfig(env = process.env) {
     },
     requiresClientSecret: true,
     requiresRedirectUri: true,
-    tokenAuthMethod: 'body',
+    tokenAuthMethod: normalizeTokenAuthMethod(readEnvString(env, ['RENAISS_TOKEN_AUTH_METHOD'], 'basic')),
     timeoutMs: Math.max(1000, Math.floor(Number(env.RENAISS_OIDC_TIMEOUT_MS || DEFAULT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS)),
   }
 }
@@ -177,21 +183,28 @@ function buildRenaissIdentity({ claims, userinfoError }) {
 
 export async function exchangeRenaissOidcCode(config, { code, codeVerifier, redirectUri, nonce }) {
   const { doc, jwks } = await getRenaissDiscovery(config)
+  const tokenBody = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    code_verifier: codeVerifier,
+    redirect_uri: redirectUri,
+  })
+  const tokenHeaders = {
+    'content-type': 'application/x-www-form-urlencoded',
+    accept: 'application/json',
+    'user-agent': 'renaiss-worldcup-auth/0.1.0',
+  }
+  if (config.tokenAuthMethod === 'basic' && config.clientSecret) {
+    tokenHeaders.authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`
+  } else {
+    tokenBody.set('client_id', config.clientId)
+    if (config.clientSecret) tokenBody.set('client_secret', config.clientSecret)
+  }
+
   const tokenResponse = await fetchWithTimeout(doc.token_endpoint, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded',
-      accept: 'application/json',
-      'user-agent': 'renaiss-worldcup-auth/0.1.0',
-    },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      code_verifier: codeVerifier,
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-      redirect_uri: redirectUri,
-    }).toString(),
+    headers: tokenHeaders,
+    body: tokenBody.toString(),
   }, config.timeoutMs)
 
   const tokenText = await tokenResponse.text()
