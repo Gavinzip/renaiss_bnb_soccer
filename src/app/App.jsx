@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlRoom } from "./components/control-room/ControlRoom";
 import { preloadHomeRoomAssets } from "./components/control-room/HomeRoom";
 import { VoteConfirmModal } from "./components/control-room/VoteConfirmModal";
@@ -36,6 +36,7 @@ import {
 import { I18nProvider } from "./i18n/I18nProvider";
 import { useCampaignCopy } from "./i18n/useCampaignCopy";
 import renaissLogo from "./assets/renaiss-logo-mark.webp";
+import { installGoogleAnalytics, trackEvent, trackPageView } from "./utils/analytics";
 import { preloadImage } from "./utils/preloadAssets";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
@@ -179,6 +180,7 @@ function AppContent() {
   const [initialLoaderMounted, setInitialLoaderMounted] = useState(true);
   const [initialLoaderStartedAt] = useState(() => Date.now());
   const [matchStatusNow, setMatchStatusNow] = useState(() => Date.now());
+  const trackedLoginKeyRef = useRef("");
 
   const refreshAuthSession = useCallback(async () => {
     if (!authMeUrl) {
@@ -209,6 +211,33 @@ function AppContent() {
   useEffect(() => {
     refreshAuthSession();
   }, [refreshAuthSession]);
+
+  useEffect(() => {
+    installGoogleAnalytics();
+  }, []);
+
+  useEffect(() => {
+    trackPageView({
+      title: document.title,
+      viewId: activeViewId,
+    });
+  }, [activeViewId]);
+
+  useEffect(() => {
+    if (!authSession?.authenticated) {
+      trackedLoginKeyRef.current = "";
+      return;
+    }
+
+    const provider = String(authSession.identity?.provider || "unknown");
+    const loginKey = `${provider}:${authSession.walletAddress || "wallet-unlinked"}`;
+    if (trackedLoginKeyRef.current === loginKey) return;
+    trackedLoginKeyRef.current = loginKey;
+    trackEvent("login_status", {
+      auth_provider: provider,
+      wallet_linked: Boolean(authSession.walletAddress),
+    });
+  }, [authSession?.authenticated, authSession?.identity?.provider, authSession?.walletAddress]);
 
   useEffect(() => {
     if (authSession?.walletAddress) {

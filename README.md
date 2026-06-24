@@ -162,6 +162,7 @@ SOCCER_MATCH_DRAW_LEDGER_PATH=/data/soccer/match-draw-ledger.json
 SOCCER_DRAW_WINNERS_PATH=/data/soccer/draw-winners.json
 SOCCER_DRAW_ALTERNATE_COUNT=2
 WINNER_REVEAL_VIDEO_URL=https://pub-7230fa99c50e44e9b241e47cac526165.r2.dev/draw/winner-reveal-2026-06-17-hq.mp4
+VITE_GA_MEASUREMENT_ID=G-...
 
 DATA_BACKUP_REPO_URL=https://github.com/Gavinzip/renaiss_bnb_soccer_data.git
 DATA_BACKUP_GITHUB_TOKEN=<PAT token>
@@ -223,6 +224,13 @@ and email logins create identity sessions first, then call `IDENTITY_RESOLVER_AP
 voting wallet. Wallet login verifies a signed message and can resolve directly to the signing address. If Renaiss
 returns `safe_wallet_address: null`, or if another provider cannot resolve a wallet, the user can be logged in but
 cannot submit votes.
+
+Google Analytics is build-time gated by `VITE_GA_MEASUREMENT_ID`. The frontend
+only loads GA when this value is a valid `G-...` Measurement ID, strips identity
+query params such as `wallet` from page views, and sends only anonymous events
+such as app view changes and login provider status. Treat GA as installed only
+after the live page contains the ID, `gtag.js` returns 200, collection requests
+return 204, and GA realtime/API shows traffic for the correct property.
 
 ## Lucky Draw Tickets And Contract
 
