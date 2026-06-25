@@ -16,12 +16,13 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function requestRenaissProviderSignOut(authSession, authConfig) {
+export async function requestRenaissProviderSignOut(authSession, authConfig, options = {}) {
   if (typeof window === "undefined") return false;
 
   const signOutUrl = getRenaissProviderSignOutUrl(authSession, authConfig);
   if (!signOutUrl) return false;
 
+  const waitForFetch = options.waitForFetch !== false;
   const payload = "{}";
   const jsonBlob = new Blob([payload], { type: "application/json" });
   let attempted = false;
@@ -31,6 +32,8 @@ export async function requestRenaissProviderSignOut(authSession, authConfig) {
   } catch {
     attempted = false;
   }
+
+  if (!waitForFetch) return attempted;
 
   try {
     await Promise.race([

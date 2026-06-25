@@ -569,7 +569,7 @@ export function ControlRoom({
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     const logoutUrl = new URL("/api/auth/logout", window.location.origin);
     logoutUrl.searchParams.set("return_to", returnTo);
-    await requestRenaissProviderSignOut(authSession, authConfig);
+    requestRenaissProviderSignOut(authSession, authConfig, { waitForFetch: false });
     window.location.assign(`${logoutUrl.pathname}${logoutUrl.search}`);
   }
 
