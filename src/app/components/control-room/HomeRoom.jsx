@@ -130,42 +130,44 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef, enabled = true) {
 
 function useHomeMediaReady(videoRef) {
   const [mediaReady, setMediaReady] = useState(false);
+  const [videoFrameReady, setVideoFrameReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const video = videoRef.current;
-    let imageReady = false;
-    let videoReady = !video || video.readyState >= 1;
 
-    const resolveReady = () => {
-      if (!cancelled && imageReady && videoReady) setMediaReady(true);
+    const handleVideoFrameReady = () => {
+      if (!cancelled) setVideoFrameReady(true);
     };
 
-    const handleVideoReady = () => {
-      videoReady = true;
-      resolveReady();
+    const handleVideoFallback = () => {
+      if (!cancelled) setVideoFrameReady(false);
     };
 
-    if (video && !videoReady) {
-      video.addEventListener("loadedmetadata", handleVideoReady, { once: true });
-      video.addEventListener("error", handleVideoReady, { once: true });
+    if (video) {
+      if (video.readyState >= 2) handleVideoFrameReady();
+      video.addEventListener("loadeddata", handleVideoFrameReady);
+      video.addEventListener("canplay", handleVideoFrameReady);
+      video.addEventListener("seeked", handleVideoFrameReady);
+      video.addEventListener("error", handleVideoFallback);
     }
 
     preloadHomeRoomAssets().finally(() => {
-      imageReady = true;
-      resolveReady();
+      if (!cancelled) setMediaReady(true);
     });
 
     return () => {
       cancelled = true;
-      if (video && !videoReady) {
-        video.removeEventListener("loadedmetadata", handleVideoReady);
-        video.removeEventListener("error", handleVideoReady);
+      if (video) {
+        video.removeEventListener("loadeddata", handleVideoFrameReady);
+        video.removeEventListener("canplay", handleVideoFrameReady);
+        video.removeEventListener("seeked", handleVideoFrameReady);
+        video.removeEventListener("error", handleVideoFallback);
       }
     };
   }, [videoRef]);
 
-  return mediaReady;
+  return { mediaReady, videoFrameReady };
 }
 
 function formatMilestoneReward(milestone) {
@@ -367,7 +369,7 @@ export function HomeRoom({
   const { t } = copy;
   const homeRoomRef = useRef(null);
   const heroVideoRef = useRef(null);
-  const mediaReady = useHomeMediaReady(heroVideoRef);
+  const { mediaReady, videoFrameReady } = useHomeMediaReady(heroVideoRef);
   const activeRoundMatches = matches.filter((match) => match.roundId === activeRound.id);
   const milestoneSnapshot = getMilestoneSnapshot(milestones, currentMilestoneValue);
   const heroMilestoneTitle = milestoneSnapshot.complete
@@ -381,7 +383,11 @@ export function HomeRoom({
 
   return (
     <section
-      className={["home-room", mediaReady ? "is-media-ready" : "is-media-loading"].join(" ")}
+      className={[
+        "home-room",
+        mediaReady ? "is-media-ready" : "is-media-loading",
+        videoFrameReady ? "is-video-ready" : "is-video-poster",
+      ].join(" ")}
       ref={homeRoomRef}
       hidden={!isActive}
       aria-hidden={isActive ? undefined : "true"}

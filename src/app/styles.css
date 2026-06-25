@@ -21385,13 +21385,18 @@ body {
 
 .control-room[data-view="home"] .home-video-backdrop__video {
   z-index: 1;
-  background: #070808;
-  opacity: 1;
+  background: transparent;
+  opacity: 0;
   transition: opacity 260ms ease;
   will-change: opacity;
 }
 
-.control-room[data-view="home"] .home-room.is-media-loading .home-video-backdrop__video {
+.control-room[data-view="home"] .home-room.is-video-ready .home-video-backdrop__video {
+  opacity: 1;
+}
+
+.control-room[data-view="home"] .home-room.is-media-loading .home-video-backdrop__video,
+.control-room[data-view="home"] .home-room.is-video-poster .home-video-backdrop__video {
   opacity: 0;
 }
 
