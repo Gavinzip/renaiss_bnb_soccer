@@ -62,7 +62,6 @@ export function MatchPrizeList({
   selectedTeamId,
   roundAllocations,
   roundVoteOutcomes = [],
-  remainingRoundTickets,
   onSelectMatch,
   onSelectTeam,
   copy,
@@ -116,7 +115,7 @@ export function MatchPrizeList({
         {matches.map((match, matchIndex) => {
           const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
           const matchAllocations = roundAllocations.filter((entry) => entry.matchId === match.id);
-          const canPickMatch = voteableStatuses.has(match.status) && remainingRoundTickets > 0;
+          const canPickMatch = voteableStatuses.has(match.status);
           const selected = selectedMatchId === match.id;
           const phase = getMatchPhase(match);
           const statusText = t(phase.labelKey);

@@ -93,7 +93,6 @@ function MatchVoteGroup({
   selectedMatchId,
   selectedTeamId,
   teamsById,
-  remainingRoundTickets,
   onSelectMatch,
   onSelectTeam,
   copy,
@@ -105,7 +104,7 @@ function MatchVoteGroup({
   const matchAllocationIndex = matchAllocations.length > 0
     ? allocations.findIndex((entry) => entry.id === matchAllocations[0].id)
     : -1;
-  const canVote = voteableStatuses.has(match.status) && remainingRoundTickets > 0;
+  const canSelectTeam = voteableStatuses.has(match.status);
   const selected = selectedMatchId === match.id;
   const MatchIcon = getMatchIcon(match, matchAllocations[0]);
   const phase = getMatchPhase(match);
@@ -113,7 +112,7 @@ function MatchVoteGroup({
 
   function handlePickTeam(team) {
     onSelectMatch(match.id);
-    if (canVote) onSelectTeam(team.id);
+    if (canSelectTeam) onSelectTeam(team.id);
   }
 
   return (
@@ -145,12 +144,12 @@ function MatchVoteGroup({
           const allocation = getTeamAllocation(allocations, match.id, team.id);
           const teamTone = getTeamTone(match, team, allocation, selected && selectedTeamId);
           const isSelected = selected && selectedTeamId === team.id;
-          const disabled = !canVote;
+          const disabled = !canSelectTeam;
           const stateText = allocation
             ? t("vote.allocationForMatch", { team: teamName(team), tickets: formatNumber(allocation.tickets) })
             : isSelected
               ? t("vote.selectedForPreview")
-              : canVote
+              : canSelectTeam
                 ? t("vote.chooseThisTeam")
                 : t("vote.voteWindowClosed");
 
@@ -488,7 +487,6 @@ export function VoteRoom({
             selectedTeamId={selectedTeamId}
             roundAllocations={roundAllocations}
             roundVoteOutcomes={roundVoteOutcomes}
-            remainingRoundTickets={remainingRoundTickets}
             onSelectMatch={onSelectMatch}
             onSelectTeam={onSelectTeam}
             copy={copy}
