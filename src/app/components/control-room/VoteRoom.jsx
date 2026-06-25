@@ -35,6 +35,47 @@ function clampTicketAmount(value, maxTickets) {
   return Math.max(1, Math.min(Math.floor(Number(value) || 1), Math.max(1, maxTickets)));
 }
 
+function compactRoundValue(round, fallbackLabel = "") {
+  const values = {
+    round32: "32",
+    round16: "16",
+    quarterFinal: "8",
+    semiFinal: "4",
+  };
+  return values[round?.id] ?? fallbackLabel;
+}
+
+function getTicketVoteState({
+  copy,
+  remainingRoundTickets,
+  selectedMatch,
+  selectedTeam,
+  ticketAmount,
+}) {
+  const maxTickets = Math.max(1, remainingRoundTickets);
+  const boundedTicketAmount = clampTicketAmount(ticketAmount, maxTickets);
+  const selectedTeamName = selectedTeam ? copy.teamName(selectedTeam) : null;
+  const selectedMatchLabel = selectedMatch ? selectedMatch.id.toUpperCase() : null;
+  const selectedPhase = selectedMatch ? getMatchPhase(selectedMatch) : null;
+  const hasNoRemainingTickets = remainingRoundTickets <= 0;
+  const canSubmit = Boolean(
+    selectedTeam
+    && selectedMatch
+    && voteableStatuses.has(selectedMatch.status)
+    && remainingRoundTickets > 0,
+  );
+
+  return {
+    boundedTicketAmount,
+    canSubmit,
+    hasNoRemainingTickets,
+    maxTickets,
+    selectedMatchLabel,
+    selectedPhase,
+    selectedTeamName,
+  };
+}
+
 function getMatchIcon(match, allocation) {
   if (match.status === "open") return Ticket;
   if (match.status === "closing_soon") return Clock3;
@@ -196,19 +237,22 @@ function TicketAllocationPanel({
   onConfirmPreviewVote,
   copy,
 }) {
-  const { roundLabel, t, teamName } = copy;
-  const maxTickets = Math.max(1, remainingRoundTickets);
-  const boundedTicketAmount = clampTicketAmount(ticketAmount, maxTickets);
-  const selectedTeamName = selectedTeam ? teamName(selectedTeam) : null;
-  const selectedMatchLabel = selectedMatch ? selectedMatch.id.toUpperCase() : null;
-  const selectedPhase = selectedMatch ? getMatchPhase(selectedMatch) : null;
-  const hasNoRemainingTickets = remainingRoundTickets <= 0;
-  const canSubmit = Boolean(
-    selectedTeam
-    && selectedMatch
-    && voteableStatuses.has(selectedMatch.status)
-    && remainingRoundTickets > 0,
-  );
+  const { roundLabel, t } = copy;
+  const {
+    boundedTicketAmount,
+    canSubmit,
+    hasNoRemainingTickets,
+    maxTickets,
+    selectedMatchLabel,
+    selectedPhase,
+    selectedTeamName,
+  } = getTicketVoteState({
+    copy,
+    remainingRoundTickets,
+    selectedMatch,
+    selectedTeam,
+    ticketAmount,
+  });
 
   function handleSetTicketAmount(value) {
     onSetTicketAmount(clampTicketAmount(value, maxTickets));
@@ -328,6 +372,108 @@ function TicketAllocationPanel({
   );
 }
 
+function MobileTicketDock({
+  selectedMatch,
+  selectedTeam,
+  ticketAmount,
+  remainingRoundTickets,
+  onSetTicketAmount,
+  onConfirmPreviewVote,
+  copy,
+}) {
+  const { t } = copy;
+  const {
+    boundedTicketAmount,
+    canSubmit,
+    hasNoRemainingTickets,
+    maxTickets,
+    selectedMatchLabel,
+    selectedPhase,
+    selectedTeamName,
+  } = getTicketVoteState({
+    copy,
+    remainingRoundTickets,
+    selectedMatch,
+    selectedTeam,
+    ticketAmount,
+  });
+  const selectedPhaseLabel = selectedPhase ? t(selectedPhase.labelKey) : "";
+
+  function handleSetTicketAmount(value) {
+    onSetTicketAmount(clampTicketAmount(value, maxTickets));
+  }
+
+  const Action = hasNoRemainingTickets ? "a" : "button";
+  const actionProps = hasNoRemainingTickets
+    ? { href: ticketStoreUrl }
+    : {
+      type: "button",
+      disabled: !canSubmit,
+      onClick: () => onConfirmPreviewVote(boundedTicketAmount),
+    };
+
+  return (
+    <aside className={selectedTeam ? "mobile-vote-dock has-team" : "mobile-vote-dock"} aria-label={t("vote.mobileQuickAllocation")}>
+      <section className="mobile-vote-dock__target" aria-live="polite">
+        {selectedTeam ? (
+          <>
+            <img src={selectedTeam.flagSrc} alt="" aria-hidden="true" />
+            <span>
+              <small>{selectedMatchLabel} · {selectedPhaseLabel}</small>
+              <strong>{selectedTeamName}</strong>
+            </span>
+          </>
+        ) : (
+          <span>
+            <small>{t("vote.selectedTargetLabel")}</small>
+            <strong>{t("vote.selectedTargetEmpty")}</strong>
+          </span>
+        )}
+      </section>
+
+      <fieldset className="mobile-vote-dock__stepper" disabled={!canSubmit}>
+        <legend>{t("common.allocationAmount")}</legend>
+        <button type="button" onClick={() => handleSetTicketAmount(boundedTicketAmount - 1)} aria-label={t("vote.decreaseTickets")}>
+          <Minus size={15} strokeWidth={2.35} />
+        </button>
+        <label>
+          <span>{t("common.tickets")}</span>
+          <input
+            type="number"
+            min="1"
+            max={maxTickets}
+            value={boundedTicketAmount}
+            onChange={(event) => handleSetTicketAmount(event.target.value)}
+            aria-label={t("vote.ticketAmountInput")}
+          />
+        </label>
+        <button type="button" onClick={() => handleSetTicketAmount(boundedTicketAmount + 1)} aria-label={t("vote.increaseTickets")}>
+          <Plus size={15} strokeWidth={2.35} />
+        </button>
+      </fieldset>
+
+      <ElasticSlider
+        className="mobile-vote-dock__range"
+        startingValue={1}
+        maxValue={maxTickets}
+        value={boundedTicketAmount}
+        isStepped
+        stepSize={1}
+        disabled={!canSubmit}
+        showValue={false}
+        leftIcon={<Minus aria-hidden="true" />}
+        rightIcon={<Plus aria-hidden="true" />}
+        ariaLabel={t("vote.ticketRange")}
+        onChange={handleSetTicketAmount}
+      />
+
+      <Action className="mobile-vote-dock__cta" {...actionProps}>
+        <span>{hasNoRemainingTickets ? t("vote.getMoreTickets") : t("vote.mobilePreviewCta")}</span>
+      </Action>
+    </aside>
+  );
+}
+
 function VoteWalletPanel({
   ledger,
   ledgerIssue,
@@ -428,6 +574,7 @@ export function VoteRoom({
     ? teamsById.get(selectedTeamId)
     : null;
   const activeRoundLabel = roundLabel(activeRound);
+  const activeRoundSummaryValue = compactRoundValue(activeRound, activeRoundLabel);
   const activeRoundAdvanceLabel = roundLabel(activeRound, "advanceLabel");
   const userTotalTickets = Math.max(0, Math.floor(Number(activeEntry?.finalTickets) || 0));
 
@@ -460,7 +607,7 @@ export function VoteRoom({
           <section className="vote-stage-summary" aria-label={t("vote.currentRoundSummary")}>
             <output className="is-round">
               <span>{t("vote.stageSummaryRound")}</span>
-              <strong>{activeRoundLabel}</strong>
+              <strong>{activeRoundSummaryValue}</strong>
               <small>{activeRoundAdvanceLabel}</small>
             </output>
             <output className="is-user-tickets">
@@ -519,6 +666,16 @@ export function VoteRoom({
           />
         </GlareHover>
       </section>
+
+      <MobileTicketDock
+        selectedMatch={selectedRoundMatch}
+        selectedTeam={selectedTeam}
+        ticketAmount={ticketAmount}
+        remainingRoundTickets={remainingRoundTickets}
+        onSetTicketAmount={onSetTicketAmount}
+        onConfirmPreviewVote={onConfirmPreviewVote}
+        copy={copy}
+      />
     </section>
   );
 }

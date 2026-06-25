@@ -54,6 +54,12 @@ function getScrollInsetTop(element) {
   return Number.isFinite(inset) ? inset : 0;
 }
 
+function getMobileHeaderOffset() {
+  const header = document.querySelector(".control-header");
+  const headerRect = header?.getBoundingClientRect();
+  return headerRect ? Math.max(16, headerRect.bottom + 12) : 16;
+}
+
 export function MatchPrizeList({
   activeRound,
   matches,
@@ -66,7 +72,7 @@ export function MatchPrizeList({
   onSelectTeam,
   copy,
 }) {
-  const { compactVotes, roundLabel, t, teamName } = copy;
+  const { compactVotes, matchStatusCompact, roundLabel, t, teamName } = copy;
   const selectedLaneRef = useRef(null);
   const hasSyncedSelectedLaneRef = useRef(false);
 
@@ -93,7 +99,7 @@ export function MatchPrizeList({
       if (window.matchMedia("(max-width: 760px)").matches) {
         mobileScrollTimeoutId = window.setTimeout(() => {
           const nextLaneRect = selectedLane.getBoundingClientRect();
-          const headerOffset = 16;
+          const headerOffset = getMobileHeaderOffset();
           if (nextLaneRect.top < headerOffset || nextLaneRect.bottom > window.innerHeight) {
             window.scrollTo({
               top: Math.max(0, window.scrollY + nextLaneRect.top - headerOffset),
@@ -125,6 +131,9 @@ export function MatchPrizeList({
           const selected = selectedMatchId === match.id;
           const phase = getMatchPhase(match);
           const statusText = t(phase.labelKey);
+          const statusTextCompact = phase.id === "voteable"
+            ? matchStatusCompact(match.status)
+            : statusText;
           const MatchIcon = phase.icon;
 
           return (
@@ -147,7 +156,7 @@ export function MatchPrizeList({
                   <span className="match-prize-lane__code">{match.id.toUpperCase()}</span>
                   <small className="match-prize-lane__status">
                     <MatchIcon size={13} strokeWidth={2.35} />
-                    {statusText}
+                    <span data-short={statusTextCompact}>{statusText}</span>
                   </small>
                 </span>
                 <MatchPrizeImageDialog copy={copy} matchId={match.id} />

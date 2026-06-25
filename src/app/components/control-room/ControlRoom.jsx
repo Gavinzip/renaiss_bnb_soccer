@@ -466,12 +466,12 @@ function LanguageSwitch() {
   const { locale, locales, setLocale, t } = useCampaignCopy();
 
   return (
-    <label className="language-switch language-switch--select" aria-label={t("language.label")} data-locale={locale}>
+    <label className="language-switch language-switch--select">
       <span>{t("language.label")}</span>
-      <select value={locale} onChange={(event) => setLocale(event.target.value)} aria-label={t("language.toggle")}>
+      <select value={locale} onChange={(event) => setLocale(event.target.value)} aria-label={t("language.label")}>
         {locales.map((option) => (
           <option key={option.id} value={option.id}>
-            {option.nativeName}
+            {option.id === "zh-Hant" ? "CN" : "EN"}
           </option>
         ))}
       </select>
