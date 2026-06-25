@@ -29131,6 +29131,69 @@ body {
   }
 }
 
+@media (max-width: 820px) {
+  .control-room[data-view] .control-header {
+    grid-template-columns: minmax(116px, max-content) minmax(54px, 1fr) minmax(64px, max-content) !important;
+    grid-template-areas: "brand toggle wallet" !important;
+    align-items: center !important;
+  }
+
+  .control-room[data-view] .control-header:not(:has(.header-wallet)) {
+    grid-template-columns: minmax(116px, max-content) minmax(54px, 1fr) !important;
+    grid-template-areas: "brand toggle" !important;
+  }
+
+  .control-room[data-view] .control-header .mobile-nav-toggle {
+    grid-area: toggle !important;
+    justify-self: center !important;
+  }
+
+  .control-room:has(.control-header.is-mobile-nav-open) {
+    padding-top: 178px !important;
+  }
+
+  .control-room:has(.control-header.is-mobile-nav-open .command-menu.pill-nav[data-view-count="5"]) {
+    padding-top: 220px !important;
+  }
+
+  .control-room[data-view] .control-header.is-mobile-nav-open {
+    grid-template-columns: minmax(116px, max-content) minmax(54px, 1fr) minmax(64px, max-content) !important;
+    grid-template-areas:
+      "brand toggle wallet"
+      "menu menu menu"
+      "language language language" !important;
+    align-items: center !important;
+  }
+
+  .control-room[data-view] .control-header.is-mobile-nav-open .mobile-nav-toggle,
+  .control-header.is-mobile-nav-open .mobile-nav-toggle {
+    grid-area: toggle !important;
+    justify-self: center !important;
+  }
+
+  .control-room[data-view] .control-header.is-mobile-nav-open .language-switch--select,
+  .control-header.is-mobile-nav-open .language-switch--select {
+    grid-area: language !important;
+    justify-self: start !important;
+    width: min(152px, 44vw) !important;
+  }
+
+  .control-room[data-view] .control-header.is-mobile-nav-open .command-menu.pill-nav,
+  .control-header.is-mobile-nav-open .command-menu.pill-nav {
+    grid-area: menu !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .control-room[data-view] .control-header.is-mobile-nav-open:not(:has(.header-wallet)),
+  .control-header.is-mobile-nav-open:not(:has(.header-wallet)) {
+    grid-template-columns: minmax(116px, max-content) minmax(54px, 1fr) !important;
+    grid-template-areas:
+      "brand toggle"
+      "menu menu"
+      "language language" !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .control-room[data-view="vote"] .match-prize-lane__prize-expand {
     transition: none !important;

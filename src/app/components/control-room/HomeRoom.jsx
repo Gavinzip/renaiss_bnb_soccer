@@ -6,7 +6,6 @@ import {
   Ticket,
 } from "lucide-react";
 import heroImage from "../../assets/hero-world-cup-clean.webp";
-import heroScrollVideoMobile from "../../assets/Background.mobile.mp4";
 import { addPreloadHint, preloadImage } from "../../utils/preloadAssets";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
@@ -412,7 +411,6 @@ export function HomeRoom({
           aria-hidden="true"
           disablePictureInPicture
         >
-          <source src={heroScrollVideoMobile} type="video/mp4" media="(max-width: 760px)" />
           <source src={HERO_SCROLL_VIDEO_URL} type="video/mp4" />
         </video>
         <span className="home-video-backdrop__loader" aria-hidden="true" />

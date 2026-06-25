@@ -68,11 +68,17 @@ export function MatchPrizeList({
 }) {
   const { compactVotes, roundLabel, t, teamName } = copy;
   const selectedLaneRef = useRef(null);
+  const hasSyncedSelectedLaneRef = useRef(false);
 
   useEffect(() => {
     const selectedLane = selectedLaneRef.current;
     const scrollContainer = selectedLane?.closest(".match-prize-list-view__matches");
     if (!selectedLane || !scrollContainer) return undefined;
+
+    if (!hasSyncedSelectedLaneRef.current) {
+      hasSyncedSelectedLaneRef.current = true;
+      return undefined;
+    }
 
     let mobileScrollTimeoutId = 0;
     const animationFrameId = window.requestAnimationFrame(() => {
