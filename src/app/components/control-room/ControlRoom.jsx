@@ -546,7 +546,6 @@ export function ControlRoom({
   const showAuthState = Boolean(authEndpointReady);
   const authIdentityActionable = showAuthState && !authSession?.authenticated;
   const HeaderWalletIdentity = authIdentityActionable ? "button" : "div";
-  const showHeaderWallet = effectiveActiveViewId !== "winners";
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
   const [xFollowOverlayDismissed, setXFollowOverlayDismissed] = useState(false);
   const xFollowGateRequired = authConfig?.xFollowGate?.required !== false;
@@ -653,32 +652,30 @@ export function ControlRoom({
             <span>{authSession?.xFollow?.gatePassed ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>
           </button>
         ) : null}
-        {showHeaderWallet ? (
-          <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
-            <HeaderWalletIdentity
-              className={authIdentityActionable ? "header-wallet__identity" : "header-wallet__identity is-static"}
-              {...(authIdentityActionable ? { type: "button", onClick: onRequestLogin } : {})}
-            >
-              <WalletCards size={18} strokeWidth={2.1} />
-              {showAuthState ? (
-                <>
-                  <span>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</span>
-                  <strong>{authWalletLinked ? `${formatNumber(activeEntry?.finalTickets)} ${t("common.tickets")}` : t("auth.loginDetail")}</strong>
-                </>
-              ) : (
-                <>
-                  <span>{compactAddress(activeEntry?.userAddress)}</span>
-                  <strong>{formatNumber(activeEntry?.finalTickets)} {t("common.tickets")}</strong>
-                </>
-              )}
-            </HeaderWalletIdentity>
-            {showAuthState && authSession?.authenticated ? (
-              <button className="header-wallet__logout" type="button" onClick={handleLogout} aria-label={t("auth.logout")}>
-                <LogOut size={15} strokeWidth={2.25} />
-              </button>
-            ) : null}
-          </section>
-        ) : null}
+        <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
+          <HeaderWalletIdentity
+            className={authIdentityActionable ? "header-wallet__identity" : "header-wallet__identity is-static"}
+            {...(authIdentityActionable ? { type: "button", onClick: onRequestLogin } : {})}
+          >
+            <WalletCards size={18} strokeWidth={2.1} />
+            {showAuthState ? (
+              <>
+                <span>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</span>
+                <strong>{authWalletLinked ? `${formatNumber(activeEntry?.finalTickets)} ${t("common.tickets")}` : t("auth.loginDetail")}</strong>
+              </>
+            ) : (
+              <>
+                <span>{compactAddress(activeEntry?.userAddress)}</span>
+                <strong>{formatNumber(activeEntry?.finalTickets)} {t("common.tickets")}</strong>
+              </>
+            )}
+          </HeaderWalletIdentity>
+          {showAuthState && authSession?.authenticated ? (
+            <button className="header-wallet__logout" type="button" onClick={handleLogout} aria-label={t("auth.logout")}>
+              <LogOut size={15} strokeWidth={2.25} />
+            </button>
+          ) : null}
+        </section>
       </header>
 
       <section className={effectiveActiveViewId === "home" ? "room-shell is-home" : "room-shell"} id="top" aria-label={`${t(`nav.${activeView.id}`)} ${t("common.workspace")}`}>
