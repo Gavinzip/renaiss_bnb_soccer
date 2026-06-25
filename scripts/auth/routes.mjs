@@ -33,6 +33,7 @@ import {
   readOAuthToken,
   saveOAuthToken,
 } from './oauth-token-store.mjs'
+import { buildLoginAudit } from './request-audit.mjs'
 import {
   createRenaissProviderConfig,
   exchangeRenaissOidcCode,
@@ -105,6 +106,19 @@ function authSuccessRedirect(env) {
 function authErrorRedirect(env, reason, details = {}) {
   const base = env.AUTH_ERROR_REDIRECT_PATH || '/?auth=error'
   const url = new URL(base, 'http://localhost')
+  if (reason) url.searchParams.set('reason', reason)
+  for (const [key, value] of Object.entries(details)) {
+    if (value) url.searchParams.set(key, String(value))
+  }
+  return `${url.pathname}${url.search}${url.hash}`
+}
+
+function authErrorRedirectForChallenge(env, challenge, reason, details = {}) {
+  const returnTo = safeReturnTo(challenge?.returnTo)
+  if (!returnTo) return authErrorRedirect(env, reason, details)
+
+  const url = new URL(returnTo, 'http://localhost')
+  url.searchParams.set('auth', 'error')
   if (reason) url.searchParams.set('reason', reason)
   for (const [key, value] of Object.entries(details)) {
     if (value) url.searchParams.set(key, String(value))
@@ -344,6 +358,52 @@ async function createSessionForIdentity({ auth, request, response, identity }) {
   return { session, resolver }
 }
 
+function enqueueLoginProfileWrite(auth, session, identity, request) {
+  if (!auth.userProfileStore?.enqueueLoginProfile) return
+  try {
+    auth.userProfileStore.enqueueLoginProfile({
+      session,
+      identity,
+      audit: buildLoginAudit({ session, identity, request, env: auth.env }),
+    })
+  } catch (error) {
+    console.warn('[auth] profile queue failed', {
+      provider: identity?.provider || null,
+      message: sanitizeAuthError(error),
+    })
+  }
+}
+
+function xIdentityErrorMessage(code) {
+  if (code === 'twitter_identity_mismatch') return 'Connected X account does not match the Renaiss Twitter account for this wallet.'
+  if (code === 'renaiss_twitter_required') return 'This wallet has no Renaiss Twitter account recorded yet.'
+  if (code === 'wallet_required') return 'A wallet-linked session is required before connecting X.'
+  if (code === 'profile_store_missing') return 'User profile store is not available.'
+  return 'X identity could not be matched to this wallet.'
+}
+
+function assertXIdentityMatchesWalletProfile(auth, session, identity) {
+  if (!auth.userProfileStore?.checkXIdentityForWallet) {
+    throw Object.assign(new Error(xIdentityErrorMessage('profile_store_missing')), {
+      statusCode: 503,
+      code: 'profile_store_missing',
+    })
+  }
+
+  const result = auth.userProfileStore.checkXIdentityForWallet({
+    walletAddress: session?.walletAddress,
+    identity,
+  })
+  if (result.ok) return result
+
+  throw Object.assign(new Error(xIdentityErrorMessage(result.code)), {
+    statusCode: 403,
+    code: result.code,
+    expectedUsername: result.expectedUsername,
+    actualUsername: result.actualUsername,
+  })
+}
+
 async function createRenaissEndSessionUrl(auth, request, session, returnTo) {
   if (session?.identity?.provider !== 'renaiss') return ''
   const token = readOAuthToken(auth.oauthTokenConfig, session, 'renaiss')
@@ -361,11 +421,12 @@ async function createRenaissEndSessionUrl(auth, request, session, returnTo) {
   const redirectPath = safeReturnTo(returnTo) || '/'
   const logoutUrl = new URL(endpoint)
   logoutUrl.searchParams.set('id_token_hint', idToken)
+  logoutUrl.searchParams.set('client_id', config.clientId)
   logoutUrl.searchParams.set('post_logout_redirect_uri', new URL(redirectPath, origin).toString())
   return logoutUrl.toString()
 }
 
-export function createAuthContext({ dataDir, env = process.env }) {
+export function createAuthContext({ dataDir, env = process.env, userProfileStore = null }) {
   const authDir = env.SOCCER_AUTH_DIR || join(dataDir, 'auth')
   const sessionSecret = env.AUTH_SESSION_SECRET || env.SESSION_SECRET || ''
   const secureCookies = (env.AUTH_COOKIE_SECURE || '').trim()
@@ -386,6 +447,7 @@ export function createAuthContext({ dataDir, env = process.env }) {
     sessionConfig,
     stateConfig,
     oauthTokenConfig,
+    userProfileStore,
     xFollowGateConfig,
     providerConfig,
     identityResolverConfig,
@@ -607,6 +669,7 @@ export async function handleAuthRoute({
     const expectedState = cookies[oauthStateCookieName(provider)]
     const clearStateHeader = stateCookie(provider, '', auth.sessionConfig.secureCookies, 0)
 
+    let challenge = null
     let failureStage = 'callback'
     try {
       if (oauthError) {
@@ -615,7 +678,7 @@ export async function handleAuthRoute({
       }
       failureStage = 'state_validation'
       if (!stateToken || !code || stateToken !== expectedState) throw new Error('Invalid OAuth state.')
-      const challenge = consumeOauthChallenge(auth.stateConfig, provider, stateToken)
+      challenge = consumeOauthChallenge(auth.stateConfig, provider, stateToken)
       failureStage = 'state_lookup'
       if (!challenge) throw new Error('OAuth state expired.')
       failureStage = 'token_exchange'
@@ -647,8 +710,11 @@ export async function handleAuthRoute({
         if (!currentSession || currentSession.id !== challenge.connectSessionId) {
           throw new Error('X connection session expired or changed. Please retry from the verification panel.')
         }
+        failureStage = 'twitter_identity_check'
+        assertXIdentityMatchesWalletProfile(auth, currentSession, identity)
         session = currentSession
         saveOAuthToken(auth.oauthTokenConfig, session, provider, token, { identity })
+        enqueueLoginProfileWrite(auth, session, identity, request)
       } else {
         failureStage = 'session_create'
         const result = await createSessionForIdentity({ auth, request, response, identity })
@@ -656,14 +722,20 @@ export async function handleAuthRoute({
         if (provider === 'x' || auth.providerConfig[provider]?.oidc) {
           saveOAuthToken(auth.oauthTokenConfig, session, provider, token, { identity })
         }
+        enqueueLoginProfileWrite(auth, session, identity, request)
       }
       const currentSetCookie = response.getHeader('set-cookie')
       const headers = appendSetCookie({ 'set-cookie': currentSetCookie }, clearStateHeader)
       redirect(response, challenge.returnTo || authSuccessRedirect(auth.env), headers)
     } catch (error) {
-      logOAuthCallbackFailure(provider, failureStage, error)
+      const stage = error?.code || failureStage
+      logOAuthCallbackFailure(provider, stage, error)
       response.setHeader('set-cookie', clearStateHeader)
-      redirect(response, authErrorRedirect(auth.env, 'oauth_failed', { provider, stage: failureStage }))
+      redirect(response, authErrorRedirectForChallenge(auth.env, challenge, 'oauth_failed', {
+        provider,
+        stage,
+        code: error?.code || '',
+      }))
     }
     return true
   }
@@ -739,6 +811,7 @@ export async function handleAuthRoute({
         walletAddress: address,
       }
       const result = await createSessionForIdentity({ auth, request, response, identity })
+      enqueueLoginProfileWrite(auth, result.session, identity, request)
       sendJsonResponse(sendJson, request, response, 200, {
         ok: true,
         authenticated: true,
@@ -806,6 +879,7 @@ export async function handleAuthRoute({
         email,
       }
       const result = await createSessionForIdentity({ auth, request, response, identity })
+      enqueueLoginProfileWrite(auth, result.session, identity, request)
       sendJsonResponse(sendJson, request, response, 200, {
         ok: true,
         authenticated: true,

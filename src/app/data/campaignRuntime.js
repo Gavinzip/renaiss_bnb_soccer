@@ -140,16 +140,18 @@ export function getMatchById(matchId) {
   return campaignMatches.find((match) => match.id === matchId) ?? campaignMatches[0];
 }
 
-export function summarizeRoundDraw(round, allocations, outcomeSummary = null) {
+export function summarizeRoundDraw(round, allocations, outcomeSummary = null, userOutcomeSummary = null) {
   const matches = getMatchesForRound(round.id);
   const roundAllocations = allocations.filter((allocation) => allocation.roundId === round.id);
   const submittedTickets = outcomeSummary?.submittedTickets
     ?? roundAllocations.reduce((total, allocation) => total + allocation.tickets, 0);
   const settledTickets = outcomeSummary?.settledTickets ?? 0;
   const eligibleEntries = Math.max(0, Math.floor(Number(outcomeSummary?.wonTickets ?? 0) || 0)) * round.multiplier;
-  const lostEntries = Math.max(0, Math.floor(Number(outcomeSummary?.lostTickets ?? 0) || 0));
   const pendingEntries = outcomeSummary?.pendingTickets ?? Math.max(0, submittedTickets - settledTickets);
   const totalPoolEntries = Math.max(eligibleEntries + pendingEntries, eligibleEntries);
+  const userEligibleEntries = Math.max(0, Math.floor(Number(userOutcomeSummary?.wonTickets ?? outcomeSummary?.wonTickets ?? 0) || 0)) * round.multiplier;
+  const userLostEntries = Math.max(0, Math.floor(Number(userOutcomeSummary?.lostTickets ?? outcomeSummary?.lostTickets ?? 0) || 0));
+  const userPendingEntries = Math.max(0, Math.floor(Number(userOutcomeSummary?.pendingTickets ?? outcomeSummary?.pendingTickets ?? 0) || 0));
 
   const drawStatusResolved =
     eligibleEntries > 0
@@ -162,9 +164,12 @@ export function summarizeRoundDraw(round, allocations, outcomeSummary = null) {
     officialFinalCount: outcomeSummary?.officialFinalCount ?? 0,
     totalPoolEntries,
     eligibleEntries,
-    lostEntries,
+    lostEntries: userLostEntries,
     pendingEntries,
-    estimatedChance: estimateMultiPrizeChance(eligibleEntries, totalPoolEntries, round.prizeCount),
+    userEligibleEntries,
+    userLostEntries,
+    userPendingEntries,
+    estimatedChance: estimateMultiPrizeChance(userEligibleEntries, totalPoolEntries, round.prizeCount),
     drawStatusResolved,
   };
 }

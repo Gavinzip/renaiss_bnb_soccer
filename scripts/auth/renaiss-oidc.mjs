@@ -87,7 +87,7 @@ export function createRenaissProviderConfig(env = process.env) {
     },
     requiresClientSecret: true,
     requiresRedirectUri: true,
-    tokenAuthMethod: normalizeTokenAuthMethod(readEnvString(env, ['RENAISS_TOKEN_AUTH_METHOD'], 'basic')),
+    tokenAuthMethod: normalizeTokenAuthMethod(readEnvString(env, ['RENAISS_TOKEN_AUTH_METHOD'], 'post')),
     timeoutMs: Math.max(1000, Math.floor(Number(env.RENAISS_OIDC_TIMEOUT_MS || DEFAULT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS)),
   }
 }

@@ -237,7 +237,7 @@ async function scanLogSource({
   let scanStart = fromBlock
   let cachedEvents = []
 
-  if (cachedEventsAll.length > 0 && cachedFromBlock <= fromBlock && cachedToBlock >= fromBlock) {
+  if (cachedSource && cachedFromBlock <= fromBlock && cachedToBlock >= fromBlock) {
     scanStart = Math.max(fromBlock, Math.min(toBlock + 1, cachedToBlock - overlapBlocks + 1))
     cachedEvents = cachedEventsAll.filter((event) => {
       const block = toNumber(event.blockNumber)

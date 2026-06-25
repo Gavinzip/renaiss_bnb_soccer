@@ -70,8 +70,16 @@ function readInitialViewId() {
 
 function urlWithWalletQuery(baseUrl, walletAddress) {
   if (!baseUrl || !walletAddress) return baseUrl;
+  return urlWithQueryParams(baseUrl, { wallet: walletAddress });
+}
+
+function urlWithQueryParams(baseUrl, params = {}) {
+  if (!baseUrl) return baseUrl;
   const url = new URL(baseUrl, window.location.origin);
-  url.searchParams.set("wallet", walletAddress);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    url.searchParams.set(key, value);
+  });
   return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : url.toString();
 }
 
@@ -104,6 +112,24 @@ function createEmptyLedgerEntry(walletAddress) {
     ticketStart: null,
     ticketEnd: null,
   };
+}
+
+function winnerWalletAddress(row) {
+  return normalizeWalletAddress(row?.walletAddress || row?.userAddress || row?.profile?.walletAddress);
+}
+
+function countWinnersForWallet(winnerRevealData, walletAddress) {
+  const wallet = normalizeWalletAddress(walletAddress);
+  if (!wallet || winnerRevealData?.sourceStatus !== "revealed") return 0;
+  return (Array.isArray(winnerRevealData?.winners) ? winnerRevealData.winners : [])
+    .filter((winner) => winnerWalletAddress(winner) === wallet)
+    .length;
+}
+
+function isLocalTestOrigin() {
+  if (typeof window === "undefined") return false;
+  const { hostname } = window.location;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function normalizeLedgerEntryPayload(payload) {
@@ -152,8 +178,10 @@ function AppContent() {
   const [milestoneIssue, setMilestoneIssue] = useState("");
   const [milestoneReady, setMilestoneReady] = useState(!milestoneSummaryUrl);
   const [previewVoteData, setPreviewVoteData] = useState(getEmptyPreviewVoteData);
+  const [globalPreviewVoteData, setGlobalPreviewVoteData] = useState(getEmptyPreviewVoteData);
   const [previewVoteIssue, setPreviewVoteIssue] = useState("");
   const [previewVoteReady, setPreviewVoteReady] = useState(!previewVoteUrl);
+  const [globalPreviewVoteReady, setGlobalPreviewVoteReady] = useState(!previewVoteUrl);
   const [winnerRevealData, setWinnerRevealData] = useState(() => getEmptyWinnerRevealData(winnerRevealVideoUrl));
   const [winnerRevealIssue, setWinnerRevealIssue] = useState("");
   const [winnerRevealReady, setWinnerRevealReady] = useState(!drawWinnersUrl);
@@ -384,6 +412,37 @@ function AppContent() {
   }, [previewVoteUrl, selectedWallet, t]);
 
   useEffect(() => {
+    if (!previewVoteUrl) {
+      setGlobalPreviewVoteReady(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setGlobalPreviewVoteReady(false);
+
+    fetch(urlWithQueryParams(previewVoteUrl, { scope: "all" }), { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setGlobalPreviewVoteData(normalizePreviewVotePayload(payload));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGlobalPreviewVoteData(getEmptyPreviewVoteData());
+      })
+      .finally(() => {
+        if (!cancelled) setGlobalPreviewVoteReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewVoteUrl]);
+
+  useEffect(() => {
     if (!drawWinnersUrl) {
       setWinnerRevealData(getEmptyWinnerRevealData(winnerRevealVideoUrl));
       setWinnerRevealReady(true);
@@ -515,16 +574,22 @@ function AppContent() {
   const visibleRoundOutcomeSummary = isRealtimeRound32
     ? { lostTickets: 0, winnerTickets: 0, pendingTickets: 0 }
     : roundOutcomeSummary;
+  const currentWinnerWalletAddress = authSession?.walletAddress || (!authMeUrl || isLocalTestOrigin() ? selectedWallet : "");
+  const currentUserWinnerCount = useMemo(
+    () => countWinnersForWallet(winnerRevealData, currentWinnerWalletAddress),
+    [currentWinnerWalletAddress, winnerRevealData],
+  );
   const drawStats = useMemo(
     () => roundDefinitions.map((round) => summarizeRoundDraw(
       round,
-      walletAllocations,
+      previewAllocations,
+      getRoundOutcomeSummary(globalPreviewVoteData, round.id),
       getRoundOutcomeSummary(previewVoteData, round.id),
     )),
-    [previewVoteData, walletAllocations],
+    [globalPreviewVoteData, previewAllocations, previewVoteData],
   );
   const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalFinalTickets ?? 0);
-  const initialDataReady = ledgerReady && milestoneReady && previewVoteReady && winnerRevealReady && authReady;
+  const initialDataReady = ledgerReady && milestoneReady && previewVoteReady && globalPreviewVoteReady && winnerRevealReady && authReady;
   const initialCoverAssetsReady = initialDataReady && initialAssetsReady;
   const initialExperienceReady = initialCoverAssetsReady && initialCoverPaintReady;
 
@@ -667,6 +732,7 @@ function AppContent() {
 
   function redirectToRenaissLogin() {
     if (typeof window === "undefined") return;
+    if (authMeUrl && authSession?.authenticated) return;
     window.location.assign(buildRenaissLoginUrl());
   }
 
@@ -783,6 +849,8 @@ function AppContent() {
         previewVoteIssue={previewVoteIssue}
         winnerRevealData={winnerRevealData}
         winnerRevealIssue={winnerRevealIssue}
+        currentWinnerWalletAddress={currentWinnerWalletAddress}
+        currentUserWinnerCount={currentUserWinnerCount}
         drawStats={drawStats}
         milestones={milestoneSummary.milestones}
         currentMilestoneValue={milestoneCurrentValue}

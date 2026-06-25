@@ -21,6 +21,7 @@ const DEFAULT_DATA_DIR = join(repoRoot, '.local-data/soccer-test-batch')
 const DEFAULT_SOURCE_LEDGER = join(repoRoot, '.local-data/soccer-production/lucky-draw-ledger.json')
 const LEGACY_SOURCE_LEDGER = join(repoRoot, '.local-data/soccer/lucky-draw-ledger.json')
 const DEFAULT_VOTE_COUNT = 1000
+const DEFAULT_TARGET_DRAW_POOL_TICKETS = 10000
 const DEFAULT_PRIZE_SLOTS = 1
 const DEFAULT_ALTERNATE_COUNT = 2
 const DEFAULT_SEED = 'renaiss-round16-test-batch-2026'
@@ -36,11 +37,12 @@ function hasFlag(name) {
 
 function printHelp() {
   console.log(`Usage:
-  node scripts/seed-local-test-batch.mjs [--data-dir <path>] [--source-ledger <path>] [--votes 1000] [--prize-slots 1] [--alternates 2]
+  node scripts/seed-local-test-batch.mjs [--data-dir <path>] [--source-ledger <path>] [--votes 1000] [--target-pool 10000] [--prize-slots 1] [--alternates 2]
 
 Builds a local test-batch dataset from real production ledger wallets:
   - copies the source ticket ledger
   - generates fake Round of 16 vote allocations
+  - targets the requested draw-eligible ticket pool
   - writes SQLite vote store snapshots
   - writes local confirmed match-results fixtures
   - builds a round-level/per-match draw ledger
@@ -202,7 +204,6 @@ function makeCapacityRows(ledger, random) {
   return shuffleInPlace(usableLedgerEntries(ledger), random).map((row) => ({
     ...row,
     remainingTickets: row.finalTickets,
-    usedCombos: new Set(),
   }))
 }
 
@@ -210,58 +211,109 @@ function comboKey(matchId, teamId) {
   return `${matchId}:${teamId}`
 }
 
-function pickWalletForCombo(rows, matchId, teamId, random) {
-  const key = comboKey(matchId, teamId)
-  const start = pickIndex(random, rows.length)
-  for (let offset = 0; offset < rows.length; offset += 1) {
-    const row = rows[(start + offset) % rows.length]
-    if (row.remainingTickets <= 0 || row.usedCombos.has(key)) continue
-    row.remainingTickets -= 1
-    row.usedCombos.add(key)
-    return row.walletAddress
+function pickWalletForCombo(rows, matchId, teamId, requestedTickets, random) {
+  const maxTickets = Math.max(1, Math.floor(Number(requestedTickets) || 1))
+  for (let ticketCount = maxTickets; ticketCount >= 1; ticketCount -= 1) {
+    const start = pickIndex(random, rows.length)
+    for (let offset = 0; offset < rows.length; offset += 1) {
+      const row = rows[(start + offset) % rows.length]
+      if (row.remainingTickets < ticketCount) continue
+      row.remainingTickets -= ticketCount
+      return {
+        walletAddress: row.walletAddress,
+        tickets: ticketCount,
+      }
+    }
   }
   throw new Error(`Could not allocate another unique vote for ${matchId}/${teamId}.`)
 }
 
-function createAllocations({ ledger, matches, voteCount, prizeSlots, alternateCount, generatedAtIso, random }) {
+function createAllocations({ ledger, matches, voteCount, targetPoolTickets, prizeSlots, alternateCount, generatedAtIso, random }) {
   const rows = makeCapacityRows(ledger, random)
   const allocations = []
   const countsByMatchTeam = new Map()
+  const eligibleTicketsByMatch = new Map()
+  const minimumEligibleTickets = matches.length * prizeSlots * (alternateCount + 1)
+  const targetEligibleTickets = Math.max(minimumEligibleTickets, Math.floor(Number(targetPoolTickets) || 0))
+  const ticketChunk = Math.max(1, Math.ceil(targetEligibleTickets / Math.max(1, voteCount)))
+  let submittedTickets = 0
+  let eligibleTickets = 0
+  let eventCount = 0
 
-  function addVote(match, teamId) {
-    const walletAddress = pickWalletForCombo(rows, match.id, teamId, random)
+  function remainingCapacity() {
+    return rows.reduce((total, row) => total + row.remainingTickets, 0)
+  }
+
+  function addVote(match, teamId, requestedTickets = ticketChunk) {
+    const allocation = pickWalletForCombo(rows, match.id, teamId, requestedTickets, random)
     const countKey = comboKey(match.id, teamId)
-    countsByMatchTeam.set(countKey, (countsByMatchTeam.get(countKey) || 0) + 1)
+    countsByMatchTeam.set(countKey, (countsByMatchTeam.get(countKey) || 0) + allocation.tickets)
+    submittedTickets += allocation.tickets
+    if (teamId === winnerTeamForMatch(match)) {
+      eligibleTicketsByMatch.set(match.id, (eligibleTicketsByMatch.get(match.id) || 0) + allocation.tickets)
+      eligibleTickets += allocation.tickets
+    }
+    eventCount += 1
+    const existingIndex = allocations.findIndex((entry) => (
+      entry.walletAddress === allocation.walletAddress
+      && entry.roundId === match.roundId
+      && entry.matchId === match.id
+      && entry.teamId === teamId
+    ))
     const ordinal = allocations.length + 1
     const createdAt = addSeconds(generatedAtIso, ordinal)
-    allocations.push({
-      id: `local-test-batch-${match.id}-${teamId}-${ordinal}`,
-      walletAddress,
-      roundId: match.roundId,
-      matchId: match.id,
-      teamId,
-      tickets: 1,
-      source: 'local-test-batch-seed',
-      official: false,
-      createdAt,
-      updatedAt: createdAt,
-      requestId: `local-test-batch-${ordinal}`,
-    })
+    const updatedAt = addSeconds(generatedAtIso, eventCount)
+    if (existingIndex >= 0) {
+      allocations[existingIndex] = {
+        ...allocations[existingIndex],
+        tickets: allocations[existingIndex].tickets + allocation.tickets,
+        updatedAt,
+      }
+    } else {
+      allocations.push({
+        id: `local-test-batch-${match.id}-${teamId}-${ordinal}`,
+        walletAddress: allocation.walletAddress,
+        roundId: match.roundId,
+        matchId: match.id,
+        teamId,
+        tickets: allocation.tickets,
+        source: 'local-test-batch-seed',
+        official: false,
+        createdAt,
+        updatedAt,
+        requestId: `local-test-batch-${ordinal}`,
+      })
+    }
   }
 
-  for (const match of matches) {
-    const requiredWinnerTickets = prizeSlots * (alternateCount + 1)
-    for (let index = 0; index < requiredWinnerTickets; index += 1) addVote(match, winnerTeamForMatch(match))
+  const baseMatchTarget = Math.floor(targetEligibleTickets / matches.length)
+  const targetRemainder = targetEligibleTickets % matches.length
+  for (const [matchIndex, match] of matches.entries()) {
+    const matchEligibleTarget = baseMatchTarget + (matchIndex < targetRemainder ? 1 : 0)
+    const winnerTeamId = winnerTeamForMatch(match)
+    while ((eligibleTicketsByMatch.get(match.id) || 0) < matchEligibleTarget) {
+      const remainingForMatch = matchEligibleTarget - (eligibleTicketsByMatch.get(match.id) || 0)
+      addVote(match, winnerTeamId, Math.min(ticketChunk, remainingForMatch))
+    }
   }
 
-  while (allocations.length < voteCount) {
+  let fillerAttempts = 0
+  const maxFillerAttempts = Math.max(voteCount * 10, 100)
+  while (allocations.length < voteCount && remainingCapacity() > 0 && fillerAttempts < maxFillerAttempts) {
+    fillerAttempts += 1
     const match = matches[pickIndex(random, matches.length)]
-    const teamId = match.teams[pickIndex(random, match.teams.length)]
-    addVote(match, teamId)
+    const losingTeams = match.teams.filter((teamId) => teamId !== winnerTeamForMatch(match))
+    const candidates = losingTeams.length > 0 ? losingTeams : match.teams
+    const teamId = candidates[pickIndex(random, candidates.length)]
+    addVote(match, teamId, 1)
   }
 
   return {
     allocations,
+    eventCount,
+    submittedTickets,
+    eligibleTickets,
+    targetEligibleTickets,
     countsByMatchTeam: Object.fromEntries([...countsByMatchTeam.entries()].sort(([left], [right]) => left.localeCompare(right))),
   }
 }
@@ -310,6 +362,7 @@ async function main() {
   assertSafeLocalDataDir(dataDir)
   const ledgerPath = sourceLedgerPath()
   const voteCount = readPositiveInteger(argValue('--votes') || process.env.SOCCER_TEST_BATCH_VOTE_COUNT, DEFAULT_VOTE_COUNT)
+  const targetPoolTickets = readPositiveInteger(argValue('--target-pool') || process.env.SOCCER_TEST_BATCH_TARGET_POOL_TICKETS, DEFAULT_TARGET_DRAW_POOL_TICKETS)
   const prizeSlots = readPositiveInteger(argValue('--prize-slots') || process.env.SOCCER_TEST_BATCH_PRIZE_SLOTS, DEFAULT_PRIZE_SLOTS)
   const alternateCount = readPositiveInteger(argValue('--alternates') || process.env.SOCCER_TEST_BATCH_ALTERNATES || process.env.SOCCER_DRAW_ALTERNATE_COUNT, DEFAULT_ALTERNATE_COUNT)
   const seed = argValue('--seed') || process.env.SOCCER_TEST_BATCH_SEED || DEFAULT_SEED
@@ -317,6 +370,10 @@ async function main() {
   const generatedAtIso = new Date().toISOString()
   const videoUrl = argValue('--video-url') || process.env.WINNER_REVEAL_VIDEO_URL || DEFAULT_WINNER_REVEAL_VIDEO_URL
   const ledger = readJson(ledgerPath, 'source ticket ledger')
+  const availableTicketCapacity = usableLedgerEntries(ledger).reduce((sum, row) => sum + row.finalTickets, 0)
+  if (targetPoolTickets > availableTicketCapacity) {
+    throw new Error(`target-pool (${targetPoolTickets}) must be <= source ledger usable final tickets (${availableTicketCapacity}).`)
+  }
   const matches = campaignMatches.filter((match) => match.roundId === 'round16')
   if (matches.length !== 8) throw new Error(`Expected 8 Round of 16 matches, found ${matches.length}.`)
   const requiredWinnerTickets = matches.length * prizeSlots * (alternateCount + 1)
@@ -339,10 +396,18 @@ async function main() {
   mkdirSync(paths.votesDir, { recursive: true })
 
   const matchResults = createMatchResults({ generatedAtIso, matches })
-  const { allocations, countsByMatchTeam } = createAllocations({
+  const {
+    allocations,
+    countsByMatchTeam,
+    eventCount,
+    submittedTickets,
+    eligibleTickets,
+    targetEligibleTickets,
+  } = createAllocations({
     ledger,
     matches,
     voteCount,
+    targetPoolTickets,
     prizeSlots,
     alternateCount,
     generatedAtIso,
@@ -356,6 +421,7 @@ async function main() {
       sourceLedgerPath: ledgerPath,
       copiedAt: generatedAtIso,
       fakeVoteCount: voteCount,
+      fakeDrawEligibleTicketTarget: targetPoolTickets,
     },
   })
   writeJsonAtomic(paths.matchResults, matchResults)
@@ -398,6 +464,7 @@ async function main() {
     sourceLedgerPath: ledgerPath,
     seed,
     voteCount,
+    targetDrawEligibleTickets: targetEligibleTickets,
     prizeSlotsPerMatch: prizeSlots,
     alternatesPerPrizeSlot: alternateCount,
     sourceLedger: {
@@ -407,7 +474,10 @@ async function main() {
     },
     fakeVotes: {
       allocationCount: allocations.length,
-      submittedTickets: allocations.reduce((sum, allocation) => sum + toPositiveInteger(allocation.tickets), 0),
+      eventCount,
+      submittedTickets,
+      eligibleTickets,
+      targetEligibleTickets,
       voterCount: new Set(allocations.map((allocation) => allocation.walletAddress)).size,
       countsByMatchTeam,
     },
@@ -429,7 +499,7 @@ async function main() {
         ledgerHash: draw.ledgerHash,
       })),
     },
-    pendingWinnersHash: snapshotHash({ generatedAtIso, voteCount, prizeSlots, alternateCount, seed, countsByMatchTeam }),
+    pendingWinnersHash: snapshotHash({ generatedAtIso, voteCount, targetPoolTickets, prizeSlots, alternateCount, seed, countsByMatchTeam }),
     files: paths,
     notes: [
       'Only vote allocations are fake. Wallets and ticket capacities come from the source ledger.',
@@ -443,6 +513,7 @@ async function main() {
     dataDir,
     sourceLedgerPath: ledgerPath,
     voteCount,
+    targetDrawEligibleTickets: targetEligibleTickets,
     prizeSlotsPerMatch: prizeSlots,
     alternatesPerPrizeSlot: alternateCount,
     fakeVotes: summary.fakeVotes,

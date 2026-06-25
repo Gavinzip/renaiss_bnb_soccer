@@ -17,6 +17,7 @@ import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { MatchPrizeList } from "./MatchPrizeList";
 
+const ticketStoreUrl = "https://www.renaiss.xyz/gacha/omega";
 const voteableStatuses = new Set(["open", "closing_soon"]);
 const matchPhaseOrder = {
   official_final: 0,
@@ -202,6 +203,7 @@ function TicketAllocationPanel({
   const selectedTeamName = selectedTeam ? teamName(selectedTeam) : null;
   const selectedMatchLabel = selectedMatch ? selectedMatch.id.toUpperCase() : null;
   const selectedPhase = selectedMatch ? getMatchPhase(selectedMatch) : null;
+  const hasNoRemainingTickets = remainingRoundTickets <= 0;
   const canSubmit = Boolean(
     selectedTeam
     && selectedMatch
@@ -296,19 +298,33 @@ function TicketAllocationPanel({
         onChange={handleSetTicketAmount}
       />
 
-      <Magnet
-        as="button"
-        className="vote-allocation-panel__cta"
-        type="button"
-        strength={44}
-        disabled={!canSubmit}
-        onClick={() => onConfirmPreviewVote(boundedTicketAmount)}
-      >
-        <span className="vote-allocation-panel__cta-content">
-          {canSubmit ? <Send size={17} strokeWidth={2.35} /> : <LockKeyhole size={17} strokeWidth={2.35} />}
-          <span>{t("vote.submitPreviewVote")}</span>
-        </span>
-      </Magnet>
+      {hasNoRemainingTickets ? (
+        <Magnet
+          as="a"
+          className="vote-allocation-panel__cta is-ticket-store-link"
+          href={ticketStoreUrl}
+          strength={44}
+        >
+          <span className="vote-allocation-panel__cta-content">
+            <Ticket size={17} strokeWidth={2.35} />
+            <span>{t("vote.getMoreTickets")}</span>
+          </span>
+        </Magnet>
+      ) : (
+        <Magnet
+          as="button"
+          className="vote-allocation-panel__cta"
+          type="button"
+          strength={44}
+          disabled={!canSubmit}
+          onClick={() => onConfirmPreviewVote(boundedTicketAmount)}
+        >
+          <span className="vote-allocation-panel__cta-content">
+            {canSubmit ? <Send size={17} strokeWidth={2.35} /> : <LockKeyhole size={17} strokeWidth={2.35} />}
+            <span>{t("vote.submitPreviewVote")}</span>
+          </span>
+        </Magnet>
+      )}
     </aside>
   );
 }
@@ -326,6 +342,8 @@ function VoteWalletPanel({
 }) {
   const { t } = copy;
   const authWalletLinked = Boolean(authSession?.walletAddress);
+  const authActionable = authEndpointReady && !authSession?.authenticated;
+  const VoteWalletAuth = authActionable ? "button" : "div";
 
   return (
     <aside className="vote-wallet-panel vote-wallet-panel--compact" aria-label={authEndpointReady ? t("auth.accountAria") : t("vote.previewWallet")}>
@@ -335,10 +353,13 @@ function VoteWalletPanel({
           {authEndpointReady ? t("auth.account") : t("vote.previewWallet")}
         </span>
         {authEndpointReady ? (
-          <button className="vote-wallet-panel__auth" type="button" onClick={onRequestLogin}>
+          <VoteWalletAuth
+            className={authActionable ? "vote-wallet-panel__auth" : "vote-wallet-panel__auth is-static"}
+            {...(authActionable ? { type: "button", onClick: onRequestLogin } : {})}
+          >
             <strong>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</strong>
             <small>{authWalletLinked ? t("auth.linked") : t("auth.loginDetail")}</small>
-          </button>
+          </VoteWalletAuth>
         ) : (
           <select value={selectedWallet} onChange={(event) => onSelectWallet(event.target.value)} aria-label={t("vote.selectPreviewWallet")}>
             {ledger.leaderboardEntries.map((entry) => (

@@ -18,6 +18,11 @@ function statusMessageKey(status) {
     retry_later: "xFollowGate.statusRetryLater",
     skip_disabled: "xFollowGate.statusSkipDisabled",
     session_secret_missing: "xFollowGate.statusSkipUnavailable",
+    wallet_required: "xFollowGate.statusWalletRequired",
+    profile_store_missing: "xFollowGate.statusProfileStoreMissing",
+    renaiss_twitter_required: "xFollowGate.statusRenaissTwitterRequired",
+    twitter_identity_missing: "xFollowGate.statusTwitterMissing",
+    twitter_identity_mismatch: "xFollowGate.statusTwitterMismatch",
   };
   return map[status] || "xFollowGate.statusIdle";
 }
@@ -41,11 +46,14 @@ export function XFollowGate({
   const targetHandle = target?.handle || gateConfig.targetHandle || "thefireflyapp";
   const targetUrl = target?.url || gateConfig.targetUrl || `https://x.com/${targetHandle}`;
   const xConnected = Boolean(gate.xConnected);
-  const xProviderReady = Boolean(authConfig?.providers?.x);
+  const identityBlockingStatus = ["wallet_required", "profile_store_missing", "renaiss_twitter_required"].includes(gate.status);
+  const identityIssueStatus = ["wallet_required", "profile_store_missing", "renaiss_twitter_required", "twitter_identity_missing", "twitter_identity_mismatch"].includes(gate.status);
+  const identityIssue = identityIssueStatus ? t(statusMessageKey(gate.status)) : "";
+  const xProviderReady = Boolean(authConfig?.providers?.x) && !identityBlockingStatus;
   const skipEnabled = Boolean(gate.skipEnabled || gateConfig.skipEnabled);
   const retryAfterSeconds = Math.max(0, Number(gate.retryAfterSeconds || 0));
-  const canContinueToVerify = authEndpointReady && xConnected;
-  const canVerify = authEndpointReady && xConnected && xProviderReady && !verifying && !skipping && retryAfterSeconds <= 0;
+  const canContinueToVerify = authEndpointReady && xConnected && !identityIssueStatus;
+  const canVerify = authEndpointReady && xConnected && xProviderReady && !identityIssueStatus && !verifying && !skipping && retryAfterSeconds <= 0;
   const canSkip = authEndpointReady && skipEnabled && !verifying && !skipping;
   const canClose = typeof onRequestClose === "function";
 
@@ -176,6 +184,7 @@ export function XFollowGate({
             </span>
             <h2>{t("xFollowGate.connectTitle")}</h2>
             <p>{t("xFollowGate.connectBody")}</p>
+            {identityIssue ? <p className="x-follow-gate__issue">{identityIssue}</p> : null}
             <Magnet
               as="a"
               className={xProviderReady ? "x-follow-gate__action" : "x-follow-gate__action is-disabled"}

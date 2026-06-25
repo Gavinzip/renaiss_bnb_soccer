@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { extname, join, normalize, resolve } from 'node:path'
+import { dirname, extname, join, normalize, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,7 @@ import {
   handleAuthRoute,
   readAuthSession,
 } from './auth/routes.mjs'
+import { createUserProfileStore } from './auth/user-profile-store.mjs'
 import { getXFollowStatus } from './auth/x-follow-gate.mjs'
 import {
   buildLedgerEntryResponse,
@@ -47,14 +48,16 @@ const voteStatePath = process.env.SOCCER_VOTE_STATE_PATH || join(votesDir, 'vote
 const votePreviewPath = process.env.SOCCER_VOTE_PREVIEW_PATH || join(votesDir, 'vote-preview.json')
 const voteStoreMode = normalizeVoteStoreMode(process.env.SOCCER_VOTE_STORE || 'json')
 const voteDbPath = process.env.SOCCER_VOTE_DB_PATH || join(votesDir, 'vote-store.sqlite')
+const profileDbPath = process.env.SOCCER_PROFILE_DB_PATH || join(dataDir, 'profiles/user-profiles.sqlite')
 const matchResultsPath = process.env.SOCCER_MATCH_RESULTS_PATH || join(dataDir, 'match-results.json')
 const matchDrawLedgerPath = process.env.SOCCER_MATCH_DRAW_LEDGER_PATH || join(dataDir, 'match-draw-ledger.json')
 const drawWinnersPath = process.env.SOCCER_DRAW_WINNERS_PATH || join(dataDir, 'draw-winners.json')
 const winnerRevealVideoUrl = process.env.WINNER_REVEAL_VIDEO_URL || process.env.VITE_WINNER_REVEAL_VIDEO_URL || ''
 const fifaSourceMapPath = process.env.FIFA_RESULTS_SOURCE_MAP_PATH || join(dataDir, 'fifa-match-map.json')
-const auth = createAuthContext({ dataDir })
+const userProfileStore = createUserProfileStore({ dbPath: profileDbPath })
+const auth = createAuthContext({ dataDir, userProfileStore })
 const snapshotKeep = readIntegerEnv('LUCKY_DRAW_SNAPSHOT_KEEP', 72, 1)
-const refreshMinutes = readIntegerEnv('LUCKY_DRAW_REFRESH_MINUTES', 10, 1)
+const refreshMinutes = readIntegerEnv('LUCKY_DRAW_REFRESH_MINUTES', 5, 1)
 const refreshIntervalMs = refreshMinutes * 60 * 1000
 const refreshHistoryLimit = readIntegerEnv('LUCKY_DRAW_REFRESH_HISTORY_LIMIT', 24, 1)
 const refreshEnabled = process.env.LUCKY_DRAW_REFRESH_ENABLED !== '0'
@@ -143,6 +146,9 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
   applyDefaultEnv('SOCCER_VOTE_STORE', 'sqlite')
   applyDefaultEnv('SOCCER_VOTE_DB_PATH', join(localDataDir, 'votes/vote-store.sqlite'), {
     replace: localPathReplacements('votes/vote-store.sqlite'),
+  })
+  applyDefaultEnv('SOCCER_PROFILE_DB_PATH', join(localDataDir, 'profiles/user-profiles.sqlite'), {
+    replace: localPathReplacements('profiles/user-profiles.sqlite'),
   })
   applyDefaultEnv('SOCCER_VOTE_STATE_PATH', join(localDataDir, 'votes/vote-state.json'), {
     replace: localPathReplacements('votes/vote-state.json'),
@@ -348,7 +354,7 @@ function readHealthMatchResultsSnapshot() {
 
 function readDrawWinnersSnapshot() {
   if (!existsSync(drawWinnersPath)) {
-    return {
+    return enrichDrawWinnersPayload({
       version: 1,
       mode: 'draw-winners',
       sourceLabel: 'on-chain-reveal',
@@ -357,16 +363,110 @@ function readDrawWinnersSnapshot() {
       videoUrl: winnerRevealVideoUrl,
       winners: [],
       winnersBySlot: [],
-    }
+    })
   }
 
   const payload = JSON.parse(readFileSync(drawWinnersPath, 'utf8'))
-  return {
+  return enrichDrawWinnersPayload({
     videoUrl: payload.videoUrl || winnerRevealVideoUrl,
     winners: Array.isArray(payload.winners) ? payload.winners : [],
     winnersBySlot: Array.isArray(payload.winnersBySlot) ? payload.winnersBySlot : [],
     ...payload,
     videoUrl: payload.videoUrl || winnerRevealVideoUrl,
+  })
+}
+
+const WINNER_WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
+
+function normalizeWinnerWalletAddress(value) {
+  const address = String(value || '').trim()
+  return WINNER_WALLET_ADDRESS_PATTERN.test(address) ? address.toLowerCase() : ''
+}
+
+function winnerWalletAddress(row) {
+  if (!row || typeof row !== 'object') return ''
+  return normalizeWinnerWalletAddress(
+    row.walletAddress
+      || row.wallet_address
+      || row.userAddress
+      || row.user_address
+      || row.profile?.walletAddress
+      || row.profile?.wallet_address,
+  )
+}
+
+function collectWinnerAddressesFromRows(rows, addresses) {
+  if (!Array.isArray(rows)) return
+  for (const row of rows) {
+    const address = winnerWalletAddress(row)
+    if (address) addresses.add(address)
+  }
+}
+
+function collectWinnerProfileAddresses(payload) {
+  const addresses = new Set()
+  collectWinnerAddressesFromRows(payload?.winners, addresses)
+  collectWinnerAddressesFromRows(payload?.winnersBySlot, addresses)
+  collectWinnerAddressesFromRows(payload?.winners_by_slot, addresses)
+  collectWinnerAddressesFromRows(payload?.alternates, addresses)
+
+  for (const draw of Array.isArray(payload?.draws) ? payload.draws : []) {
+    collectWinnerAddressesFromRows(draw?.winners, addresses)
+    collectWinnerAddressesFromRows(draw?.alternates, addresses)
+    for (const slot of Array.isArray(draw?.prizeSlots) ? draw.prizeSlots : []) {
+      const winnerAddress = winnerWalletAddress(slot?.winner)
+      if (winnerAddress) addresses.add(winnerAddress)
+      collectWinnerAddressesFromRows(slot?.alternates, addresses)
+    }
+  }
+
+  return [...addresses]
+}
+
+function enrichWinnerRows(rows, profilesByWallet) {
+  if (!Array.isArray(rows)) return rows
+  return rows.map((row) => enrichWinnerRow(row, profilesByWallet))
+}
+
+function enrichWinnerRow(row, profilesByWallet) {
+  if (!row || typeof row !== 'object') return row
+  const address = winnerWalletAddress(row)
+  const profile = address ? profilesByWallet.get(address) : null
+  if (!profile) return row
+  return {
+    ...row,
+    profile: {
+      ...(row.profile && typeof row.profile === 'object' ? row.profile : {}),
+      ...profile,
+    },
+  }
+}
+
+function enrichDrawWinnersPayload(payload) {
+  const addresses = collectWinnerProfileAddresses(payload)
+  const profilesByWallet = userProfileStore.readProfilesForWallets(addresses)
+  if (!profilesByWallet.size) return payload
+
+  return {
+    ...payload,
+    winners: enrichWinnerRows(payload.winners, profilesByWallet),
+    winnersBySlot: enrichWinnerRows(payload.winnersBySlot, profilesByWallet),
+    winners_by_slot: enrichWinnerRows(payload.winners_by_slot, profilesByWallet),
+    alternates: enrichWinnerRows(payload.alternates, profilesByWallet),
+    draws: Array.isArray(payload.draws)
+      ? payload.draws.map((draw) => ({
+        ...draw,
+        winners: enrichWinnerRows(draw.winners, profilesByWallet),
+        alternates: enrichWinnerRows(draw.alternates, profilesByWallet),
+        prizeSlots: Array.isArray(draw.prizeSlots)
+          ? draw.prizeSlots.map((slot) => ({
+            ...slot,
+            winner: enrichWinnerRow(slot.winner, profilesByWallet),
+            alternates: enrichWinnerRows(slot.alternates, profilesByWallet),
+          }))
+          : draw.prizeSlots,
+      }))
+      : payload.draws,
   }
 }
 
@@ -1009,6 +1109,8 @@ const server = createServer(async (request, response) => {
         voteStateExists: existsSync(voteStatePath),
         voteStore: voteStore.health(),
         votes: summarizeVoteState(voteStore.readState()),
+        profileDbPath,
+        userProfiles: userProfileStore.health(),
         matchResultsPath,
         matchResults: readHealthMatchResultsSnapshot(),
         matchDrawLedgerPath,
@@ -1173,12 +1275,14 @@ const server = createServer(async (request, response) => {
     try {
       const session = readAuthSession(auth, request)
       const matchResults = readMatchResultsSnapshot(matchResultsPath)
+      const scope = String(url.searchParams.get('scope') || '').trim().toLowerCase()
+      const includeAllWallets = ['all', 'global', 'pool'].includes(scope)
       sendJson(
         request,
         response,
         200,
         voteStore.readPreview({
-          walletAddress: url.searchParams.get('wallet') || session?.walletAddress || '',
+          walletAddress: includeAllWallets ? '' : url.searchParams.get('wallet') || session?.walletAddress || '',
           matchResults,
         }),
         { 'cache-control': 'no-store' },
@@ -1317,6 +1421,7 @@ mkdirSync(dataDir, { recursive: true })
 mkdirSync(cacheDir, { recursive: true })
 mkdirSync(votesDir, { recursive: true })
 mkdirSync(auth.authDir, { recursive: true })
+mkdirSync(dirname(profileDbPath), { recursive: true })
 
 const voteStore = createConfiguredVoteStore()
 
@@ -1341,6 +1446,7 @@ server.listen(port, () => {
   console.log(`[server] voteStore=${voteStore.mode}`)
   console.log(`[server] voteStatePath=${voteStatePath}`)
   if (voteStore.mode === 'sqlite') console.log(`[server] voteDbPath=${voteDbPath}`)
+  console.log(`[server] profileDbPath=${profileDbPath}`)
   console.log(`[server] matchResultsPath=${matchResultsPath}`)
   console.log(`[server] matchDrawLedgerPath=${matchDrawLedgerPath}`)
   if (restoreEnabled) {
@@ -1358,6 +1464,7 @@ function shutdown(signal) {
   if (fifaResultSyncTimer) clearInterval(fifaResultSyncTimer)
   if (backupTimer) clearInterval(backupTimer)
   voteStore.close?.()
+  userProfileStore.close?.()
   server.close(() => process.exit(0))
 }
 

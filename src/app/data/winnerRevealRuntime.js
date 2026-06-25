@@ -17,6 +17,31 @@ function normalizeInteger(value) {
   return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0;
 }
 
+function normalizeWinnerProfile(row) {
+  if (!row || typeof row !== "object") return null;
+  const twitterUsername = String(row.twitterUsername ?? row.twitter_username ?? "").trim().replace(/^@+/, "");
+  const displayName = String(row.displayName ?? row.display_name ?? row.name ?? "").trim();
+  const avatarUrl = String(row.avatarUrl ?? row.avatar_url ?? row.twitterPicture ?? row.twitter_picture ?? row.picture ?? "").trim();
+  const walletAddress = String(row.walletAddress ?? row.wallet_address ?? "").trim();
+  const twitterUrl = String(row.twitterUrl ?? row.twitter_url ?? (twitterUsername ? `https://x.com/${twitterUsername}` : "")).trim();
+  const provider = String(row.provider ?? "").trim();
+
+  if (!twitterUsername && !displayName && !avatarUrl && !walletAddress && !provider) return null;
+
+  return {
+    walletAddress,
+    displayName,
+    name: String(row.name ?? "").trim(),
+    avatarUrl,
+    picture: String(row.picture ?? "").trim(),
+    twitterUsername,
+    twitterUrl,
+    provider,
+    updatedAt: row.updatedAt ?? row.updated_at ?? null,
+    lastSeenAt: row.lastSeenAt ?? row.last_seen_at ?? null,
+  };
+}
+
 function normalizeWinner(row, index) {
   if (!row || typeof row !== "object") return null;
   const ticketNumber = String(row.ticketNumber ?? row.ticket_number ?? "").trim();
@@ -39,6 +64,7 @@ function normalizeWinner(row, index) {
     teamId: String(row.teamId ?? row.team_id ?? ""),
     entryRank: row.entryRank ?? row.entry_rank ?? row.rank ?? null,
     interval: row.interval && typeof row.interval === "object" ? row.interval : null,
+    profile: normalizeWinnerProfile(row.profile ?? row.userProfile ?? row.user_profile),
   };
 }
 

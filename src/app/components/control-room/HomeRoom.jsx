@@ -67,8 +67,10 @@ function getMilestoneSnapshot(milestones, currentValue) {
   };
 }
 
-function useScrollScrubbedHomeVideo(containerRef, videoRef) {
+function useScrollScrubbedHomeVideo(containerRef, videoRef, enabled = true) {
   useEffect(() => {
+    if (!enabled) return undefined;
+
     const container = containerRef.current;
     const video = videoRef.current;
     if (!container || !video) return undefined;
@@ -84,6 +86,8 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef) {
 
     const syncVideoToScroll = () => {
       frameId = 0;
+      if (document.visibilityState === "hidden") return;
+
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
       const containerTop = container.getBoundingClientRect().top + window.scrollY;
       const travel = Math.max(1, container.offsetHeight - viewportHeight);
@@ -91,7 +95,7 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef) {
       const targetTime = Math.min(Math.max(0, duration - 0.02), Math.max(0, progress * duration));
 
       video.pause();
-      if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.006) {
+      if (Number.isFinite(targetTime)) {
         video.currentTime = targetTime;
       }
     };
@@ -109,6 +113,7 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef) {
     video.addEventListener("loadedmetadata", handleMetadata);
     window.addEventListener("scroll", requestSync, { passive: true });
     window.addEventListener("resize", requestSync);
+    window.addEventListener("visibilitychange", requestSync);
 
     if (video.readyState >= 1) handleMetadata();
     requestSync();
@@ -118,8 +123,9 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef) {
       video.removeEventListener("loadedmetadata", handleMetadata);
       window.removeEventListener("scroll", requestSync);
       window.removeEventListener("resize", requestSync);
+      window.removeEventListener("visibilitychange", requestSync);
     };
-  }, [containerRef, videoRef]);
+  }, [containerRef, enabled, videoRef]);
 }
 
 function useHomeMediaReady(videoRef) {
@@ -355,6 +361,7 @@ export function HomeRoom({
   currentMilestoneValue,
   rounds,
   onSelectView,
+  isActive = true,
 }) {
   const copy = useCampaignCopy();
   const { t } = copy;
@@ -370,12 +377,14 @@ export function HomeRoom({
     ? t("home.allMilestonesDetail")
     : t("home.ticketsToTarget", { remaining: formatNumber(milestoneSnapshot.remaining), target: formatNumber(milestoneSnapshot.next.threshold) });
 
-  useScrollScrubbedHomeVideo(homeRoomRef, heroVideoRef);
+  useScrollScrubbedHomeVideo(homeRoomRef, heroVideoRef, isActive);
 
   return (
     <section
       className={["home-room", mediaReady ? "is-media-ready" : "is-media-loading"].join(" ")}
       ref={homeRoomRef}
+      hidden={!isActive}
+      aria-hidden={isActive ? undefined : "true"}
       aria-label={t("home.aria")}
     >
       <div className="home-video-backdrop" aria-hidden="true">
@@ -393,7 +402,7 @@ export function HomeRoom({
           poster={heroImage}
           muted
           playsInline
-          preload="metadata"
+          preload="auto"
           aria-hidden="true"
           disablePictureInPicture
         >

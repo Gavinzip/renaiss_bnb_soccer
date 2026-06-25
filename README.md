@@ -134,6 +134,8 @@ On Zeabur, mount the persistent disk at `/data` and use `/data/soccer` for this 
     vote-events.jsonl           append-only user vote submissions
     vote-state.json             JSON compatibility snapshot, not the SQLite fallback
     vote-preview.json           frontend-compatible vote preview snapshot
+  profiles/
+    user-profiles.sqlite        wallet-keyed login profile records for winner display
   match-results.json            backend FIFA official result snapshot
   match-draw-ledger.json        per-match draw ledger generated from confirmed results
   draw-winners.json             on-chain reveal winner snapshot
@@ -155,6 +157,7 @@ LUCKY_DRAW_LEDGER_PATH=/data/soccer/lucky-draw-ledger.json
 SOCCER_VOTES_DIR=/data/soccer/votes
 SOCCER_VOTE_STORE=sqlite
 SOCCER_VOTE_DB_PATH=/data/soccer/votes/vote-store.sqlite
+SOCCER_PROFILE_DB_PATH=/data/soccer/profiles/user-profiles.sqlite
 SOCCER_VOTE_STATE_PATH=/data/soccer/votes/vote-state.json
 SOCCER_VOTE_PREVIEW_PATH=/data/soccer/votes/vote-preview.json
 SOCCER_MATCH_RESULTS_PATH=/data/soccer/match-results.json
@@ -172,6 +175,7 @@ DATA_BACKUP_RESTORE_ON_STARTUP=1
 DATA_BACKUP_RESTORE_FORCE=0
 
 AUTH_SESSION_SECRET=<at least 32 random characters>
+LOGIN_AUDIT_HASH_SECRET=<at least 32 random characters>
 AUTH_REQUIRE_SESSION_FOR_VOTES=1
 AUTH_COOKIE_SECURE=1
 AUTH_SUCCESS_REDIRECT_PATH=/?auth=success
@@ -200,7 +204,7 @@ IDENTITY_RESOLVER_API_KEY=...
 RESEND_API_KEY=...
 EMAIL_FROM=Renaiss <login@renaiss.xyz>
 
-LUCKY_DRAW_REFRESH_MINUTES=10
+LUCKY_DRAW_REFRESH_MINUTES=5
 LUCKY_DRAW_REFRESH_HISTORY_LIMIT=24
 LUCKY_DRAW_CAMPAIGN_START=1781422200
 LUCKY_DRAW_CAMPAIGN_END=1784469600
@@ -224,6 +228,14 @@ and email logins create identity sessions first, then call `IDENTITY_RESOLVER_AP
 voting wallet. Wallet login verifies a signed message and can resolve directly to the signing address. If Renaiss
 returns `safe_wallet_address: null`, or if another provider cannot resolve a wallet, the user can be logged in but
 cannot submit votes.
+
+Successful login flows enqueue a SQLite profile write and a `user_login_audits`
+row in `SOCCER_PROFILE_DB_PATH`. The audit table stores the wallet, provider,
+Twitter username when supplied by the identity payload, hashed IP/User-Agent,
+public IP prefix, and deployment-provided geo headers such as Vercel or
+Cloudflare country/region/city. It does not store the full raw IP. If the
+deployment platform does not provide geo headers, `geo_source` is `none` and the
+server will not guess a location.
 
 Google Analytics is build-time gated by `VITE_GA_MEASUREMENT_ID`. The frontend
 only loads GA when this value is a valid `G-...` Measurement ID, strips identity

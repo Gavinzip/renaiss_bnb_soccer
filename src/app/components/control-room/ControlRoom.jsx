@@ -15,7 +15,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { commandViews } from "../../data/campaignRuntime";
@@ -63,10 +63,13 @@ function preloadRoom(viewId) {
   return preload;
 }
 
-function preloadInactiveRooms(activeViewId) {
+function preloadInactiveRooms(activeViewId, views = commandViews) {
+  const preloadableViews = views
+    .map((view) => view.id)
+    .filter((viewId) => viewId !== "home" && roomLoaders[viewId]);
   const order = activeViewId === "home"
-    ? ["schedule", "vote", "draw", "winners"]
-    : [activeViewId, "schedule", "vote", "draw", "winners"];
+    ? preloadableViews
+    : [activeViewId, ...preloadableViews];
   const uniqueOrder = [...new Set(order)].filter((viewId) => viewId !== "home");
 
   const cancelJobs = uniqueOrder.map((viewId, index) => (
@@ -416,8 +419,8 @@ function RoomCommandMast({
   );
 }
 
-function ViewMenu({ activeViewId, id, onSelectView, t }) {
-  const activeIndex = Math.max(0, commandViews.findIndex((view) => view.id === activeViewId));
+function ViewMenu({ activeViewId, id, onSelectView, t, views = commandViews, winnersAlert = false }) {
+  const activeIndex = Math.max(0, views.findIndex((view) => view.id === activeViewId));
 
   function handlePreload(viewId) {
     if (viewId !== "home") {
@@ -426,18 +429,23 @@ function ViewMenu({ activeViewId, id, onSelectView, t }) {
   }
 
   return (
-    <menu className="command-menu pill-nav" id={id} aria-label={t("nav.aria")} data-active-index={activeIndex}>
+    <menu className="command-menu pill-nav" id={id} aria-label={t("nav.aria")} data-active-index={activeIndex} data-view-count={views.length}>
       <span className="command-menu__indicator" aria-hidden="true" />
-      {commandViews.map((view) => {
+      {views.map((view) => {
         const Icon = viewIcons[view.id] ?? Landmark;
+        const hasAlert = winnersAlert && view.id === "winners";
         return (
           <li key={view.id}>
             <Magnet
               as="button"
-              className={activeViewId === view.id ? "is-active" : ""}
+              className={[
+                activeViewId === view.id ? "is-active" : "",
+                hasAlert ? "has-alert" : "",
+              ].filter(Boolean).join(" ")}
               type="button"
               strength={72}
               aria-current={activeViewId === view.id ? "page" : undefined}
+              aria-label={hasAlert ? `${t(`nav.${view.id}`)} · ${t("winnerReveal.navAlert")}` : undefined}
               onPointerEnter={() => handlePreload(view.id)}
               onPointerDown={() => handlePreload(view.id)}
               onFocus={() => handlePreload(view.id)}
@@ -495,6 +503,8 @@ export function ControlRoom({
   previewVoteIssue,
   winnerRevealData,
   winnerRevealIssue,
+  currentWinnerWalletAddress,
+  currentUserWinnerCount,
   drawStats,
   milestones,
   currentMilestoneValue,
@@ -519,19 +529,28 @@ export function ControlRoom({
 }) {
   const copy = useCampaignCopy();
   const { roundLabel, t } = copy;
-  const activeView = commandViews.find((view) => view.id === activeViewId) ?? commandViews[0];
+  const drawViewEnabled = isLocalTestOrigin();
+  const visibleCommandViews = useMemo(
+    () => (drawViewEnabled ? commandViews : commandViews.filter((view) => view.id !== "draw")),
+    [drawViewEnabled],
+  );
+  const effectiveActiveViewId = !drawViewEnabled && activeViewId === "draw" ? "home" : activeViewId;
+  const activeView = visibleCommandViews.find((view) => view.id === effectiveActiveViewId) ?? visibleCommandViews[0] ?? commandViews[0];
   const activeDraw = drawStats.find((round) => round.id === activeRound.id) ?? drawStats[0];
   const accumulatedDrawEntries = (activeDraw?.eligibleEntries ?? 0) + (activeDraw?.pendingEntries ?? 0);
   const matchStateCounts = countMatchStates(matches, activeRoundId);
   const compactWorkViews = new Set(["schedule", "vote", "draw", "winners"]);
-  const showRoomMast = activeViewId !== "home" && !compactWorkViews.has(activeViewId);
+  const showRoomMast = effectiveActiveViewId !== "home" && !compactWorkViews.has(effectiveActiveViewId);
   const authWalletLinked = Boolean(authSession?.walletAddress);
   const showAuthState = Boolean(authEndpointReady);
+  const authIdentityActionable = showAuthState && !authSession?.authenticated;
+  const HeaderWalletIdentity = authIdentityActionable ? "button" : "div";
+  const showHeaderWallet = effectiveActiveViewId !== "winners";
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
   const [xFollowOverlayDismissed, setXFollowOverlayDismissed] = useState(false);
   const xFollowGateRequired = authConfig?.xFollowGate?.required !== false;
   const voteRequiresXFollow = authEndpointReady && xFollowGateRequired && !authSession?.xFollow?.gatePassed;
-  const showOptionalXFollowButton = authEndpointReady && !xFollowGateRequired && activeViewId === "vote";
+  const showOptionalXFollowButton = authEndpointReady && !xFollowGateRequired && effectiveActiveViewId === "vote";
   const canDismissXFollowOverlay = !voteRequiresXFollow || isLocalTestOrigin();
   const closeXFollowOverlay = useCallback(() => {
     if (voteRequiresXFollow && canDismissXFollowOverlay) {
@@ -539,7 +558,7 @@ export function ControlRoom({
     }
     setXFollowPanelOpen(false);
   }, [canDismissXFollowOverlay, voteRequiresXFollow]);
-  const showXFollowOverlay = activeViewId === "vote"
+  const showXFollowOverlay = effectiveActiveViewId === "vote"
     && !authSession?.xFollow?.gatePassed
     && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
     && (voteRequiresXFollow || (showOptionalXFollowButton && xFollowPanelOpen));
@@ -553,23 +572,29 @@ export function ControlRoom({
   }
 
   useEffect(() => {
+    if (!drawViewEnabled && activeViewId === "draw") {
+      onSelectView("home");
+    }
+  }, [activeViewId, drawViewEnabled, onSelectView]);
+
+  useEffect(() => {
     let cancelPreloadJobs = () => {};
     const cancelStart = scheduleIdleWork(() => {
-      cancelPreloadJobs = preloadInactiveRooms(activeViewId);
+      cancelPreloadJobs = preloadInactiveRooms(effectiveActiveViewId, visibleCommandViews);
     }, 900);
 
     return () => {
       cancelStart();
       cancelPreloadJobs();
     };
-  }, [activeViewId]);
+  }, [drawViewEnabled, effectiveActiveViewId, visibleCommandViews]);
 
   useEffect(() => {
-    if (activeViewId !== "vote" || authSession?.xFollow?.gatePassed || !voteRequiresXFollow) {
+    if (effectiveActiveViewId !== "vote" || authSession?.xFollow?.gatePassed || !voteRequiresXFollow) {
       setXFollowPanelOpen(false);
       setXFollowOverlayDismissed(false);
     }
-  }, [activeViewId, authSession?.xFollow?.gatePassed, voteRequiresXFollow]);
+  }, [effectiveActiveViewId, authSession?.xFollow?.gatePassed, voteRequiresXFollow]);
 
   useEffect(() => {
     if (!showXFollowOverlay || !canDismissXFollowOverlay) return undefined;
@@ -583,7 +608,7 @@ export function ControlRoom({
   }, [showXFollowOverlay, canDismissXFollowOverlay, closeXFollowOverlay]);
 
   return (
-    <main className="control-room" data-view={activeViewId} data-simulation={simulationMode}>
+    <main className="control-room" data-view={effectiveActiveViewId} data-simulation={simulationMode}>
       <header className={mobileNavOpen ? "control-header is-mobile-nav-open" : "control-header"} aria-label={t("nav.aria")}>
         <Magnet as="button" className="brand-lockup" type="button" strength={80} onClick={() => onSelectView("home")} aria-label={t("brand.homeAria")}>
           <img src={renaissLogo} alt="" aria-hidden="true" />
@@ -603,7 +628,14 @@ export function ControlRoom({
           {mobileNavOpen ? <X size={18} strokeWidth={2.35} /> : <Menu size={18} strokeWidth={2.35} />}
           <span>{t(`nav.${activeView.id}`)}</span>
         </button>
-        <ViewMenu id="control-view-menu" activeViewId={activeViewId} onSelectView={onSelectView} t={t} />
+        <ViewMenu
+          id="control-view-menu"
+          activeViewId={effectiveActiveViewId}
+          onSelectView={onSelectView}
+          t={t}
+          views={visibleCommandViews}
+          winnersAlert={currentUserWinnerCount > 0}
+        />
         <LanguageSwitch />
         {showOptionalXFollowButton ? (
           <button
@@ -619,44 +651,50 @@ export function ControlRoom({
             <span>{authSession?.xFollow?.gatePassed ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>
           </button>
         ) : null}
-        <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
-          <button type="button" className="header-wallet__identity" onClick={showAuthState ? onRequestLogin : undefined}>
-            <WalletCards size={18} strokeWidth={2.1} />
-            {showAuthState ? (
-              <>
-                <span>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</span>
-                <strong>{authWalletLinked ? `${formatNumber(activeEntry?.finalTickets)} ${t("common.tickets")}` : t("auth.loginDetail")}</strong>
-              </>
-            ) : (
-              <>
-                <span>{compactAddress(activeEntry?.userAddress)}</span>
-                <strong>{formatNumber(activeEntry?.finalTickets)} {t("common.tickets")}</strong>
-              </>
-            )}
-          </button>
-          {showAuthState && authSession?.authenticated ? (
-            <button className="header-wallet__logout" type="button" onClick={handleLogout} aria-label={t("auth.logout")}>
-              <LogOut size={15} strokeWidth={2.25} />
-            </button>
-          ) : null}
-        </section>
+        {showHeaderWallet ? (
+          <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
+            <HeaderWalletIdentity
+              className={authIdentityActionable ? "header-wallet__identity" : "header-wallet__identity is-static"}
+              {...(authIdentityActionable ? { type: "button", onClick: onRequestLogin } : {})}
+            >
+              <WalletCards size={18} strokeWidth={2.1} />
+              {showAuthState ? (
+                <>
+                  <span>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</span>
+                  <strong>{authWalletLinked ? `${formatNumber(activeEntry?.finalTickets)} ${t("common.tickets")}` : t("auth.loginDetail")}</strong>
+                </>
+              ) : (
+                <>
+                  <span>{compactAddress(activeEntry?.userAddress)}</span>
+                  <strong>{formatNumber(activeEntry?.finalTickets)} {t("common.tickets")}</strong>
+                </>
+              )}
+            </HeaderWalletIdentity>
+            {showAuthState && authSession?.authenticated ? (
+              <button className="header-wallet__logout" type="button" onClick={handleLogout} aria-label={t("auth.logout")}>
+                <LogOut size={15} strokeWidth={2.25} />
+              </button>
+            ) : null}
+          </section>
+        ) : null}
       </header>
 
-      <section className={activeViewId === "home" ? "room-shell is-home" : "room-shell"} id="top" aria-label={`${t(`nav.${activeView.id}`)} ${t("common.workspace")}`}>
-        {activeViewId === "home" ? (
-          <HomeRoom
-            activeRound={activeRound}
-            matches={matches}
-            milestones={milestones}
-            currentMilestoneValue={currentMilestoneValue}
-            rounds={rounds}
-            onSelectView={onSelectView}
-          />
-        ) : (
+      <section className={effectiveActiveViewId === "home" ? "room-shell is-home" : "room-shell"} id="top" aria-label={`${t(`nav.${activeView.id}`)} ${t("common.workspace")}`}>
+        <HomeRoom
+          activeRound={activeRound}
+          matches={matches}
+          milestones={milestones}
+          currentMilestoneValue={currentMilestoneValue}
+          rounds={rounds}
+          onSelectView={onSelectView}
+          isActive={effectiveActiveViewId === "home"}
+        />
+
+        {effectiveActiveViewId !== "home" ? (
           <>
             {showRoomMast ? (
               <RoomCommandMast
-                activeViewId={activeViewId}
+                activeViewId={effectiveActiveViewId}
                 activeRound={activeRound}
                 activeDraw={activeDraw}
                 matchStateCounts={matchStateCounts}
@@ -666,7 +704,7 @@ export function ControlRoom({
               />
             ) : null}
 
-            {!["draw", "winners"].includes(activeViewId) ? (
+            {!["draw", "winners"].includes(effectiveActiveViewId) ? (
               <RoundSwitch
                 rounds={rounds}
                 activeRoundId={activeRoundId}
@@ -682,10 +720,10 @@ export function ControlRoom({
               />
             ) : null}
           </>
-        )}
+        ) : null}
 
         <Suspense fallback={<RoomLoadingShell t={t} />}>
-          {activeViewId === "schedule" ? (
+          {effectiveActiveViewId === "schedule" ? (
             <LazyScheduleRoom
               activeRound={activeRound}
               activeRoundId={activeRoundId}
@@ -703,7 +741,7 @@ export function ControlRoom({
             />
           ) : null}
 
-          {activeViewId === "vote" ? (
+          {effectiveActiveViewId === "vote" ? (
             <LazyVoteRoom
               ledger={ledger}
               ledgerIssue={ledgerIssue}
@@ -760,7 +798,7 @@ export function ControlRoom({
             </section>
           ) : null}
 
-          {activeViewId === "draw" ? (
+          {effectiveActiveViewId === "draw" && drawViewEnabled ? (
             <LazyDrawRoom
               activeRound={activeRound}
               rounds={rounds}
@@ -772,13 +810,15 @@ export function ControlRoom({
             />
           ) : null}
 
-          {activeViewId === "winners" ? (
+          {effectiveActiveViewId === "winners" ? (
             <LazyWinnersRoom
               rounds={rounds}
               matches={matches}
               drawStats={drawStats}
               winnerRevealData={winnerRevealData}
               winnerRevealIssue={winnerRevealIssue}
+              currentWalletAddress={currentWinnerWalletAddress}
+              currentUserWinnerCount={currentUserWinnerCount}
             />
           ) : null}
         </Suspense>

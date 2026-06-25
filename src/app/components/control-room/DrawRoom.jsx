@@ -141,9 +141,12 @@ function ResultTable({ matches, teamsById, copy }) {
 }
 
 function UserDrawStatus({ activeDraw, t }) {
-  const hasEligible = activeDraw.eligibleEntries > 0;
-  const hasPending = activeDraw.pendingEntries > 0;
-  const hasLost = activeDraw.lostEntries > 0;
+  const eligibleEntries = activeDraw.userEligibleEntries ?? activeDraw.eligibleEntries;
+  const pendingEntries = activeDraw.userPendingEntries ?? activeDraw.pendingEntries;
+  const lostEntries = activeDraw.userLostEntries ?? activeDraw.lostEntries;
+  const hasEligible = eligibleEntries > 0;
+  const hasPending = pendingEntries > 0;
+  const hasLost = lostEntries > 0;
   const status = hasEligible ? t("draw.eligibleBeforeReveal") : hasPending ? t("draw.pendingResult") : t("draw.notEligibleYet");
   const reason = hasEligible
     ? t("draw.correctOfficial")
@@ -160,13 +163,13 @@ function UserDrawStatus({ activeDraw, t }) {
       <p>{reason}</p>
       <dl>
         <dt>{t("draw.eligibleEntries")}</dt>
-        <dd>{formatNumber(activeDraw.eligibleEntries)}</dd>
+        <dd>{formatNumber(eligibleEntries)}</dd>
         <dt>{t("common.totalPool")}</dt>
         <dd>{formatNumber(activeDraw.totalPoolEntries)}</dd>
         <dt>{t("draw.estimatedChance")}</dt>
         <dd>{formatPercent(activeDraw.estimatedChance)}</dd>
         <dt>{t("draw.lostEntries")}</dt>
-        <dd>{hasLost ? formatNumber(activeDraw.lostEntries) : "0"}</dd>
+        <dd>{hasLost ? formatNumber(lostEntries) : "0"}</dd>
         <dt>{t("draw.revealStatus")}</dt>
         <dd>{activeDraw.drawStatusResolved === "revealed" ? t("draw.revealed") : t("draw.awaitingReveal")}</dd>
         <dt>{t("draw.wonNotWon")}</dt>

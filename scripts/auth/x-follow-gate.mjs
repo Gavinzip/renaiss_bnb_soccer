@@ -194,6 +194,21 @@ function getSessionXIdentity(auth, session) {
   return xIdentityFromSession(session)
 }
 
+function checkWalletXIdentity(auth, session, xIdentity = null) {
+  if (!auth.userProfileStore?.checkXIdentityForWallet) {
+    return {
+      ok: false,
+      code: 'profile_store_missing',
+      expectedUsername: null,
+      actualUsername: xIdentity?.username || null,
+    }
+  }
+  return auth.userProfileStore.checkXIdentityForWallet({
+    walletAddress: session?.walletAddress,
+    identity: xIdentity,
+  })
+}
+
 function statusForSession(auth, session, request) {
   const config = auth.xFollowGateConfig
   const xIdentity = session ? getSessionXIdentity(auth, session) : null
@@ -261,11 +276,46 @@ function statusForSession(auth, session, request) {
     connectionStatus: Array.isArray(record?.connectionStatus) ? record.connectionStatus : [],
   }
 
+  const walletIdentityCheck = subject?.type === 'wallet'
+    ? checkWalletXIdentity(auth, session, null)
+    : { ok: false, code: 'wallet_required', expectedUsername: null, actualUsername: null }
+
+  if (!walletIdentityCheck.ok) {
+    return {
+      ...common,
+      verified: false,
+      gatePassed: false,
+      xConnected: Boolean(xIdentity?.providerUserId),
+      xUserId: xIdentity?.providerUserId || null,
+      username: xIdentity?.username || null,
+      xIdentityMatch: false,
+      expectedTwitterUsername: walletIdentityCheck.expectedUsername || null,
+      status: walletIdentityCheck.code,
+    }
+  }
+
   if (!xIdentity?.providerUserId) {
     return {
       ...common,
       xConnected: false,
+      xIdentityMatch: null,
+      expectedTwitterUsername: walletIdentityCheck.expectedUsername || null,
       status: common.status || 'x_login_required',
+    }
+  }
+
+  const xIdentityCheck = checkWalletXIdentity(auth, session, xIdentity)
+  if (!xIdentityCheck.ok) {
+    return {
+      ...common,
+      verified: false,
+      gatePassed: false,
+      xConnected: true,
+      xUserId: xIdentity.providerUserId,
+      username: xIdentity.username || null,
+      xIdentityMatch: false,
+      expectedTwitterUsername: xIdentityCheck.expectedUsername || null,
+      status: xIdentityCheck.code,
     }
   }
 
@@ -274,6 +324,8 @@ function statusForSession(auth, session, request) {
     xConnected: true,
     xUserId: xIdentity.providerUserId,
     username: xIdentity.username || null,
+    xIdentityMatch: true,
+    expectedTwitterUsername: xIdentityCheck.expectedUsername || null,
     status: common.status || 'unverified',
   }
 }
@@ -551,6 +603,13 @@ export async function verifyXFollow(auth, session, request) {
     })
   }
   if (status.gatePassed) return status
+  if (['wallet_required', 'profile_store_missing', 'renaiss_twitter_required', 'twitter_identity_missing', 'twitter_identity_mismatch'].includes(status.status)) {
+    throw Object.assign(new Error('X identity does not match the Renaiss Twitter account for this wallet.'), {
+      statusCode: status.status === 'profile_store_missing' ? 503 : 403,
+      code: status.status,
+      status,
+    })
+  }
   if (!status.xConnected) {
     throw Object.assign(new Error('Connect X before verifying follow status.'), {
       statusCode: 403,

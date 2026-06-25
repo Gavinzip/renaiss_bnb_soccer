@@ -4,7 +4,7 @@ import {
   Ticket,
 } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
-import { formatNumber } from "../../data/ticketMath";
+import { estimateMultiPrizeChance, formatNumber } from "../../data/ticketMath";
 import { MatchPrizeImageDialog } from "./MatchPrizeImageDialog";
 
 const voteableStatuses = new Set(["open", "closing_soon"]);
@@ -39,6 +39,13 @@ function getTeamVoteOutcome(roundVoteOutcomes, matchId, teamId) {
 
 function getTeamAllocation(roundAllocations, matchId, teamId) {
   return roundAllocations.find((entry) => entry.matchId === matchId && entry.teamId === teamId) ?? null;
+}
+
+function formatHitRate(value) {
+  const percent = Math.max(0, Number(value) || 0) * 100;
+  if (percent > 0 && percent < 0.0001) return "<0.0001%";
+  if (percent < 0.01) return `${percent.toFixed(4)}%`;
+  return `${percent.toFixed(2)}%`;
 }
 
 function getScrollInsetTop(element) {
@@ -150,11 +157,13 @@ export function MatchPrizeList({
                   const isWinner = match.advancingTeamId === team.id;
                   const isEliminated = Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);
                   const voteOutcome = getTeamVoteOutcome(roundVoteOutcomes, match.id, team.id);
-                  const voteOutcomeStatusKey = voteOutcome?.result === "lost"
-                    ? "vote.voteOutcomeMiss"
-                    : voteOutcome?.result === "won"
-                      ? "vote.voteOutcomeHit"
-                      : "vote.voteOutcomePending";
+                  const hitRate = voteOutcome
+                    ? formatHitRate(estimateMultiPrizeChance(
+                      voteOutcome.tickets,
+                      team.votes,
+                      activeRound?.matchPrizeSlotCount || 1,
+                    ))
+                    : "";
 
                   return (
                     <Fragment key={team.id}>
@@ -177,19 +186,27 @@ export function MatchPrizeList({
                         aria-pressed={isSelectedTeam}
                       >
                         <img src={team.flagSrc} alt="" aria-hidden="true" />
-                        <span>
-                          <strong>{teamName(team)}</strong>
+                        <span className="match-prize-team__copy">
+                          <span className="match-prize-team__title-row">
+                            <strong>{teamName(team)}</strong>
+                            {voteOutcome ? (
+                              <b className={[
+                                "match-prize-team__vote-result",
+                                `is-${voteOutcome.result}`,
+                              ].join(" ")}
+                              >
+                                <span>
+                                  <small>{t("vote.voteOutcomeTicketsLabel")}</small>
+                                  <strong>{formatNumber(voteOutcome.tickets)}</strong>
+                                </span>
+                                <span>
+                                  <small>{t("vote.voteOutcomeHitRateLabel")}</small>
+                                  <strong>{hitRate}</strong>
+                                </span>
+                              </b>
+                            ) : null}
+                          </span>
                           <small>{compactVotes(team.votes)}</small>
-                          {voteOutcome ? (
-                            <b className={[
-                              "match-prize-team__vote-result",
-                              `is-${voteOutcome.result}`,
-                            ].join(" ")}
-                            >
-                              <span>{t("vote.voteOutcomeTickets", { tickets: formatNumber(voteOutcome.tickets) })}</span>
-                              <span>{t(voteOutcomeStatusKey)}</span>
-                            </b>
-                          ) : null}
                         </span>
                       </button>
                       {teamIndex === 0 ? (
