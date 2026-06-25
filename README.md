@@ -34,8 +34,8 @@ dev, keep `npm run local:server` running in another terminal and run:
 npm run local:dev
 ```
 
-The Vite dev server uses `http://localhost:5173` because the current Renaiss SSO
-local redirect URI is exact-match allowlisted as `http://localhost:5173/auth/callback`.
+The Renaiss SSO redirect URI can be left blank in local env. The auth server derives
+`/auth/callback` from the current app origin when starting the OAuth flow.
 
 `npm run local:seed` writes local-only demo data to `.local-data/soccer`:
 
@@ -181,10 +181,10 @@ AUTH_COOKIE_SECURE=1
 AUTH_SUCCESS_REDIRECT_PATH=/?auth=success
 AUTH_ERROR_REDIRECT_PATH=/?auth=error
 PUBLIC_APP_ORIGIN=https://renaiss-worldcup.zeabur.app
-RENAISS_ISSUER=https://feat-sso-oidc-provider.vercel.app/api/auth
-RENAISS_CLIENT_ID=renaiss-worldcup
+RENAISS_ISSUER=http://dev-main-renaiss.vercel.app/api/auth
+RENAISS_CLIENT_ID=rpk_LwlN7dGlYWSSLgNnAeHNsug1
 RENAISS_CLIENT_SECRET=...
-RENAISS_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/auth/callback
+RENAISS_REDIRECT_URI=
 RENAISS_SCOPE=openid profile email safe x
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...

@@ -224,7 +224,7 @@ function providerConfigured(providerConfig, provider) {
   return Boolean(
     config?.clientId
     && (!config.requiresClientSecret || config.clientSecret)
-    && (!config.requiresRedirectUri || config.redirectUri),
+    && (!config.requiresRedirectUri || config.redirectUri || config.oidc),
   )
 }
 
