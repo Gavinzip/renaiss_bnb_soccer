@@ -21,6 +21,7 @@ import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { commandViews } from "../../data/campaignRuntime";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { scheduleIdleWork } from "../../utils/preloadAssets";
+import { requestRenaissProviderSignOut } from "../../utils/renaissAuth";
 import { AnimatedContent } from "../AnimatedContent";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
@@ -563,11 +564,12 @@ export function ControlRoom({
     && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
     && (voteRequiresXFollow || (showOptionalXFollowButton && xFollowPanelOpen));
 
-  function handleLogout() {
+  async function handleLogout() {
     if (typeof window === "undefined") return;
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     const logoutUrl = new URL("/api/auth/logout", window.location.origin);
     logoutUrl.searchParams.set("return_to", returnTo);
+    await requestRenaissProviderSignOut(authSession, authConfig);
     window.location.assign(`${logoutUrl.pathname}${logoutUrl.search}`);
   }
 

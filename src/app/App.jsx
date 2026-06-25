@@ -38,6 +38,7 @@ import { useCampaignCopy } from "./i18n/useCampaignCopy";
 import renaissLogo from "./assets/renaiss-logo-mark.webp";
 import { installGoogleAnalytics, trackEvent, trackPageView } from "./utils/analytics";
 import { preloadImage } from "./utils/preloadAssets";
+import { requestRenaissProviderSignOut } from "./utils/renaissAuth";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
 const INITIAL_LOADER_EXIT_MS = 540;
@@ -91,6 +92,7 @@ function buildRenaissLoginUrl() {
   const url = new URL("/api/auth/renaiss/start", authOrigin);
   url.searchParams.set("return_to", returnTo);
   url.searchParams.set("prompt", "login");
+  url.searchParams.set("max_age", "0");
   return url.origin === window.location.origin ? `${url.pathname}${url.search}` : url.toString();
 }
 
@@ -730,9 +732,10 @@ function AppContent() {
     setSelectedTeamId(teamId);
   }
 
-  function redirectToRenaissLogin() {
+  async function redirectToRenaissLogin() {
     if (typeof window === "undefined") return;
     if (authMeUrl && authSession?.authenticated) return;
+    await requestRenaissProviderSignOut(authSession, authSession?.config);
     window.location.assign(buildRenaissLoginUrl());
   }
 

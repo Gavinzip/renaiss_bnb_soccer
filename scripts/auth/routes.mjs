@@ -30,7 +30,6 @@ import {
 import {
   clearOAuthTokensForSession,
   createOAuthTokenConfig,
-  readOAuthToken,
   saveOAuthToken,
 } from './oauth-token-store.mjs'
 import { buildLoginAudit } from './request-audit.mjs'
@@ -76,6 +75,12 @@ function readRenaissPromptOverride(url, provider) {
   if (provider !== 'renaiss') return ''
   const prompt = String(url.searchParams.get('prompt') || '').trim()
   return RENAISS_PROMPT_VALUES.has(prompt) ? prompt : ''
+}
+
+function readRenaissMaxAgeOverride(url, provider) {
+  if (provider !== 'renaiss') return ''
+  const maxAge = String(url.searchParams.get('max_age') || '').trim()
+  return /^\d+$/.test(maxAge) ? maxAge : ''
 }
 
 function createPkcePair() {
@@ -404,26 +409,30 @@ function assertXIdentityMatchesWalletProfile(auth, session, identity) {
   })
 }
 
-async function createRenaissEndSessionUrl(auth, request, session, returnTo) {
-  if (session?.identity?.provider !== 'renaiss') return ''
-  const token = readOAuthToken(auth.oauthTokenConfig, session, 'renaiss')
-  const idToken = String(token?.id_token || '').trim()
-  if (!idToken) return ''
+function createRenaissProviderSignOutUrl(issuer) {
+  const base = String(issuer || '').trim().replace(/\/+$/, '')
+  if (!base) return ''
+  try {
+    return new URL(`${base}/sign-out`).toString()
+  } catch {
+    return ''
+  }
+}
 
+async function getRenaissPublicConfig(auth) {
   const config = auth.providerConfig.renaiss
-  if (!providerConfigured(auth.providerConfig, 'renaiss')) return ''
+  if (!providerConfigured(auth.providerConfig, 'renaiss')) return null
 
-  const { doc } = await getRenaissDiscovery(config)
-  const endpoint = String(doc.end_session_endpoint || '').trim()
-  if (!endpoint) return ''
-
-  const origin = auth.env.PUBLIC_APP_ORIGIN || auth.env.AUTH_PUBLIC_ORIGIN || getRequestOrigin(request)
-  const redirectPath = safeReturnTo(returnTo) || '/'
-  const logoutUrl = new URL(endpoint)
-  logoutUrl.searchParams.set('id_token_hint', idToken)
-  logoutUrl.searchParams.set('client_id', config.clientId)
-  logoutUrl.searchParams.set('post_logout_redirect_uri', new URL(redirectPath, origin).toString())
-  return logoutUrl.toString()
+  try {
+    const { doc } = await getRenaissDiscovery(config)
+    return {
+      signOutUrl: createRenaissProviderSignOutUrl(doc.issuer || config.issuer),
+    }
+  } catch {
+    return {
+      signOutUrl: createRenaissProviderSignOutUrl(config.issuer),
+    }
+  }
 }
 
 export function createAuthContext({ dataDir, env = process.env, userProfileStore = null }) {
@@ -497,6 +506,8 @@ export async function handleAuthRoute({
 
   if (routePathname === '/api/auth/me') {
     const session = readAuthSession(auth, request)
+    const publicConfig = getAuthPublicStatus(auth)
+    publicConfig.renaiss = await getRenaissPublicConfig(auth)
     sendJsonResponse(sendJson, request, response, 200, {
       authenticated: Boolean(session),
       identity: session?.identity || null,
@@ -504,7 +515,7 @@ export async function handleAuthRoute({
       resolver: session?.resolver || null,
       xFollow: getXFollowStatus(auth, session, request),
       requiresWalletLink: Boolean(session && !session.walletAddress),
-      config: getAuthPublicStatus(auth),
+      config: publicConfig,
     })
     return true
   }
@@ -578,20 +589,12 @@ export async function handleAuthRoute({
       return true
     }
     const session = readAuthSession(auth, request)
-    let upstreamLogoutUrl = ''
-    try {
-      upstreamLogoutUrl = await createRenaissEndSessionUrl(auth, request, session, url.searchParams.get('return_to'))
-    } catch (error) {
-      console.warn('[auth] renaiss end-session URL failed', {
-        message: sanitizeAuthError(error),
-      })
-    }
     clearSession(auth.sessionConfig, request, response)
     clearOAuthTokensForSession(auth.oauthTokenConfig, session?.id)
     const currentSetCookie = response.getHeader('set-cookie')
     const headers = appendSetCookie({ 'set-cookie': currentSetCookie }, clearXFollowSkipCookie(auth))
     if (request.method === 'GET') {
-      redirect(response, upstreamLogoutUrl || safeReturnTo(url.searchParams.get('return_to')) || '/', headers)
+      redirect(response, safeReturnTo(url.searchParams.get('return_to')) || '/', headers)
       return true
     }
     sendJsonResponse(sendJson, request, response, 200, { ok: true }, headers)
@@ -640,7 +643,9 @@ export async function handleAuthRoute({
     const authorizeUrl = new URL(authorizationEndpoint)
     const authParams = { ...(config.authParams || {}) }
     const promptOverride = readRenaissPromptOverride(url, provider)
+    const maxAgeOverride = readRenaissMaxAgeOverride(url, provider)
     if (promptOverride) authParams.prompt = promptOverride
+    if (maxAgeOverride) authParams.max_age = maxAgeOverride
     authorizeUrl.searchParams.set('response_type', 'code')
     authorizeUrl.searchParams.set('client_id', config.clientId)
     authorizeUrl.searchParams.set('redirect_uri', redirectUri)
