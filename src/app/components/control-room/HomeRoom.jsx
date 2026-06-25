@@ -82,6 +82,71 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef, enabled = true) {
 
     let frameId = 0;
     let duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 6;
+    let latestTargetTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    let mobileScrubUnlocked = false;
+    let mobileScrubBlocked = false;
+    let mobileScrubPrimePromise = null;
+    let mobileScrubPauseTimer = 0;
+    const coarsePointerQuery = window.matchMedia?.("(pointer: coarse)");
+    const shouldPrimeMobileScrub = Boolean(coarsePointerQuery?.matches);
+
+    const prepareMobileScrubVideo = () => {
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+    };
+
+    const pauseMobileScrubAtTarget = () => {
+      if (!shouldPrimeMobileScrub) return;
+      if (mobileScrubPauseTimer) window.clearTimeout(mobileScrubPauseTimer);
+
+      mobileScrubPauseTimer = window.setTimeout(() => {
+        mobileScrubPauseTimer = 0;
+        video.pause();
+        if (Number.isFinite(latestTargetTime)) {
+          video.currentTime = latestTargetTime;
+        }
+      }, 90);
+    };
+
+    const keepMobileScrubDecoderWarm = (event) => {
+      if (!shouldPrimeMobileScrub) return;
+      if (document.visibilityState === "hidden") return;
+      if (video.readyState < 2) {
+        if (!video.paused) pauseMobileScrubAtTarget();
+        return;
+      }
+
+      const isGesture = event?.type === "pointerdown" || event?.type === "touchstart";
+      if (mobileScrubBlocked && !mobileScrubUnlocked && !isGesture) return;
+
+      prepareMobileScrubVideo();
+
+      if (mobileScrubUnlocked) {
+        video.play()
+          .then(pauseMobileScrubAtTarget)
+          .catch(() => undefined);
+        return;
+      }
+
+      if (mobileScrubPrimePromise) return;
+
+      mobileScrubPrimePromise = video.play()
+        .then(() => {
+          mobileScrubUnlocked = true;
+          mobileScrubBlocked = false;
+          if (Number.isFinite(latestTargetTime)) video.currentTime = latestTargetTime;
+          pauseMobileScrubAtTarget();
+        })
+        .catch(() => {
+          video.pause();
+          mobileScrubBlocked = true;
+        })
+        .finally(() => {
+          mobileScrubPrimePromise = null;
+        });
+    };
 
     const syncVideoToScroll = () => {
       frameId = 0;
@@ -93,10 +158,12 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef, enabled = true) {
       const progress = Math.min(1, Math.max(0, (window.scrollY - containerTop) / travel));
       const targetTime = Math.min(Math.max(0, duration - 0.02), Math.max(0, progress * duration));
 
-      video.pause();
+      latestTargetTime = targetTime;
+      if (!shouldPrimeMobileScrub) video.pause();
       if (Number.isFinite(targetTime)) {
         video.currentTime = targetTime;
       }
+      keepMobileScrubDecoderWarm();
     };
 
     const requestSync = () => {
@@ -109,7 +176,14 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef, enabled = true) {
       requestSync();
     };
 
+    const handleMobilePlay = () => {
+      if (shouldPrimeMobileScrub) pauseMobileScrubAtTarget();
+    };
+
     video.addEventListener("loadedmetadata", handleMetadata);
+    video.addEventListener("play", handleMobilePlay);
+    window.addEventListener("pointerdown", keepMobileScrubDecoderWarm, { passive: true });
+    window.addEventListener("touchstart", keepMobileScrubDecoderWarm, { passive: true });
     window.addEventListener("scroll", requestSync, { passive: true });
     window.addEventListener("resize", requestSync);
     window.addEventListener("visibilitychange", requestSync);
@@ -119,7 +193,11 @@ function useScrollScrubbedHomeVideo(containerRef, videoRef, enabled = true) {
 
     return () => {
       if (frameId) window.cancelAnimationFrame(frameId);
+      if (mobileScrubPauseTimer) window.clearTimeout(mobileScrubPauseTimer);
       video.removeEventListener("loadedmetadata", handleMetadata);
+      video.removeEventListener("play", handleMobilePlay);
+      window.removeEventListener("pointerdown", keepMobileScrubDecoderWarm);
+      window.removeEventListener("touchstart", keepMobileScrubDecoderWarm);
       window.removeEventListener("scroll", requestSync);
       window.removeEventListener("resize", requestSync);
       window.removeEventListener("visibilitychange", requestSync);
@@ -405,6 +483,7 @@ export function HomeRoom({
           className="home-video-backdrop__video"
           ref={heroVideoRef}
           poster={heroImage}
+          autoPlay
           muted
           playsInline
           preload="auto"
