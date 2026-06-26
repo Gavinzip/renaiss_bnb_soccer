@@ -1,0 +1,287 @@
+.header-wallet__identity:not(.is-static):hover,
+.header-wallet__identity:not(.is-static):focus-visible {
+  color: rgba(255, 241, 203, 0.94);
+  outline: none;
+}
+
+.header-wallet__identity:not(.is-static):focus-visible {
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(240, 209, 139, 0.18);
+}
+
+.ticket-source-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 450;
+  display: grid;
+  place-items: center;
+  padding: clamp(14px, 3vw, 34px);
+  background: rgba(1, 2, 2, 0.68);
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.ticket-source-panel {
+  width: min(100%, 680px);
+  max-height: min(780px, calc(100svh - 34px));
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+  border: 1px solid rgba(245, 246, 241, 0.14);
+  border-radius: 18px;
+  background: rgba(10, 12, 12, 0.9);
+  color: rgba(245, 246, 241, 0.9);
+  box-shadow:
+    0 34px 120px rgba(0, 0, 0, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.ticket-source-panel.is-empty {
+  border-color: rgba(240, 209, 139, 0.22);
+}
+
+.ticket-source-panel__head,
+.ticket-source-wallet,
+.ticket-source-section header,
+.ticket-source-packs li,
+.ticket-source-intervals li {
+  display: flex;
+  align-items: center;
+}
+
+.ticket-source-panel__head {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.ticket-source-panel__head div {
+  display: grid;
+  gap: 4px;
+}
+
+.ticket-source-panel__head span,
+.ticket-source-wallet span,
+.ticket-source-section header span,
+.ticket-source-stats dt,
+.ticket-source-meta dt,
+.ticket-source-section__hint {
+  color: rgba(245, 246, 241, 0.52);
+  font-size: 0.68rem;
+  font-weight: 820;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ticket-source-panel__head strong {
+  color: rgba(255, 245, 218, 0.96);
+  font-size: 1.15rem;
+  line-height: 1.05;
+}
+
+.ticket-source-panel__head button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(245, 246, 241, 0.14);
+  border-radius: 999px;
+  background: rgba(245, 246, 241, 0.06);
+  color: rgba(245, 246, 241, 0.86);
+  cursor: pointer;
+}
+
+.ticket-source-panel__head button:hover,
+.ticket-source-panel__head button:focus-visible {
+  color: #f3d99b;
+  border-color: rgba(243, 217, 155, 0.42);
+  outline: none;
+}
+
+.ticket-source-wallet {
+  min-width: 0;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(245, 246, 241, 0.1);
+  border-radius: 12px;
+  background: rgba(245, 246, 241, 0.045);
+}
+
+.ticket-source-wallet svg {
+  flex: 0 0 auto;
+  color: rgba(240, 209, 139, 0.92);
+}
+
+.ticket-source-wallet div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.ticket-source-wallet strong,
+.ticket-source-addresses code,
+.ticket-source-intervals code {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(245, 246, 241, 0.88);
+  font-family: "SFMono-Regular", "Roboto Mono", Consolas, monospace;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-source-panel__note,
+.ticket-source-section p {
+  margin: 0;
+  color: rgba(245, 246, 241, 0.62);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.ticket-source-stats,
+.ticket-source-meta {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.ticket-source-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ticket-source-stats div,
+.ticket-source-meta div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+  border: 1px solid rgba(245, 246, 241, 0.09);
+  border-radius: 12px;
+  background: rgba(245, 246, 241, 0.04);
+}
+
+.ticket-source-stats dd,
+.ticket-source-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 241, 203, 0.94);
+  font-weight: 840;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-source-stats dd {
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.ticket-source-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ticket-source-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.ticket-source-section header {
+  gap: 7px;
+  color: rgba(240, 209, 139, 0.9);
+}
+
+.ticket-source-addresses {
+  display: grid;
+  gap: 7px;
+}
+
+.ticket-source-addresses code,
+.ticket-source-addresses em {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(245, 246, 241, 0.09);
+  border-radius: 10px;
+  background: rgba(245, 246, 241, 0.04);
+}
+
+.ticket-source-addresses em {
+  color: rgba(245, 246, 241, 0.48);
+  font-size: 0.78rem;
+  font-style: normal;
+}
+
+.ticket-source-packs,
+.ticket-source-intervals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.ticket-source-packs li,
+.ticket-source-intervals li {
+  min-width: 0;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(245, 246, 241, 0.09);
+  border-radius: 10px;
+  background: rgba(245, 246, 241, 0.04);
+}
+
+.ticket-source-packs strong,
+.ticket-source-intervals strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(245, 246, 241, 0.9);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-source-packs span,
+.ticket-source-intervals span,
+.ticket-source-intervals small {
+  flex: 0 0 auto;
+  color: rgba(245, 246, 241, 0.52);
+  font-size: 0.75rem;
+  font-weight: 760;
+}
+
+.ticket-source-intervals li {
+  display: grid;
+  grid-template-columns: minmax(82px, 0.9fr) minmax(70px, 0.8fr) minmax(72px, 0.8fr) minmax(92px, 1fr);
+  align-items: center;
+}
+
+.ticket-source-intervals code {
+  justify-self: end;
+  color: rgba(240, 209, 139, 0.82);
+}
+
+@media (max-width: 680px) {
+  .ticket-source-panel {
+    width: 100%;
+    max-height: calc(100svh - 20px);
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .ticket-source-stats,
+  .ticket-source-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-source-intervals li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ticket-source-intervals small,
+  .ticket-source-intervals code {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
