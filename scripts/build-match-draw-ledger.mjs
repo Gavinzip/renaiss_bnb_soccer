@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { roundDefinitions } from '../src/app/data/worldCupCampaign.js'
 import { readEnvFile, toNumber } from './lucky-draw/utils.mjs'
-import { findLedgerEntryByAddress } from './soccer-ledger-api.mjs'
+import { findLedgerEntryByAddress, readLedgerPayload } from './soccer-ledger-api.mjs'
 import {
   buildMatchResultIndex,
   confirmedMatchResultFor,
@@ -397,7 +397,7 @@ function buildRoundDraws({ draws, args }) {
 }
 
 export function buildMatchDrawLedger(args) {
-  const baseLedger = readJsonFile(args.baseLedgerPath, 'base ticket ledger')
+  const baseLedger = readLedgerPayload(args.baseLedgerPath)
   const voteState = readConfiguredVoteState(args)
   const matchResults = readMatchResultsSnapshot(args.matchResultsPath)
   const resultIndex = buildMatchResultIndex(matchResults)

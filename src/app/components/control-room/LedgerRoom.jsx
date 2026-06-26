@@ -37,7 +37,7 @@ export function LedgerRoom({
 }) {
   const { dateTime, roundLabel, sourceLabel, t } = useCampaignCopy();
   const recalculatedRaw = calculateRawTickets(activeEntry?.packs, ledger.packRules);
-  const recalculatedFinal = calculateFinalTickets(recalculatedRaw, activeEntry?.sbtMultiplier ?? 1);
+  const recalculatedFinal = calculateFinalTickets(recalculatedRaw);
 
   return (
     <section className="ledger-room" aria-label={t("ledger.roomAria")}>
@@ -53,7 +53,7 @@ export function LedgerRoom({
             <CountUp value={ledger.totalFinalTickets} formatter={formatNumber} />
           </dd>
           <dt>{t("ledger.rawBonus")}</dt>
-          <dd>{formatNumber(ledger.totalRawTickets)} / {formatNumber(ledger.totalBonusTickets)}</dd>
+          <dd>{formatNumber(ledger.totalRawTickets)}</dd>
           <dt>{t("ledger.generated")}</dt>
           <dd>{dateTime((ledger.generatedAt || 0) * 1000)}</dd>
           <dt>{t("ledger.ledgerHash")}</dt>
@@ -81,8 +81,6 @@ export function LedgerRoom({
           <dd>{formatNumber(usedRoundTickets)}</dd>
           <dt>{t("ledger.ticketRange")}</dt>
           <dd>{ticketRangeLabel(activeEntry)}</dd>
-          <dt>{t("ledger.sbtMultiplier")}</dt>
-          <dd>{activeEntry?.sbt ?? t("ledger.none")} x{activeEntry?.sbtMultiplier ?? 1}</dd>
           <dt>{t("ledger.recalculatedLabel")}</dt>
           <dd>{t("ledger.recalculated", { raw: formatNumber(recalculatedRaw), final: formatNumber(recalculatedFinal) })}</dd>
         </dl>

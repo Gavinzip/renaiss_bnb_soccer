@@ -19,6 +19,8 @@ import {
   DEFAULT_VIEW_ID,
   commandViews,
   getRoundById,
+  normalizeFootballLedger,
+  normalizeFootballLedgerEntry,
   normalizeLedgerSummary,
   normalizeMilestoneSummary,
   summarizeRoundDraw,
@@ -137,24 +139,25 @@ function normalizeLedgerEntryPayload(payload) {
   const entry = payload?.entry;
   if (!entry || typeof entry !== "object") return null;
   const userAddress = normalizeWalletAddress(entry.userAddress ?? entry.user_address);
-  const finalTickets = Math.max(0, Math.floor(Number(entry.finalTickets ?? entry.final_tickets) || 0));
+  const normalizedEntry = normalizeFootballLedgerEntry(entry);
+  const finalTickets = Math.max(0, Math.floor(Number(normalizedEntry.finalTickets ?? normalizedEntry.final_tickets) || 0));
   if (!userAddress || finalTickets <= 0) return null;
 
   return {
-    ...entry,
+    ...normalizedEntry,
     userAddress,
-    sourceAddresses: Array.isArray(entry.sourceAddresses) ? entry.sourceAddresses : [],
-    packs: entry.packs && typeof entry.packs === "object" ? entry.packs : {},
-    rawTickets: Math.max(0, Math.floor(Number(entry.rawTickets ?? entry.raw_tickets) || 0)),
-    bonusTickets: Math.max(0, Math.floor(Number(entry.bonusTickets ?? entry.bonus_tickets) || 0)),
+    sourceAddresses: Array.isArray(normalizedEntry.sourceAddresses) ? normalizedEntry.sourceAddresses : [],
+    packs: normalizedEntry.packs && typeof normalizedEntry.packs === "object" ? normalizedEntry.packs : {},
+    rawTickets: Math.max(0, Math.floor(Number(normalizedEntry.rawTickets ?? normalizedEntry.raw_tickets) || 0)),
+    bonusTickets: 0,
     finalTickets,
-    sbt: String(entry.sbt ?? "none"),
-    sbtMultiplier: Number(entry.sbtMultiplier ?? entry.sbt_multiplier ?? 1),
-    eventCount: Math.max(0, Math.floor(Number(entry.eventCount ?? entry.event_count) || 0)),
-    firstBuybackAt: Math.max(0, Math.floor(Number(entry.firstBuybackAt ?? entry.first_buyback_at) || 0)),
-    lastBuybackAt: Math.max(0, Math.floor(Number(entry.lastBuybackAt ?? entry.last_buyback_at) || 0)),
-    ticketStart: entry.ticketStart ?? entry.ticket_start ?? null,
-    ticketEnd: entry.ticketEnd ?? entry.ticket_end ?? null,
+    sbt: "none",
+    sbtMultiplier: 1,
+    eventCount: Math.max(0, Math.floor(Number(normalizedEntry.eventCount ?? normalizedEntry.event_count) || 0)),
+    firstBuybackAt: Math.max(0, Math.floor(Number(normalizedEntry.firstBuybackAt ?? normalizedEntry.first_buyback_at) || 0)),
+    lastBuybackAt: Math.max(0, Math.floor(Number(normalizedEntry.lastBuybackAt ?? normalizedEntry.last_buyback_at) || 0)),
+    ticketStart: normalizedEntry.ticketStart ?? normalizedEntry.ticket_start ?? null,
+    ticketEnd: normalizedEntry.ticketEnd ?? normalizedEntry.ticket_end ?? null,
   };
 }
 
@@ -171,7 +174,7 @@ function AppContent() {
   const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL
     || (import.meta.env.PROD ? "/api/draw-winners" : "/mock-api/draw-winners.json");
   const authMeUrl = import.meta.env.VITE_AUTH_ME_URL || (import.meta.env.PROD ? "/api/auth/me" : "");
-  const [ledger, setLedger] = useState(verifiedLedgerSnapshot);
+  const [ledger, setLedger] = useState(() => normalizeFootballLedger(verifiedLedgerSnapshot));
   const [selectedLedgerEntry, setSelectedLedgerEntry] = useState(null);
   const [ledgerIssue, setLedgerIssue] = useState("");
   const [ledgerReady, setLedgerReady] = useState(!ledgerSummaryUrl);
@@ -319,7 +322,11 @@ function AppContent() {
 
     let cancelled = false;
 
-    fetch(urlWithWalletQuery(ledgerEntryUrl, selectedWallet), { cache: "no-store" })
+    fetch(urlWithQueryParams(ledgerEntryUrl, {
+      wallet: selectedWallet,
+      includeIntervals: "1",
+      intervalLimit: "12",
+    }), { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();

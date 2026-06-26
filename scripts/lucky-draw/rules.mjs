@@ -223,11 +223,3 @@ export function describePackEventSources(sources = getPackEventSources()) {
     configSource: source.configSource || 'built-in',
   }))
 }
-
-export function getSbtTier(rawTickets) {
-  if (rawTickets >= 600) return { sbt: 'rainbow', multiplier: 3 }
-  if (rawTickets >= 250) return { sbt: 'gold', multiplier: 2 }
-  if (rawTickets >= 100) return { sbt: 'silver', multiplier: 1.5 }
-  if (rawTickets >= 40) return { sbt: 'brown', multiplier: 1.2 }
-  return { sbt: 'none', multiplier: 1 }
-}

@@ -82,6 +82,207 @@ function preloadInactiveRooms(activeViewId, views = commandViews) {
   return () => cancelJobs.forEach((cancel) => cancel());
 }
 
+function toLedgerInteger(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0;
+}
+
+function compactHash(value) {
+  const hash = String(value || "");
+  if (hash.length <= 14) return hash || "-";
+  return `${hash.slice(0, 8)}...${hash.slice(-6)}`;
+}
+
+function formatLedgerTimestamp(value, dateTime) {
+  const timestamp = Number(value || 0);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "-";
+  return dateTime(timestamp * 1000);
+}
+
+function intervalTicketRange(interval) {
+  const start = interval?.displayStart ?? interval?.start;
+  const end = interval?.displayEnd ?? interval?.end ?? start;
+  if (!start) return "-";
+  return start === end ? `#${start}` : `#${start}-${end}`;
+}
+
+function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
+  const { dateTime, number, sourceLabel, t } = useCampaignCopy();
+  const inspectedAddress = walletAddress || entry?.userAddress || "";
+  const rawTickets = toLedgerInteger(entry?.rawTickets);
+  const finalTickets = toLedgerInteger(entry?.finalTickets);
+  const eventCount = toLedgerInteger(entry?.eventCount);
+  const rank = toLedgerInteger(entry?.rank);
+  const ticketIntervals = Array.isArray(entry?.ticketIntervals) ? entry.ticketIntervals : [];
+  const ticketIntervalCount = toLedgerInteger(entry?.ticketIntervalCount ?? ticketIntervals.length);
+  const matchedLedgerEntry = finalTickets > 0 || rawTickets > 0 || rank > 0;
+  const ledgerHash = ledger?.ledgerHash ? compactHash(ledger.ledgerHash) : "-";
+  const sourceAddresses = [...new Set([
+    inspectedAddress,
+    ...(Array.isArray(entry?.sourceAddresses) ? entry.sourceAddresses : []),
+  ].filter(Boolean))];
+  const visibleSourceAddresses = sourceAddresses.slice(0, 3);
+  const hiddenSourceAddressCount = Math.max(0, sourceAddresses.length - visibleSourceAddresses.length);
+  const packRuleMap = useMemo(
+    () => new Map((Array.isArray(ledger?.packRules) ? ledger.packRules : []).map((rule) => [rule.pack, rule])),
+    [ledger?.packRules],
+  );
+  const packRows = useMemo(() => Object.entries(entry?.packs || {})
+    .map(([pack, count]) => ({
+      pack,
+      count: toLedgerInteger(count),
+      rule: packRuleMap.get(pack),
+    }))
+    .filter((row) => row.count > 0)
+    .sort((left, right) => right.count - left.count || left.pack.localeCompare(right.pack)),
+  [entry?.packs, packRuleMap]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <aside className="ticket-source-layer" role="presentation" onClick={onClose}>
+      <section
+        className={matchedLedgerEntry ? "ticket-source-panel" : "ticket-source-panel is-empty"}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("ticketSource.aria")}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="ticket-source-panel__head">
+          <div>
+            <span>{t("ticketSource.eyebrow")}</span>
+            <strong>{t("ticketSource.title")}</strong>
+          </div>
+          <button type="button" onClick={onClose} aria-label={t("ticketSource.close")}>
+            <X size={18} strokeWidth={2.35} />
+          </button>
+        </header>
+
+        <section className="ticket-source-wallet">
+          <WalletCards size={19} strokeWidth={2.15} />
+          <div>
+            <span>{matchedLedgerEntry ? t("ticketSource.walletMatched") : t("ticketSource.walletMissing")}</span>
+            <strong>{inspectedAddress || "-"}</strong>
+          </div>
+        </section>
+
+        <p className="ticket-source-panel__note">
+          {matchedLedgerEntry
+            ? t("ticketSource.matchBody", { count: number(finalTickets) })
+            : t("ticketSource.noMatchBody")}
+        </p>
+
+        <dl className="ticket-source-stats">
+          <div>
+            <dt>{t("ticketSource.finalTickets")}</dt>
+            <dd>{number(finalTickets)}</dd>
+          </div>
+          <div>
+            <dt>{t("ticketSource.rawTickets")}</dt>
+            <dd>{number(rawTickets)}</dd>
+          </div>
+        </dl>
+
+        <dl className="ticket-source-meta">
+          <div>
+            <dt>{t("ticketSource.buybackWindow")}</dt>
+            <dd>
+              {formatLedgerTimestamp(entry?.firstBuybackAt, dateTime)}
+              <span aria-hidden="true"> → </span>
+              {formatLedgerTimestamp(entry?.lastBuybackAt, dateTime)}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("ticketSource.eventCount")}</dt>
+            <dd>{number(eventCount)}</dd>
+          </div>
+          <div>
+            <dt>{t("ticketSource.ledgerSource")}</dt>
+            <dd>{sourceLabel(ledger?.sourceLabel)} · {ledgerHash}</dd>
+          </div>
+        </dl>
+
+        <section className="ticket-source-section">
+          <header>
+            <Database size={16} strokeWidth={2.2} />
+            <span>{t("ticketSource.sourceAddresses")}</span>
+          </header>
+          <div className="ticket-source-addresses">
+            {visibleSourceAddresses.map((address) => (
+              <code key={address}>{address}</code>
+            ))}
+            {hiddenSourceAddressCount > 0 ? <em>{t("ticketSource.moreAddresses", { count: number(hiddenSourceAddressCount) })}</em> : null}
+          </div>
+        </section>
+
+        <section className="ticket-source-section">
+          <header>
+            <Ticket size={16} strokeWidth={2.2} />
+            <span>{t("ticketSource.packBreakdown")}</span>
+          </header>
+          {packRows.length ? (
+            <ol className="ticket-source-packs">
+              {packRows.map((row) => (
+                <li key={row.pack}>
+                  <strong>{row.rule?.label || row.pack}</strong>
+                  <span>
+                    {number(row.count)}
+                    {row.rule?.ticketWeight ? ` · ${t("ticketSource.weight", { count: number(row.rule.ticketWeight) })}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p>{t("ticketSource.noPackRows")}</p>
+          )}
+        </section>
+
+        <section className="ticket-source-section">
+          <header>
+            <Clock3 size={16} strokeWidth={2.2} />
+            <span>{t("ticketSource.intervalTitle")}</span>
+          </header>
+          {ticketIntervals.length ? (
+            <>
+              <p className="ticket-source-section__hint">
+                {t("ticketSource.intervalLoaded", {
+                  shown: number(ticketIntervals.length),
+                  total: number(ticketIntervalCount || ticketIntervals.length),
+                })}
+              </p>
+              <ol className="ticket-source-intervals">
+                {ticketIntervals.map((interval, index) => (
+                  <li key={`${interval.namespace || "ticket"}-${interval.start}-${interval.end}-${index}`}>
+                    <strong>{intervalTicketRange(interval)}</strong>
+                    <span>{interval.pack || interval.source || interval.namespace || "-"}</span>
+                    <small>{formatLedgerTimestamp(interval.timestamp, dateTime)}</small>
+                    <code>{compactHash(interval.txHash)}</code>
+                  </li>
+                ))}
+              </ol>
+            </>
+          ) : (
+            <p>{matchedLedgerEntry ? t("ticketSource.intervalMissing") : t("ticketSource.intervalNoEntry")}</p>
+          )}
+        </section>
+      </section>
+    </aside>
+  );
+}
+
 function isLocalTestOrigin() {
   if (typeof window === "undefined") return false;
   const { hostname } = window.location;
@@ -545,7 +746,11 @@ export function ControlRoom({
   const authWalletLinked = Boolean(authSession?.walletAddress);
   const showAuthState = Boolean(authEndpointReady);
   const authIdentityActionable = showAuthState && !authSession?.authenticated;
-  const HeaderWalletIdentity = authIdentityActionable ? "button" : "div";
+  const ticketSourceWalletAddress = authWalletLinked ? authSession.walletAddress : (!showAuthState ? activeEntry?.userAddress : "");
+  const ticketSourceActionable = Boolean(ticketSourceWalletAddress);
+  const headerWalletActionable = authIdentityActionable || ticketSourceActionable;
+  const HeaderWalletIdentity = headerWalletActionable ? "button" : "div";
+  const [ticketSourceOpen, setTicketSourceOpen] = useState(false);
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
   const [xFollowOverlayDismissed, setXFollowOverlayDismissed] = useState(false);
   const xFollowGateRequired = authConfig?.xFollowGate?.required !== false;
@@ -570,6 +775,15 @@ export function ControlRoom({
     logoutUrl.searchParams.set("return_to", returnTo);
     requestRenaissProviderSignOut(authSession, authConfig, { waitForFetch: false });
     window.location.assign(`${logoutUrl.pathname}${logoutUrl.search}`);
+  }
+
+  function handleHeaderWalletClick() {
+    if (authIdentityActionable) {
+      onRequestLogin();
+      return;
+    }
+
+    if (ticketSourceActionable) setTicketSourceOpen(true);
   }
 
   useEffect(() => {
@@ -654,8 +868,12 @@ export function ControlRoom({
         ) : null}
         <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
           <HeaderWalletIdentity
-            className={authIdentityActionable ? "header-wallet__identity" : "header-wallet__identity is-static"}
-            {...(authIdentityActionable ? { type: "button", onClick: onRequestLogin } : {})}
+            className={headerWalletActionable ? "header-wallet__identity" : "header-wallet__identity is-static"}
+            {...(headerWalletActionable ? {
+              type: "button",
+              onClick: handleHeaderWalletClick,
+              "aria-label": authIdentityActionable ? t("auth.loginCta") : t("ticketSource.open"),
+            } : {})}
           >
             <WalletCards size={18} strokeWidth={2.1} />
             {showAuthState ? (
@@ -677,6 +895,15 @@ export function ControlRoom({
           ) : null}
         </section>
       </header>
+
+      {ticketSourceOpen ? (
+        <WalletTicketSourceDialog
+          entry={activeEntry}
+          ledger={ledger}
+          walletAddress={ticketSourceWalletAddress}
+          onClose={() => setTicketSourceOpen(false)}
+        />
+      ) : null}
 
       <section className={effectiveActiveViewId === "home" ? "room-shell is-home" : "room-shell"} id="top" aria-label={`${t(`nav.${activeView.id}`)} ${t("common.workspace")}`}>
         <HomeRoom

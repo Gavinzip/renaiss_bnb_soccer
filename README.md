@@ -181,8 +181,8 @@ AUTH_COOKIE_SECURE=1
 AUTH_SUCCESS_REDIRECT_PATH=/?auth=success
 AUTH_ERROR_REDIRECT_PATH=/?auth=error
 PUBLIC_APP_ORIGIN=https://renaiss-worldcup.zeabur.app
-RENAISS_ISSUER=http://dev-main-renaiss.vercel.app/api/auth
-RENAISS_CLIENT_ID=rpk_LwlN7dGlYWSSLgNnAeHNsug1
+RENAISS_ISSUER=https://www.renaiss.xyz/api/auth
+RENAISS_CLIENT_ID=rpk_u2PA7GjyPDT1c-h81KhRhI2j
 RENAISS_CLIENT_SECRET=...
 RENAISS_REDIRECT_URI=
 RENAISS_SCOPE=openid profile email safe x

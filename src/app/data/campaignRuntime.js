@@ -15,6 +15,56 @@ export const commandViews = [
   { id: "winners" },
 ];
 
+function toLedgerTickets(value) {
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+export function normalizeFootballLedgerEntry(entry) {
+  if (!entry || typeof entry !== "object") return entry;
+
+  const rawTickets = toLedgerTickets(entry.rawTickets ?? entry.raw_tickets ?? entry.finalTickets ?? entry.final_tickets);
+  const ticketIntervals = Array.isArray(entry.ticketIntervals)
+    ? entry.ticketIntervals.filter((interval) => interval?.namespace !== "bonus" && interval?.source !== "sbt-bonus")
+    : entry.ticketIntervals;
+
+  return {
+    ...entry,
+    rawTickets,
+    bonusTickets: 0,
+    finalTickets: rawTickets,
+    sbt: "none",
+    sbtMultiplier: 1,
+    ticketIntervals,
+  };
+}
+
+export function normalizeFootballLedger(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+
+  const leaderboardEntries = Array.isArray(payload.leaderboardEntries)
+    ? payload.leaderboardEntries.map(normalizeFootballLedgerEntry)
+    : payload.leaderboardEntries;
+  const entries = Array.isArray(payload.entries)
+    ? payload.entries.map(normalizeFootballLedgerEntry)
+    : payload.entries;
+  const rawTotal = toLedgerTickets(payload.totalRawTickets ?? payload.total_raw_tickets);
+  const totalFinalTickets = rawTotal || (Array.isArray(leaderboardEntries)
+    ? leaderboardEntries.reduce((sum, entry) => sum + toLedgerTickets(entry?.finalTickets), 0)
+    : toLedgerTickets(payload.totalFinalTickets ?? payload.total_final_tickets));
+
+  return {
+    ...payload,
+    leaderboardEntries,
+    entries,
+    totalBonusTickets: 0,
+    totalFinalTickets,
+    bonusShuffleVersion: null,
+    bonusShuffleSeed: null,
+    bonusShuffleLocked: false,
+    bonusShuffleLockedAt: 0,
+  };
+}
+
 export function normalizeLedgerSummary(payload) {
   if (!payload || typeof payload !== "object") return null;
   const entries = Array.isArray(payload.leaderboardEntries)
@@ -25,7 +75,7 @@ export function normalizeLedgerSummary(payload) {
 
   if (!payload.totalFinalTickets || entries.length === 0) return null;
 
-  return {
+  return normalizeFootballLedger({
     ...verifiedLedgerSnapshot,
     ...payload,
     sourceLabel: payload.sourceLabel || "live-ledger-api",
@@ -33,7 +83,7 @@ export function normalizeLedgerSummary(payload) {
       ? payload.packRules
       : verifiedLedgerSnapshot.packRules,
     leaderboardEntries: entries,
-  };
+  });
 }
 
 function readFirstDefined(source, keys) {

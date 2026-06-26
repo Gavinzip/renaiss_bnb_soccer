@@ -1,18 +1,6 @@
-const SBT_TIERS = [
-  { tier: "rainbow", threshold: 600, multiplier: 3 },
-  { tier: "gold", threshold: 250, multiplier: 2 },
-  { tier: "silver", threshold: 100, multiplier: 1.5 },
-  { tier: "brown", threshold: 40, multiplier: 1.2 },
-];
-
 export function compactAddress(address) {
   if (!address) return "-";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-export function getSbtTier(rawTickets) {
-  const raw = Math.max(0, Math.floor(Number(rawTickets) || 0));
-  return SBT_TIERS.find((row) => raw >= row.threshold) ?? { tier: "none", multiplier: 1 };
 }
 
 export function calculateRawTickets(packs = {}, packRules = []) {
@@ -22,8 +10,8 @@ export function calculateRawTickets(packs = {}, packRules = []) {
   }, 0);
 }
 
-export function calculateFinalTickets(rawTickets, multiplier) {
-  return Math.ceil(Math.max(0, Number(rawTickets) || 0) * Math.max(1, Number(multiplier) || 1));
+export function calculateFinalTickets(rawTickets) {
+  return Math.max(0, Math.floor(Number(rawTickets) || 0));
 }
 
 export function estimateMultiPrizeChance(userEntries, totalPoolEntries, prizeCount) {

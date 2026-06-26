@@ -2,7 +2,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 
 const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
 const DEFAULT_SCOPE = 'openid profile email safe x'
-const DEFAULT_ISSUER = 'http://dev-main-renaiss.vercel.app/api/auth'
+const DEFAULT_ISSUER = 'https://www.renaiss.xyz/api/auth'
 const DEFAULT_TIMEOUT_MS = 8000
 
 const discoveryCache = new Map()

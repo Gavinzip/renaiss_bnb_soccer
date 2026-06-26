@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
+import { stableStringify } from './lucky-draw/utils.mjs'
 
 export const SUMMARY_LEADERBOARD_LIMIT = 10
 export const DEFAULT_ENTRY_INTERVAL_LIMIT = 0
@@ -38,13 +40,102 @@ function normalizeRangeEndpoint(start, end) {
   }
 }
 
+function rawTicketIntervals(entry) {
+  if (!Array.isArray(entry?.ticketIntervals)) return entry?.ticketIntervals
+  return entry.ticketIntervals.filter((interval) => interval?.namespace !== 'bonus' && interval?.source !== 'sbt-bonus')
+}
+
+export function normalizeFootballLedgerEntry(entry) {
+  const rawTickets = toInteger(entry?.rawTickets ?? entry?.raw_tickets ?? entry?.finalTickets ?? entry?.final_tickets)
+  const ticketIntervals = rawTicketIntervals(entry)
+  const ranges = Array.isArray(ticketIntervals)
+    ? ticketIntervals.filter((range) => toInteger(range?.end) >= toInteger(range?.start))
+    : []
+
+  return {
+    ...entry,
+    rawTickets,
+    bonusTickets: 0,
+    finalTickets: rawTickets,
+    sbt: 'none',
+    sbtMultiplier: 1,
+    ticketIntervals,
+    ticketStart: ranges.length ? Math.min(...ranges.map((range) => toInteger(range.start))) : null,
+    ticketEnd: ranges.length ? Math.max(...ranges.map((range) => toInteger(range.end))) : null,
+  }
+}
+
+function sortLedgerEntries(entries) {
+  return entries
+    .filter((entry) => toInteger(entry.finalTickets) > 0)
+    .sort((left, right) => {
+      if (left.finalTickets !== right.finalTickets) return right.finalTickets - left.finalTickets
+      if (left.rawTickets !== right.rawTickets) return right.rawTickets - left.rawTickets
+      const leftTs = left.firstBuybackAt || Number.MAX_SAFE_INTEGER
+      const rightTs = right.firstBuybackAt || Number.MAX_SAFE_INTEGER
+      if (leftTs !== rightTs) return leftTs - rightTs
+      return String(left.userAddress || '').localeCompare(String(right.userAddress || ''))
+    })
+    .map((entry, index) => ({ ...entry, rank: index + 1 }))
+}
+
+function normalizedLedgerHash(ledger, entries, totalRawTickets, totalFinalTickets) {
+  const payload = {
+    campaignStart: toInteger(ledger.campaignStart),
+    campaignEnd: toInteger(ledger.campaignEnd),
+    source: ledger.source ?? null,
+    bonusShuffleVersion: null,
+    bonusShuffleSeed: null,
+    totalRawTickets,
+    totalBonusTickets: 0,
+    totalFinalTickets,
+    entries: entries.map((entry) => ({
+      userAddress: entry.userAddress,
+      finalTickets: entry.finalTickets,
+      ticketIntervals: entry.ticketIntervals,
+    })),
+  }
+
+  return `0x${createHash('sha256').update(stableStringify(payload)).digest('hex')}`
+}
+
+export function normalizeFootballLedger(ledger) {
+  if (!ledger || typeof ledger !== 'object') return ledger
+
+  const entries = Array.isArray(ledger.entries)
+    ? sortLedgerEntries(ledger.entries.map(normalizeFootballLedgerEntry))
+    : []
+  if (entries.length === 0) return ledger
+
+  const totalRawTickets = entries.reduce((sum, entry) => sum + toInteger(entry.rawTickets), 0)
+  const totalFinalTickets = totalRawTickets
+  const noBonusNote = 'This football campaign does not apply SBT ticket bonuses; final tickets equal raw buyback tickets.'
+  const notes = Array.isArray(ledger.notes) ? [...ledger.notes] : []
+  if (!notes.includes(noBonusNote)) notes.push(noBonusNote)
+
+  return {
+    ...ledger,
+    entries,
+    totalEntries: entries.length,
+    totalRawTickets,
+    totalBonusTickets: 0,
+    totalFinalTickets,
+    bonusShuffleVersion: null,
+    bonusShuffleSeed: null,
+    bonusShuffleLocked: false,
+    bonusShuffleLockedAt: null,
+    ledgerHash: normalizedLedgerHash(ledger, entries, totalRawTickets, totalFinalTickets),
+    notes,
+  }
+}
+
 export function readLedgerPayload(ledgerPath) {
   const stat = statSync(ledgerPath)
   if (ledgerCache.ledger && ledgerCache.path === ledgerPath && ledgerCache.mtimeMs === stat.mtimeMs) {
     return ledgerCache.ledger
   }
 
-  const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'))
+  const ledger = normalizeFootballLedger(JSON.parse(readFileSync(ledgerPath, 'utf8')))
   ledgerCache = {
     ledger,
     mtimeMs: stat.mtimeMs,
@@ -102,18 +193,16 @@ export function findLedgerEntry(ledger, query) {
   const normalized = String(query || '').trim().toLowerCase()
   if (!normalized || !Array.isArray(ledger.entries)) return null
 
-  return (
-    ledger.entries.find((entry) => entryAddresses(entry).some((address) => address.includes(normalized))) || null
-  )
+  const entry = ledger.entries.find((row) => entryAddresses(row).some((address) => address.includes(normalized))) || null
+  return entry ? normalizeFootballLedgerEntry(entry) : null
 }
 
 export function findLedgerEntryByAddress(ledger, address) {
   const normalized = normalizeAddress(address)
   if (!normalized || !Array.isArray(ledger.entries)) return null
 
-  return (
-    ledger.entries.find((entry) => entryAddresses(entry).some((entryAddress) => entryAddress === normalized)) || null
-  )
+  const entry = ledger.entries.find((row) => entryAddresses(row).some((entryAddress) => entryAddress === normalized)) || null
+  return entry ? normalizeFootballLedgerEntry(entry) : null
 }
 
 export function parseEntryIntervalQuery(searchParams) {
