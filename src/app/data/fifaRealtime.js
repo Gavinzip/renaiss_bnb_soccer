@@ -111,12 +111,13 @@ function getGroupName(row) {
 function isConfirmedQualification(value) {
   const normalized = normalizeLookup(value);
   if (!normalized || normalized === "undefined") return false;
-  return (
-    normalized.includes("qualified")
-    || normalized.includes("qualify")
-    || normalized.includes("advanced")
-    || normalized.includes("promoted")
-  );
+  return new Set([
+    "confirmedqualified",
+    "confirmed qualified",
+    "qualified",
+    "advanced",
+    "promoted",
+  ]).has(normalized);
 }
 
 function sortRowsByGroupPosition(rows) {

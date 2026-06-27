@@ -13058,7 +13058,6 @@ body,
   outline: none;
   box-shadow:
     0 0 0 1px rgba(245, 246, 241, 0.08),
-    0 0 38px rgba(240, 209, 139, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
@@ -16739,18 +16738,16 @@ body {
 
 .control-room[data-view="schedule"] .arena-team-card.border-glow::before,
 .control-room[data-view="vote"] .arena-team-card.border-glow::before {
-  border: 1px solid transparent;
+  padding: 1px;
   background:
-    linear-gradient(var(--card-bg) 0 100%) padding-box,
-    linear-gradient(rgb(255 255 255 / 0%) 0 100%) border-box,
-    var(--gradient-one) border-box,
-    var(--gradient-two) border-box,
-    var(--gradient-three) border-box,
-    var(--gradient-four) border-box,
-    var(--gradient-five) border-box,
-    var(--gradient-six) border-box,
-    var(--gradient-seven) border-box,
-    var(--gradient-base) border-box;
+    var(--gradient-one),
+    var(--gradient-two),
+    var(--gradient-three),
+    var(--gradient-four),
+    var(--gradient-five),
+    var(--gradient-six),
+    var(--gradient-seven),
+    var(--gradient-base);
   opacity: calc((var(--edge-proximity) - var(--color-sensitivity)) / (100 - var(--color-sensitivity)));
   -webkit-mask-image:
     conic-gradient(
@@ -16759,7 +16756,11 @@ body {
       transparent calc((var(--cone-spread) + 15) * 1%),
       transparent calc((100 - var(--cone-spread) - 15) * 1%),
       black calc((100 - var(--cone-spread)) * 1%)
-    );
+    ),
+    linear-gradient(#000 0 0),
+    linear-gradient(#000 0 0);
+  -webkit-mask-clip: border-box, content-box, border-box;
+  -webkit-mask-composite: source-in, xor;
   mask-image:
     conic-gradient(
       from var(--cursor-angle) at center,
@@ -16767,7 +16768,11 @@ body {
       transparent calc((var(--cone-spread) + 15) * 1%),
       transparent calc((100 - var(--cone-spread) - 15) * 1%),
       black calc((100 - var(--cone-spread)) * 1%)
-    );
+    ),
+    linear-gradient(#000 0 0),
+    linear-gradient(#000 0 0);
+  mask-clip: border-box, content-box, border-box;
+  mask-composite: intersect, exclude;
 }
 
 .control-room[data-view="schedule"] .arena-team-card.border-glow::after,
@@ -16784,7 +16789,6 @@ body {
   background: var(--card-bg) !important;
   box-shadow:
     0 0 0 1px rgba(245, 246, 241, 0.08),
-    0 0 18px rgba(240, 209, 139, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
@@ -16820,19 +16824,9 @@ body {
   inset: var(--glow-padding);
   border-radius: inherit;
   box-shadow:
-    inset 0 0 0 1px var(--glow-color),
-    inset 0 0 1px 0 var(--glow-color-60),
-    inset 0 0 3px 0 var(--glow-color-50),
-    inset 0 0 5px 0 var(--glow-color-40),
-    inset 0 0 10px 0 var(--glow-color-30),
-    inset 0 0 16px 1px var(--glow-color-20),
-    inset 0 0 24px 1px var(--glow-color-10),
-    0 0 1px 0 var(--glow-color-60),
-    0 0 3px 0 var(--glow-color-50),
-    0 0 5px 0 var(--glow-color-40),
-    0 0 10px 0 var(--glow-color-30),
-    0 0 12px 1px var(--glow-color-20),
-    0 0 18px 1px var(--glow-color-10);
+    inset 0 0 0 1px rgba(250, 250, 246, 0.72),
+    inset 0 0 2px 0 rgba(250, 250, 246, 0.38),
+    0 0 2px 0 rgba(250, 250, 246, 0.22);
 }
 
 .arena-center::before {
@@ -27704,10 +27698,9 @@ body {
 .control-room[data-view="schedule"] .arena-pair .arena-team-card.is-selected,
 .control-room[data-view="schedule"] .arena-pair .arena-team-card:hover,
 .control-room[data-view="schedule"] .arena-pair .arena-team-card:focus-visible {
-  border-color: rgba(240, 209, 139, 0.5) !important;
+  border-color: var(--match-card-edge) !important;
   box-shadow:
-    0 0 0 1px rgba(240, 209, 139, 0.12),
-    0 0 30px rgba(240, 209, 139, 0.1),
+    0 0 0 1px rgba(245, 246, 241, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
