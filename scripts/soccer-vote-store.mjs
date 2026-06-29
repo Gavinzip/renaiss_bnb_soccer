@@ -155,11 +155,7 @@ export function assertVoteInput(input, options = {}) {
   if (!match.teams.includes(teamId)) {
     throw Object.assign(new Error('teamId is not in this match.'), { statusCode: 400 })
   }
-  if (!['open', 'closing_soon'].includes(match.status)) {
-    throw Object.assign(new Error('This match is not accepting votes.'), { statusCode: 409 })
-  }
-
-  if (confirmedMatchResultFor(resultIndex, matchId)) {
+  if (match.status === 'official_final' || confirmedMatchResultFor(resultIndex, matchId)) {
     throw Object.assign(new Error('This match already has a backend-confirmed official result.'), { statusCode: 409 })
   }
 
