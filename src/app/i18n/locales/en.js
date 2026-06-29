@@ -158,6 +158,15 @@ export const enLocale = {
       "continue": "Continue",
       "eyebrow": "Vote eligibility",
       "eligibilityBody": "The server checks Firefly with the verified numeric X user ID. Client-entered account ids are not accepted.",
+      "eligibilityCheckFireflyAccount": "Firefly account linked",
+      "eligibilityCheckOverall": "Overall Firefly/Predict eligibility",
+      "eligibilityCheckPredictBet": "Predict bet record",
+      "eligibilityCheckState": {
+        "fail": "Missing",
+        "pass": "Complete",
+        "pending": "Not checked"
+      },
+      "eligibilityChecklistAria": "Firefly/Predict eligibility requirements",
       "eligibilityNotVerified": "Firefly/Predict eligibility pending",
       "eligibilityTitle": "Verify Firefly/Predict eligibility",
       "eligibilityVerified": "Firefly/Predict verified",
@@ -612,6 +621,8 @@ export const enLocale = {
       "votePanelIdle": "Choose one match and one team first.",
       "votePanelReady": "You are choosing {team}; submitted tickets go to {match}.",
       "voteEligibilityBlocked": "Complete vote eligibility before submitting tickets.",
+      "voteTargetMissing": "Could not find the team for this vote. Select a team again before submitting.",
+      "noTicketsRemaining": "There are no tickets available for this round.",
       "selectedTargetLabel": "Selected country",
       "selectedTargetEmpty": "No country selected",
       "selectedTargetMeta": "{match} · {status}",
@@ -1002,7 +1013,8 @@ export const enLocale = {
       "selectedTeam": "Selected team",
       "ticketsUsed": "Tickets used",
       "warning": "Submitted tickets cannot be withdrawn. You can add tickets to the same team or the other team in this match.",
-      "confirmPreview": "Confirm submit"
+      "confirmPreview": "Confirm submit",
+      "submitting": "Submitting"
     },
     "data": {
       "bundledMilestoneSource": "Bundled milestone config",
@@ -1012,6 +1024,7 @@ export const enLocale = {
       "ledgerIssue": "Configured ledger API failed ({message}). Showing bundled verified ledger snapshot instead.",
       "milestoneIssue": "Configured milestone API failed ({message}). Showing bundled milestone config instead.",
       "previewVoteIssue": "Preview vote API failed ({message}). Vote outcomes are hidden for now.",
+      "submitVoteIssue": "Vote submission failed ({message}).",
       "invalidLedgerShape": "Invalid ledger summary shape",
       "invalidMilestoneShape": "Invalid milestone summary shape",
       "previewNotice": "Showing local demo data for now. The production version should read from the server ticket ledger."

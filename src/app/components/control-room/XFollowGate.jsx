@@ -67,6 +67,12 @@ function initialStepForSession(authSession) {
   return 3;
 }
 
+function eligibilityCheckState(value) {
+  if (value === true) return "pass";
+  if (value === false) return "fail";
+  return "pending";
+}
+
 export function XFollowGate({
   authSession,
   authConfig,
@@ -123,6 +129,23 @@ export function XFollowGate({
   const eligibilityStatusIssue = eligibilityGatePassed || !eligibility.status
     ? ""
     : t(eligibilityStatusMessageKey(eligibility.status));
+  const eligibilityChecks = [
+    {
+      id: "overall",
+      label: t("xFollowGate.eligibilityCheckOverall"),
+      state: eligibilityCheckState(eligibility.eligible),
+    },
+    {
+      id: "firefly",
+      label: t("xFollowGate.eligibilityCheckFireflyAccount"),
+      state: eligibilityCheckState(eligibility.hasFireflyAccount),
+    },
+    {
+      id: "predict",
+      label: t("xFollowGate.eligibilityCheckPredictBet"),
+      state: eligibilityCheckState(eligibility.hasPlacedBet),
+    },
+  ];
 
   useEffect(() => {
     setLocalStatus(authSession?.xFollow || null);
@@ -376,6 +399,23 @@ export function XFollowGate({
             </span>
             <h2>{t("xFollowGate.eligibilityTitle")}</h2>
             <p>{t("xFollowGate.eligibilityBody")}</p>
+            <ul className="x-follow-gate__eligibility-checks" aria-label={t("xFollowGate.eligibilityChecklistAria")}>
+              {eligibilityChecks.map((check) => (
+                <li key={check.id} className={`is-${check.state}`}>
+                  <span className="x-follow-gate__eligibility-icon" aria-hidden="true">
+                    {check.state === "pass" ? (
+                      <CheckCircle2 size={16} strokeWidth={2.4} />
+                    ) : check.state === "fail" ? (
+                      <X size={16} strokeWidth={2.4} />
+                    ) : (
+                      <ShieldCheck size={16} strokeWidth={2.25} />
+                    )}
+                  </span>
+                  <span>{check.label}</span>
+                  <strong>{t(`xFollowGate.eligibilityCheckState.${check.state}`)}</strong>
+                </li>
+              ))}
+            </ul>
             {eligibilityIssue || eligibilityStatusIssue ? (
               <p className="x-follow-gate__issue">{eligibilityIssue || eligibilityStatusIssue}</p>
             ) : null}

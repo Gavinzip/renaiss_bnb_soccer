@@ -8857,6 +8857,9 @@ button:not(:disabled):active,
 }
 
 .confirm-modal {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   width: min(100%, 460px);
   display: grid;
   gap: 16px;
@@ -8870,6 +8873,57 @@ button:not(:disabled):active,
     0 34px 100px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.42);
   backdrop-filter: blur(26px) saturate(175%);
+  animation: confirm-modal-breathe 4.8s ease-in-out infinite;
+}
+
+.confirm-modal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(240, 209, 139, 0.34),
+    rgba(137, 185, 154, 0.2) 32%,
+    rgba(245, 246, 241, 0.16) 58%,
+    rgba(240, 209, 139, 0.26)
+  );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  opacity: 0.46;
+  animation: confirm-border-breathe 4.8s ease-in-out infinite;
+}
+
+@keyframes confirm-modal-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 34px 100px rgba(0, 0, 0, 0.5),
+      0 0 0 rgba(240, 209, 139, 0),
+      inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  }
+
+  50% {
+    box-shadow:
+      0 34px 100px rgba(0, 0, 0, 0.5),
+      0 0 34px rgba(240, 209, 139, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  }
+}
+
+@keyframes confirm-border-breathe {
+  0%,
+  100% {
+    opacity: 0.34;
+  }
+
+  50% {
+    opacity: 0.62;
+  }
 }
 
 .confirm-modal header,
@@ -8964,6 +9018,19 @@ button:not(:disabled):active,
   line-height: 1.5;
 }
 
+.confirm-error {
+  display: flex;
+  gap: 8px;
+  margin: -4px 0 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 126, 126, 0.26);
+  border-radius: 16px;
+  background: rgba(124, 35, 35, 0.18);
+  color: #ffd6d6;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .confirm-modal footer {
   justify-content: flex-end;
 }
@@ -8981,12 +9048,28 @@ button:not(:disabled):active,
   cursor: pointer;
 }
 
+.confirm-modal header button:disabled,
+.confirm-modal footer button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .confirm-modal footer button:last-child {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(226, 230, 225, 0.76)),
     rgba(245, 246, 241, 0.86);
   color: #101312;
   font-weight: 800;
+}
+
+.confirm-spin {
+  animation: confirm-spin 0.9s linear infinite;
+}
+
+@keyframes confirm-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .match-index {

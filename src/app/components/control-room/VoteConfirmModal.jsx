@@ -1,9 +1,8 @@
-import { AlertTriangle, CheckCircle2, Clock3, X } from "lucide-react";
-import { GlareHover } from "../GlareHover";
+import { AlertTriangle, CheckCircle2, Clock3, Loader2, X } from "lucide-react";
 import { formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 
-export function VoteConfirmModal({ amount, match, team, onCancel, onConfirm }) {
+export function VoteConfirmModal({ amount, issue = "", match, submitting = false, team, onCancel, onConfirm }) {
   const { dateTime, teamName, t } = useCampaignCopy();
 
   if (!amount || !match || !team) return null;
@@ -11,10 +10,10 @@ export function VoteConfirmModal({ amount, match, team, onCancel, onConfirm }) {
 
   return (
     <aside className="confirm-layer" role="presentation">
-      <GlareHover as="section" className="confirm-modal" role="dialog" aria-modal="true" aria-label={t("confirm.aria")}>
+      <section className="confirm-modal" role="dialog" aria-modal="true" aria-label={t("confirm.aria")}>
         <header>
           <span>{t("confirm.title")}</span>
-          <button type="button" onClick={onCancel} aria-label={t("confirm.close")}>
+          <button type="button" onClick={onCancel} disabled={submitting} aria-label={t("confirm.close")}>
             <X size={18} strokeWidth={2.2} />
           </button>
         </header>
@@ -44,14 +43,25 @@ export function VoteConfirmModal({ amount, match, team, onCancel, onConfirm }) {
           {t("confirm.warning")}
         </p>
 
+        {issue ? (
+          <p className="confirm-error" role="alert">
+            <AlertTriangle size={17} strokeWidth={2.2} />
+            {issue}
+          </p>
+        ) : null}
+
         <footer>
-          <button type="button" onClick={onCancel}>{t("common.cancel")}</button>
-          <button type="button" onClick={onConfirm}>
-            <CheckCircle2 size={18} strokeWidth={2.2} />
-            {t("confirm.confirmPreview")}
+          <button type="button" onClick={onCancel} disabled={submitting}>{t("common.cancel")}</button>
+          <button type="button" onClick={onConfirm} disabled={submitting} aria-busy={submitting}>
+            {submitting ? (
+              <Loader2 className="confirm-spin" size={18} strokeWidth={2.2} />
+            ) : (
+              <CheckCircle2 size={18} strokeWidth={2.2} />
+            )}
+            {submitting ? t("confirm.submitting") : t("confirm.confirmPreview")}
           </button>
         </footer>
-      </GlareHover>
+      </section>
     </aside>
   );
 }

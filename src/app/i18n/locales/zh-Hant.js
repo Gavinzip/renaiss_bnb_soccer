@@ -158,6 +158,15 @@ export const zhHantLocale = {
       "continue": "繼續",
       "eyebrow": "投票資格",
       "eligibilityBody": "後端會用已驗證的 X numeric user ID 向 Firefly 查詢，不接受前端自行輸入帳號。",
+      "eligibilityCheckFireflyAccount": "Firefly 帳號連結",
+      "eligibilityCheckOverall": "整體 Firefly/Predict 資格",
+      "eligibilityCheckPredictBet": "Predict 下注紀錄",
+      "eligibilityCheckState": {
+        "fail": "未完成",
+        "pass": "已完成",
+        "pending": "尚未查詢"
+      },
+      "eligibilityChecklistAria": "Firefly/Predict 資格條件",
       "eligibilityNotVerified": "尚未完成 Firefly/Predict 資格",
       "eligibilityTitle": "驗證 Firefly/Predict 資格",
       "eligibilityVerified": "Firefly/Predict 已通過",
@@ -612,6 +621,8 @@ export const zhHantLocale = {
       "votePanelIdle": "先從左側選一場比賽與一支隊伍。",
       "votePanelReady": "你現在選的是 {team}，送出後會記到 {match}。",
       "voteEligibilityBlocked": "完成投票資格後才能送出票數。",
+      "voteTargetMissing": "找不到這次要投的隊伍，請重新選擇後再送出。",
+      "noTicketsRemaining": "這一輪目前沒有可送出的票數。",
       "selectedTargetLabel": "現在選擇的國家",
       "selectedTargetEmpty": "尚未選擇國家",
       "selectedTargetMeta": "{match} · {status}",
@@ -1002,7 +1013,8 @@ export const zhHantLocale = {
       "selectedTeam": "選擇隊伍",
       "ticketsUsed": "使用票數",
       "warning": "送出後不可撤回；同場同隊可累加，同場不同隊也可以加票。",
-      "confirmPreview": "確認送出"
+      "confirmPreview": "確認送出",
+      "submitting": "送出中"
     },
     "data": {
       "bundledMilestoneSource": "內建里程碑設定",
@@ -1012,6 +1024,7 @@ export const zhHantLocale = {
       "ledgerIssue": "設定的帳本 API 失敗（{message}）。目前顯示內建已驗證帳本快照。",
       "milestoneIssue": "設定的里程碑 API 失敗（{message}）。目前顯示內建里程碑設定。",
       "previewVoteIssue": "投票預覽 API 失敗（{message}）。目前不顯示已投結果。",
+      "submitVoteIssue": "投票送出失敗（{message}）。",
       "invalidLedgerShape": "帳本摘要格式不正確",
       "invalidMilestoneShape": "里程碑摘要格式不正確",
       "previewNotice": "目前顯示本地示意資料；正式版本會由伺服器票務帳本提供。"

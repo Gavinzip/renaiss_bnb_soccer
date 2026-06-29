@@ -320,7 +320,9 @@ function AppContent() {
     () => readInitialWalletAddress() || verifiedLedgerSnapshot.leaderboardEntries[0].userAddress,
   );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [pendingVoteAmount, setPendingVoteAmount] = useState(null);
+  const [pendingVote, setPendingVote] = useState(null);
+  const [pendingVoteIssue, setPendingVoteIssue] = useState("");
+  const [voteSubmitting, setVoteSubmitting] = useState(false);
   const [initialAssetsReady, setInitialAssetsReady] = useState(false);
   const [initialCoverPaintReady, setInitialCoverPaintReady] = useState(false);
   const [initialLoaderVisible, setInitialLoaderVisible] = useState(true);
@@ -788,9 +790,15 @@ function AppContent() {
   const visibleUsedRoundTickets = isRealtimeRound32
     ? 0
     : usedRoundTickets;
-  const visibleRemainingRoundTickets = isRealtimeRound32
-    ? Math.max(0, roundTicketBreakdown.usableTickets)
-    : remainingRoundTickets;
+  const visibleRemainingRoundTickets = remainingRoundTickets;
+  const pendingVoteMatch = useMemo(
+    () => (pendingVote ? matches.find((match) => match.id === pendingVote.matchId) ?? null : null),
+    [matches, pendingVote],
+  );
+  const pendingVoteTeam = useMemo(
+    () => (pendingVote ? teamsById.get(pendingVote.teamId) ?? null : null),
+    [pendingVote, teamsById],
+  );
   const visibleRoundOutcomeSummary = isRealtimeRound32
     ? { lostTickets: 0, winnerTickets: 0, pendingTickets: 0 }
     : roundOutcomeSummary;
@@ -960,7 +968,7 @@ function AppContent() {
     window.location.assign(buildRenaissLoginUrl());
   }
 
-  function handleRequestPreviewVote(amount) {
+  function handleRequestPreviewVote(amount, target = {}) {
     if (voteSubmitUrl && authMeUrl) {
       if (!authSession?.walletAddress) {
         redirectToRenaissLogin();
@@ -976,18 +984,41 @@ function AppContent() {
         return;
       }
     }
-    if (!selectedTeamId || remainingRoundTickets <= 0) return;
-    setPendingVoteAmount(Math.max(1, Math.min(Math.floor(amount || 0), remainingRoundTickets)));
+    const nextMatchId = String(target?.matchId || selectedMatch?.id || "");
+    const nextTeamId = String(target?.teamId || selectedTeamId || "");
+
+    if (!nextMatchId || !nextTeamId) {
+      const issue = t("vote.voteTargetMissing");
+      setPendingVoteIssue(issue);
+      setPreviewVoteIssue(issue);
+      return;
+    }
+
+    if (remainingRoundTickets <= 0) {
+      const issue = t("vote.noTicketsRemaining");
+      setPendingVoteIssue(issue);
+      setPreviewVoteIssue(issue);
+      return;
+    }
+
+    if (target?.matchId) setSelectedMatchId(nextMatchId);
+    if (target?.teamId) setSelectedTeamId(nextTeamId);
+    setPendingVoteIssue("");
+    setPendingVote({
+      amount: Math.max(1, Math.min(Math.floor(amount || 0), remainingRoundTickets)),
+      matchId: nextMatchId,
+      teamId: nextTeamId,
+    });
   }
 
-  function applyLocalPreviewVote({ tickets }) {
+  function applyLocalPreviewVote({ matchId = selectedMatch?.id, teamId = selectedTeamId, tickets }) {
     const submittedAt = new Date().toISOString();
     setPreviewAllocations((current) => {
       const existingIndex = current.findIndex((allocation) => (
         allocation.walletAddress === selectedWallet
         && allocation.roundId === activeRoundId
-        && allocation.matchId === selectedMatch.id
-        && allocation.teamId === selectedTeamId
+        && allocation.matchId === matchId
+        && allocation.teamId === teamId
       ));
 
       if (existingIndex >= 0) {
@@ -1001,11 +1032,11 @@ function AppContent() {
       return [
         ...current,
         {
-          id: `${selectedWallet}-${selectedMatch.id}-${selectedTeamId}-${Date.now()}`,
+          id: `${selectedWallet}-${matchId}-${teamId}-${Date.now()}`,
           walletAddress: selectedWallet,
           roundId: activeRoundId,
-          matchId: selectedMatch.id,
-          teamId: selectedTeamId,
+          matchId,
+          teamId,
           tickets,
           source: "local-preview",
           official: false,
@@ -1016,9 +1047,32 @@ function AppContent() {
     });
   }
 
-  async function handleConfirmPreviewVote(amount) {
-    if (!selectedTeamId || remainingRoundTickets <= 0) return;
-    const tickets = Math.max(1, Math.min(Math.floor(amount || 0), remainingRoundTickets));
+  async function handleConfirmPreviewVote(voteRequest = pendingVote) {
+    if (voteSubmitting) return;
+
+    const request = typeof voteRequest === "object" && voteRequest
+      ? voteRequest
+      : { amount: voteRequest, matchId: selectedMatch?.id, teamId: selectedTeamId };
+    const targetMatch = matches.find((match) => match.id === request.matchId) ?? selectedMatch;
+    const targetTeamId = String(request.teamId || selectedTeamId || "");
+
+    if (!targetMatch?.id || !targetTeamId) {
+      const issue = t("vote.voteTargetMissing");
+      setPendingVoteIssue(issue);
+      setPreviewVoteIssue(issue);
+      return;
+    }
+
+    if (remainingRoundTickets <= 0) {
+      const issue = t("vote.noTicketsRemaining");
+      setPendingVoteIssue(issue);
+      setPreviewVoteIssue(issue);
+      return;
+    }
+
+    const tickets = Math.max(1, Math.min(Math.floor(request.amount || 0), remainingRoundTickets));
+    setVoteSubmitting(true);
+    setPendingVoteIssue("");
 
     if (voteSubmitUrl) {
       try {
@@ -1030,8 +1084,8 @@ function AppContent() {
           body: JSON.stringify({
             ...(authMeUrl ? {} : { walletAddress: selectedWallet }),
             roundId: activeRoundId,
-            matchId: selectedMatch.id,
-            teamId: selectedTeamId,
+            matchId: targetMatch.id,
+            teamId: targetTeamId,
             tickets,
             requestId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           }),
@@ -1041,18 +1095,22 @@ function AppContent() {
         setPreviewAllocations(normalized.allocations);
         setPreviewVoteIssue("");
       } catch (error) {
-        setPreviewVoteIssue(t("data.previewVoteIssue", { message: error.message }));
+        const issue = t("data.submitVoteIssue", { message: error.message });
+        setPendingVoteIssue(issue);
+        setPreviewVoteIssue(issue);
         if (/login|required|linked/i.test(error.message)) redirectToRenaissLogin();
-        setPendingVoteAmount(null);
+        setVoteSubmitting(false);
         return;
       }
     } else {
-      applyLocalPreviewVote({ tickets });
+      applyLocalPreviewVote({ matchId: targetMatch.id, teamId: targetTeamId, tickets });
     }
 
+    setVoteSubmitting(false);
     setSelectedTeamId(null);
     setTicketAmount(DEFAULT_TICKET_AMOUNT);
-    setPendingVoteAmount(null);
+    setPendingVote(null);
+    setPendingVoteIssue("");
   }
 
   return (
@@ -1109,11 +1167,17 @@ function AppContent() {
         onConfirmPreviewVote={handleRequestPreviewVote}
       />
       <VoteConfirmModal
-        amount={pendingVoteAmount}
-        match={selectedMatch}
-        team={teamsById.get(selectedTeamId)}
-        onCancel={() => setPendingVoteAmount(null)}
-        onConfirm={() => handleConfirmPreviewVote(pendingVoteAmount)}
+        amount={pendingVote?.amount}
+        issue={pendingVoteIssue}
+        match={pendingVoteMatch}
+        submitting={voteSubmitting}
+        team={pendingVoteTeam}
+        onCancel={() => {
+          if (voteSubmitting) return;
+          setPendingVote(null);
+          setPendingVoteIssue("");
+        }}
+        onConfirm={() => handleConfirmPreviewVote(pendingVote)}
       />
     </>
   );

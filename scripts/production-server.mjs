@@ -93,6 +93,36 @@ const fifaRound32MatchesCacheSeconds = readIntegerEnv('FIFA_ROUND32_MATCHES_CACH
 const fifaRound32MatchesCacheMs = fifaRound32MatchesCacheSeconds * 1000
 let fifaRound32MatchesCache = null
 
+function cleanLogValue(value) {
+  return String(value ?? 'none').replace(/\s+/g, ' ').slice(0, 160) || 'none'
+}
+
+function maskVoteWalletAddress(value) {
+  const address = String(value || '').trim()
+  if (!address) return 'none'
+  if (address.length <= 12) return '[redacted]'
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
+}
+
+function getVoteSubmitLogDetails(body, session) {
+  return {
+    requestId: cleanLogValue(body?.requestId),
+    roundId: cleanLogValue(body?.roundId),
+    matchId: cleanLogValue(body?.matchId),
+    teamId: cleanLogValue(body?.teamId),
+    tickets: cleanLogValue(body?.tickets),
+    wallet: maskVoteWalletAddress(session?.walletAddress || body?.walletAddress),
+  }
+}
+
+function writeVoteSubmitLog(level, stage, details = {}) {
+  const payload = Object.entries(details)
+    .map(([key, value]) => `${key}=${cleanLogValue(value)}`)
+    .join(' ')
+  const logger = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
+  logger(`[vote-submit] ${stage}${payload ? ` ${payload}` : ''}`)
+}
+
 function normalizeVoteStoreMode(value) {
   const mode = String(value || '').trim().toLowerCase()
   if (!mode || mode === 'json') return 'json'
@@ -1424,19 +1454,33 @@ const server = createServer(async (request, response) => {
       return
     }
 
+    let voteLogDetails = {
+      requestId: 'unread',
+      roundId: 'unread',
+      matchId: 'unread',
+      teamId: 'unread',
+      tickets: 'unread',
+      wallet: 'none',
+    }
+
     try {
       const body = await readJsonBody(request)
       const session = readAuthSession(auth, request)
+      voteLogDetails = getVoteSubmitLogDetails(body, session)
+      writeVoteSubmitLog('log', 'received', voteLogDetails)
       if (authRequiredForVotes && !session) {
+        writeVoteSubmitLog('warn', 'blocked', { ...voteLogDetails, reason: 'login_required', status: 401 })
         sendJson(request, response, 401, { ok: false, error: 'Login is required before submitting votes.' }, { 'cache-control': 'no-store' })
         return
       }
       if (authRequiredForVotes && !session?.walletAddress) {
+        writeVoteSubmitLog('warn', 'blocked', { ...voteLogDetails, reason: 'wallet_unlinked', status: 403 })
         sendJson(request, response, 403, { ok: false, error: 'This login is not linked to a voting wallet yet.' }, { 'cache-control': 'no-store' })
         return
       }
       const xFollowStatus = getXFollowStatus(auth, session, request)
       if (authRequiredForVotes && auth.xFollowGateConfig.required && !xFollowStatus.gatePassed) {
+        writeVoteSubmitLog('warn', 'blocked', { ...voteLogDetails, reason: 'x_follow_required', status: 403 })
         sendJson(request, response, 403, { ok: false, error: 'Follow verification is required before submitting votes.' }, { 'cache-control': 'no-store' })
         return
       }
@@ -1444,6 +1488,11 @@ const server = createServer(async (request, response) => {
         try {
           assertXAccountEligibilityForVote(auth, session, request, { xFollowStatus })
         } catch (error) {
+          writeVoteSubmitLog('warn', 'blocked', {
+            ...voteLogDetails,
+            reason: error?.code || 'x_account_eligibility_required',
+            status: Number(error?.statusCode || 403),
+          })
           sendJson(
             request,
             response,
@@ -1469,6 +1518,12 @@ const server = createServer(async (request, response) => {
           ...(session?.walletAddress ? { walletAddress: session.walletAddress } : {}),
         },
       })
+      writeVoteSubmitLog('log', 'accepted', {
+        ...voteLogDetails,
+        allocationId: result.allocation?.id || 'none',
+        eventId: result.event?.id || 'none',
+        status: 201,
+      })
       sendJson(
         request,
         response,
@@ -1483,6 +1538,11 @@ const server = createServer(async (request, response) => {
       )
     } catch (error) {
       const status = Number(error?.statusCode || 500)
+      writeVoteSubmitLog(status >= 500 ? 'error' : 'warn', 'failed', {
+        ...voteLogDetails,
+        status,
+        error: error instanceof Error ? error.message : 'Vote submission failed.',
+      })
       sendJson(
         request,
         response,

@@ -867,8 +867,13 @@ export function TournamentArena({
 
   function handleSubmitVote(amount) {
     if (mode !== "vote") return;
-    if (activeDetailTeam) onSelectTeam?.(activeDetailTeam.id);
-    onConfirmPreviewVote?.(amount);
+    const target = {
+      matchId: activeDetailMatch?.id || "",
+      teamId: activeDetailTeam?.id || "",
+    };
+    if (target.matchId) onSelectMatch?.(target.matchId);
+    if (target.teamId) onSelectTeam?.(target.teamId);
+    onConfirmPreviewVote?.(amount, target);
   }
 
   return (

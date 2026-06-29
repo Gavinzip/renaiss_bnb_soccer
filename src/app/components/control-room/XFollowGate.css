@@ -405,6 +405,73 @@
   color: #fde68a !important;
 }
 
+.x-follow-gate__eligibility-checks {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x-follow-gate__eligibility-checks li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid rgba(245, 246, 241, 0.11);
+  border-radius: 8px;
+  background: rgba(245, 246, 241, 0.035);
+  color: rgba(245, 246, 241, 0.72);
+}
+
+.x-follow-gate__eligibility-checks li > span:not(.x-follow-gate__eligibility-icon) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.x-follow-gate__eligibility-checks strong {
+  color: rgba(245, 246, 241, 0.54);
+  font-size: 12px;
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.x-follow-gate__eligibility-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(245, 246, 241, 0.045);
+  color: rgba(245, 246, 241, 0.52);
+}
+
+.x-follow-gate__eligibility-checks li.is-pass {
+  border-color: rgba(137, 185, 154, 0.26);
+  background: rgba(137, 185, 154, 0.085);
+}
+
+.x-follow-gate__eligibility-checks li.is-pass .x-follow-gate__eligibility-icon,
+.x-follow-gate__eligibility-checks li.is-pass strong {
+  color: #c8ead3;
+}
+
+.x-follow-gate__eligibility-checks li.is-fail {
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(251, 191, 36, 0.085);
+}
+
+.x-follow-gate__eligibility-checks li.is-fail .x-follow-gate__eligibility-icon,
+.x-follow-gate__eligibility-checks li.is-fail strong {
+  color: #fde68a;
+}
+
 .x-follow-gate__checking {
   color: rgba(125, 211, 252, 0.9);
 }
@@ -508,6 +575,14 @@
   .x-follow-gate__action,
   .x-follow-gate__follow-link {
     width: 100%;
+  }
+
+  .x-follow-gate__eligibility-checks li {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .x-follow-gate__eligibility-checks strong {
+    grid-column: 2;
   }
 
   .x-follow-gate .rb-stepper__content {

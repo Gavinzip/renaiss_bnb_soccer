@@ -395,7 +395,10 @@ function TicketAllocationPanel({
           type="button"
           strength={44}
           disabled={!canSubmit}
-          onClick={() => onConfirmPreviewVote(boundedTicketAmount)}
+          onClick={() => onConfirmPreviewVote(boundedTicketAmount, {
+            matchId: selectedMatch?.id || "",
+            teamId: selectedTeam?.id || "",
+          })}
         >
           <span className="vote-allocation-panel__cta-content">
             {canSubmit ? <Send size={17} strokeWidth={2.35} /> : <LockKeyhole size={17} strokeWidth={2.35} />}
@@ -446,7 +449,10 @@ function MobileTicketDock({
     : {
       type: "button",
       disabled: !canSubmit,
-      onClick: () => onConfirmPreviewVote(boundedTicketAmount),
+      onClick: () => onConfirmPreviewVote(boundedTicketAmount, {
+        matchId: selectedMatch?.id || "",
+        teamId: selectedTeam?.id || "",
+      }),
     };
 
   return (
