@@ -785,11 +785,9 @@ function AppContent() {
   );
   const remainingRoundTickets = roundTicketBreakdown.remainingTickets;
   const isRealtimeRound32 = simulationMode === "realtime" && activeRoundId === "round32";
-  const visibleRoundAllocations = isRealtimeRound32 ? [] : roundAllocations;
-  const visibleRoundVoteOutcomes = isRealtimeRound32 ? [] : roundVoteOutcomes;
-  const visibleUsedRoundTickets = isRealtimeRound32
-    ? 0
-    : usedRoundTickets;
+  const visibleRoundAllocations = roundAllocations;
+  const visibleRoundVoteOutcomes = roundVoteOutcomes;
+  const visibleUsedRoundTickets = usedRoundTickets;
   const visibleRemainingRoundTickets = remainingRoundTickets;
   const pendingVoteMatch = useMemo(
     () => (pendingVote ? matches.find((match) => match.id === pendingVote.matchId) ?? null : null),
@@ -894,7 +892,7 @@ function AppContent() {
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       setMatchStatusNow(Date.now());
-    }, 60000);
+    }, 1000);
 
     return () => {
       window.clearInterval(intervalId);

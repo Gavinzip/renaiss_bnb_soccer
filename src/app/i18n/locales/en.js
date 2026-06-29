@@ -595,7 +595,7 @@ export const enLocale = {
       "stageSummaryRound": "Round",
       "stageSummaryMatchPool": "Match pool",
       "stageSummaryTotalTickets": "Total tickets",
-      "stageSummaryRemainingTickets": "Remaining votes",
+      "stageSummaryRemainingTickets": "Round tickets left",
       "stageSummaryUserTickets": "Your tickets {tickets}",
       "stageSummaryYourTickets": "Your tickets",
       "stageSummaryWalletHint": "This wallet",

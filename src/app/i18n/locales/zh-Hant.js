@@ -595,7 +595,7 @@ export const zhHantLocale = {
       "stageSummaryRound": "本輪",
       "stageSummaryMatchPool": "本場獎池",
       "stageSummaryTotalTickets": "總票數",
-      "stageSummaryRemainingTickets": "剩餘可投",
+      "stageSummaryRemainingTickets": "本輪剩餘票",
       "stageSummaryUserTickets": "你的票數 {tickets}",
       "stageSummaryYourTickets": "你的票數",
       "stageSummaryWalletHint": "本錢包",
