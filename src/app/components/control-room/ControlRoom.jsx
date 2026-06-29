@@ -794,10 +794,7 @@ export function ControlRoom({
   const ticketSourceActionable = Boolean(ticketSourceWalletAddress);
   const headerWalletActionable = authIdentityActionable || ticketSourceActionable;
   const HeaderWalletIdentity = headerWalletActionable ? "button" : "div";
-  const headerTicketCount = Math.max(
-    toLedgerInteger(roundTicketBreakdown?.usableTickets),
-    toLedgerInteger(remainingRoundTickets),
-  );
+  const headerTicketCount = toLedgerInteger(remainingRoundTickets);
   const [ticketSourceOpen, setTicketSourceOpen] = useState(false);
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
   const [xFollowOverlayDismissed, setXFollowOverlayDismissed] = useState(false);
