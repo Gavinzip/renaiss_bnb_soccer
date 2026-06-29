@@ -164,6 +164,15 @@ function throwEligibilityError(code, status, statusCode = 403, extra = {}) {
   })
 }
 
+function normalizeEligibilityPayload(payload) {
+  const source = payload?.data && typeof payload.data === 'object' ? payload.data : payload
+  return {
+    eligible: Boolean(source?.eligible),
+    hasFireflyAccount: Boolean(source?.has_ff_account),
+    hasPlacedBet: Boolean(source?.has_placed_bet),
+  }
+}
+
 async function fetchEligibility(config, xUserId) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
@@ -193,10 +202,9 @@ async function fetchEligibility(config, xUserId) {
       throw error
     }
 
+    const eligibility = normalizeEligibilityPayload(payload)
     return {
-      eligible: Boolean(payload?.eligible),
-      hasFireflyAccount: Boolean(payload?.has_ff_account),
-      hasPlacedBet: Boolean(payload?.has_placed_bet),
+      ...eligibility,
       rawStatus: response.status,
     }
   } catch (error) {
