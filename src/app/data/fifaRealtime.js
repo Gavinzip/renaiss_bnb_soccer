@@ -518,6 +518,17 @@ function getVoteTotal(voteTotalsByMatchTeam, matchId, teamId) {
   return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
 }
 
+function normalizeMatchCode(value) {
+  return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function fixtureMatchCode(fixture) {
+  const explicitCode = normalizeMatchCode(fixture?.matchCode);
+  if (explicitCode) return explicitCode;
+  const matchNumber = Number(fixture?.matchNumber);
+  return Number.isFinite(matchNumber) ? `M${matchNumber}` : "";
+}
+
 function createTeamForFixtureTeam(fixtureTeam, side, teamsById, teamsByName, votes = 0) {
   const localTeamId = resolveLocalTeamId({
     abbreviation: fixtureTeam.abbreviation,
@@ -575,8 +586,34 @@ export function buildRealtimeRound32Preview({ matches, teams, snapshot, fixtures
   const round32Matches = matches
     .filter((match) => match.roundId === ROUND32_ID)
     .sort((left, right) => new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime());
+  const sourceFixtureMatches = Array.isArray(sourceFixtures.matches) ? sourceFixtures.matches : [];
+  const fixturesByMatchCode = new Map();
+  const fixtureIndexes = new Map();
+  sourceFixtureMatches.forEach((fixture, index) => {
+    const code = fixtureMatchCode(fixture);
+    if (code && !fixturesByMatchCode.has(code)) fixturesByMatchCode.set(code, fixture);
+    fixtureIndexes.set(fixture, index);
+  });
+  const usedFixtureIndexes = new Set();
+  let fallbackFixtureIndex = 0;
+  const resolveFixtureForMatch = (match) => {
+    const byCode = fixturesByMatchCode.get(normalizeMatchCode(match.displayCode));
+    if (byCode) {
+      const index = fixtureIndexes.get(byCode);
+      if (index !== undefined) usedFixtureIndexes.add(index);
+      return byCode;
+    }
+
+    while (usedFixtureIndexes.has(fallbackFixtureIndex)) fallbackFixtureIndex += 1;
+    const fallback = sourceFixtureMatches[fallbackFixtureIndex] ?? null;
+    if (fallback) {
+      usedFixtureIndexes.add(fallbackFixtureIndex);
+      fallbackFixtureIndex += 1;
+    }
+    return fallback;
+  };
   const liveRound32Matches = new Map(round32Matches.map((match, index) => {
-    const fixture = sourceFixtures.matches[index] ?? null;
+    const fixture = resolveFixtureForMatch(match, index);
     if (fixture) {
       const homeTeam = createTeamForFixtureTeam(
         fixture.home,
