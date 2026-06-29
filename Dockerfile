@@ -29,6 +29,8 @@ COPY --from=runtime-deps /app/node_modules ./node_modules
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/scripts ./scripts
+COPY --from=build /app/src/app/data/fifaRealtime.js ./src/app/data/fifaRealtime.js
+COPY --from=build /app/src/app/data/ticketEligibility.js ./src/app/data/ticketEligibility.js
 COPY --from=build /app/src/app/data/worldCupCampaign.js ./src/app/data/worldCupCampaign.js
 
 EXPOSE 3000
