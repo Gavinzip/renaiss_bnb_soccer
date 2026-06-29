@@ -13,6 +13,7 @@
     "local:sync:production": "SOCCER_RUNTIME_TARGET=local SOCCER_LOCAL_DATA_DIR=.local-data/soccer-production node scripts/sync-production-soccer-data.mjs",
     "local:server": "SOCCER_RUNTIME_TARGET=local node scripts/production-server.mjs",
     "local:server:production": "SOCCER_RUNTIME_TARGET=local SOCCER_LOCAL_DATA_DIR=.local-data/soccer-production node scripts/production-server.mjs",
+    "local:server:realtime": "SOCCER_RUNTIME_TARGET=local SOCCER_LOCAL_DATA_DIR=.local-data/soccer-production FIFA_RESULTS_SOURCE_MAP_PATH=config/fifa-match-map.production.json FIFA_RESULT_SYNC_ENABLED=1 FIFA_RESULT_SYNC_ON_STARTUP=1 node scripts/production-server.mjs",
     "local:server:test-batch": "SOCCER_RUNTIME_TARGET=local SOCCER_LOCAL_DATA_DIR=.local-data/soccer-test-batch node scripts/production-server.mjs",
     "local:reveal:test-batch": "SOCCER_LOCAL_DATA_DIR=.local-data/soccer-test-batch node scripts/reveal-local-test-winners.mjs",
     "local:dev": "VITE_LOCAL_API_ORIGIN=http://127.0.0.1:3000 vite --host localhost --port 5173 --strictPort",

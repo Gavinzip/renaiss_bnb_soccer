@@ -58,6 +58,15 @@ npm run build
 npm run local:server:production
 ```
 
+Use the realtime variant when you want the local server to fetch the current
+FIFA Round of 32 results into local `match-results.json` at startup:
+
+```sh
+npm run local:sync:production
+npm run build
+npm run local:server:realtime
+```
+
 `local:sync:production` uses `SOCCER_PRODUCTION_API_ORIGIN` from `.env.local`
 and pulls:
 

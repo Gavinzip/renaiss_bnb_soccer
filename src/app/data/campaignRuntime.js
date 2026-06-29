@@ -4,8 +4,8 @@ import { estimateMultiPrizeChance } from "./ticketMath";
 import { toTicketInteger } from "./ticketEligibility";
 
 export const DEFAULT_VIEW_ID = "home";
-export const DEFAULT_ROUND_ID = "round16";
-export const DEFAULT_MATCH_ID = "m74";
+export const DEFAULT_ROUND_ID = "round32";
+export const DEFAULT_MATCH_ID = "m57";
 export const DEFAULT_TICKET_AMOUNT = 12;
 
 export const commandViews = [

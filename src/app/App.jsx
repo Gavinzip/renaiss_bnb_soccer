@@ -157,7 +157,18 @@ function countWinnersForWallet(winnerRevealData, walletAddress) {
 function isLocalTestOrigin() {
   if (typeof window === "undefined") return false;
   const { hostname } = window.location;
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  const normalizedHostname = hostname.toLowerCase();
+  return normalizedHostname === "localhost"
+    || normalizedHostname === "127.0.0.1"
+    || normalizedHostname === "0.0.0.0"
+    || normalizedHostname === "::1"
+    || normalizedHostname === "127.0.0.1.nip.io"
+    || normalizedHostname.endsWith(".127.0.0.1.nip.io");
+}
+
+function normalizeLocalSimulationMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  return mode === "realtime" ? "realtime" : "scenario";
 }
 
 function normalizeLedgerEntryPayload(payload) {
@@ -247,7 +258,9 @@ function AppContent() {
   const copy = useCampaignCopy();
   const { t } = copy;
   const localTestOrigin = isLocalTestOrigin();
-  const initialRoundId = localTestOrigin ? DEFAULT_ROUND_ID : "round32";
+  const defaultLocalSimulationMode = normalizeLocalSimulationMode(import.meta.env.VITE_LOCAL_SIMULATION_MODE);
+  const defaultSimulationMode = localTestOrigin ? defaultLocalSimulationMode : "realtime";
+  const initialRoundId = defaultSimulationMode === "scenario" ? DEFAULT_ROUND_ID : "round32";
   const initialMatchId = localTestOrigin
     ? DEFAULT_MATCH_ID
     : campaignMatches.find((match) => match.roundId === "round32")?.id ?? DEFAULT_MATCH_ID;
@@ -293,7 +306,7 @@ function AppContent() {
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
   const [activeViewId, setActiveViewId] = useState(readInitialViewId);
-  const [localSimulationMode, setLocalSimulationMode] = useState(localTestOrigin ? "scenario" : "realtime");
+  const [localSimulationMode, setLocalSimulationMode] = useState(defaultSimulationMode);
   const simulationMode = localTestOrigin ? localSimulationMode : "realtime";
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
   const [liveRound32Matches, setLiveRound32Matches] = useState(() => createPendingFifaRound32MatchesSnapshot());

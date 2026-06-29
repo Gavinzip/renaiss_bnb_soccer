@@ -1,0 +1,116 @@
+{
+  "matches": [
+    {
+      "matchId": "m57",
+      "fifaMatchId": "400021518",
+      "fifaMatchNumber": 73,
+      "teamIds": ["south-africa", "canada"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m58",
+      "fifaMatchId": "400021513",
+      "fifaMatchNumber": 74,
+      "teamIds": ["germany", "paraguay"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m59",
+      "fifaMatchId": "400021522",
+      "fifaMatchNumber": 75,
+      "teamIds": ["netherlands", "morocco"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m60",
+      "fifaMatchId": "400021516",
+      "fifaMatchNumber": 76,
+      "teamIds": ["brazil", "japan"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m61",
+      "fifaMatchId": "400021523",
+      "fifaMatchNumber": 77,
+      "teamIds": ["france", "sweden"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m62",
+      "fifaMatchId": "400021514",
+      "fifaMatchNumber": 78,
+      "teamIds": ["cote-d-ivoire", "norway"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m63",
+      "fifaMatchId": "400021520",
+      "fifaMatchNumber": 79,
+      "teamIds": ["mexico", "ecuador"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m64",
+      "fifaMatchId": "400021512",
+      "fifaMatchNumber": 80,
+      "teamIds": ["england", "congo-dr"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m65",
+      "fifaMatchId": "400021524",
+      "fifaMatchNumber": 81,
+      "teamIds": ["united-states", "bosnia-and-herzegovina"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m66",
+      "fifaMatchId": "400021525",
+      "fifaMatchNumber": 82,
+      "teamIds": ["belgium", "senegal"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m67",
+      "fifaMatchId": "400021526",
+      "fifaMatchNumber": 83,
+      "teamIds": ["portugal", "croatia"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m68",
+      "fifaMatchId": "400021519",
+      "fifaMatchNumber": 84,
+      "teamIds": ["spain", "austria"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m69",
+      "fifaMatchId": "400021527",
+      "fifaMatchNumber": 85,
+      "teamIds": ["switzerland", "algeria"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m70",
+      "fifaMatchId": "400021521",
+      "fifaMatchNumber": 86,
+      "teamIds": ["argentina", "cabo-verde"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m71",
+      "fifaMatchId": "400021517",
+      "fifaMatchNumber": 87,
+      "teamIds": ["colombia", "ghana"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "m72",
+      "fifaMatchId": "400021515",
+      "fifaMatchNumber": 88,
+      "teamIds": ["australia", "egypt"],
+      "enforceTeamMatch": true
+    }
+  ]
+}

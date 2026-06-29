@@ -318,7 +318,13 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
 function isLocalTestOrigin() {
   if (typeof window === "undefined") return false;
   const { hostname } = window.location;
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  const normalizedHostname = hostname.toLowerCase();
+  return normalizedHostname === "localhost"
+    || normalizedHostname === "127.0.0.1"
+    || normalizedHostname === "0.0.0.0"
+    || normalizedHostname === "::1"
+    || normalizedHostname === "127.0.0.1.nip.io"
+    || normalizedHostname.endsWith(".127.0.0.1.nip.io");
 }
 
 function RoomLoadingShell({ t }) {
