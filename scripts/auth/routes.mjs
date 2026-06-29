@@ -45,6 +45,11 @@ import {
   skipXFollow,
   verifyXFollow,
 } from './x-follow-gate.mjs'
+import {
+  createXAccountEligibilityConfig,
+  getXAccountEligibilityStatus,
+  verifyXAccountEligibility,
+} from './x-account-eligibility.mjs'
 
 const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -446,6 +451,7 @@ export function createAuthContext({ dataDir, env = process.env, userProfileStore
   const stateConfig = createAuthStateConfig({ authDir, sessionSecret })
   const oauthTokenConfig = createOAuthTokenConfig({ authDir, sessionSecret })
   const xFollowGateConfig = createXFollowGateConfig({ authDir, env })
+  const xAccountEligibilityConfig = createXAccountEligibilityConfig({ authDir, env })
   const providerConfig = buildProviderConfig(env)
   const identityResolverConfig = createIdentityResolverConfig(env)
   const emailConfig = createEmailConfig(env)
@@ -458,6 +464,7 @@ export function createAuthContext({ dataDir, env = process.env, userProfileStore
     oauthTokenConfig,
     userProfileStore,
     xFollowGateConfig,
+    xAccountEligibilityConfig,
     providerConfig,
     identityResolverConfig,
     emailConfig,
@@ -490,6 +497,11 @@ export function getAuthPublicStatus(auth) {
       required: auth.xFollowGateConfig.required,
       skipEnabled: auth.xFollowGateConfig.skipEnabled,
     },
+    xAccountEligibility: {
+      required: auth.xAccountEligibilityConfig.required,
+      configured: Boolean(auth.xAccountEligibilityConfig.apiKey),
+      cacheTtlSeconds: auth.xAccountEligibilityConfig.cacheTtlSeconds,
+    },
   }
 }
 
@@ -508,12 +520,14 @@ export async function handleAuthRoute({
     const session = readAuthSession(auth, request)
     const publicConfig = getAuthPublicStatus(auth)
     publicConfig.renaiss = await getRenaissPublicConfig(auth)
+    const xFollow = getXFollowStatus(auth, session, request)
     sendJsonResponse(sendJson, request, response, 200, {
       authenticated: Boolean(session),
       identity: session?.identity || null,
       walletAddress: session?.walletAddress || null,
       resolver: session?.resolver || null,
-      xFollow: getXFollowStatus(auth, session, request),
+      xFollow,
+      xAccountEligibility: getXAccountEligibilityStatus(auth, session, request, { xFollowStatus: xFollow }),
       requiresWalletLink: Boolean(session && !session.walletAddress),
       config: publicConfig,
     })
@@ -523,6 +537,51 @@ export async function handleAuthRoute({
   if (routePathname === '/api/auth/x-follow/status') {
     const session = readAuthSession(auth, request)
     sendJsonResponse(sendJson, request, response, 200, getXFollowStatus(auth, session, request))
+    return true
+  }
+
+  if (routePathname === '/api/auth/x-account-eligibility/status') {
+    const session = readAuthSession(auth, request)
+    const xFollow = getXFollowStatus(auth, session, request)
+    sendJsonResponse(
+      sendJson,
+      request,
+      response,
+      200,
+      getXAccountEligibilityStatus(auth, session, request, { xFollowStatus: xFollow }),
+    )
+    return true
+  }
+
+  if (routePathname === '/api/auth/x-account-eligibility/verify') {
+    if (request.method !== 'POST') {
+      sendJsonResponse(sendJson, request, response, 405, { ok: false, error: 'POST required.' })
+      return true
+    }
+
+    const session = readAuthSession(auth, request)
+    const xFollow = getXFollowStatus(auth, session, request)
+    try {
+      const status = await verifyXAccountEligibility(auth, session, request, {
+        xFollowStatus: xFollow,
+        force: true,
+      })
+      sendJsonResponse(sendJson, request, response, 200, { ok: true, ...status })
+    } catch (error) {
+      sendJsonResponse(
+        sendJson,
+        request,
+        response,
+        Number(error?.statusCode || 500),
+        {
+          ok: false,
+          code: error?.code || 'eligibility_verify_failed',
+          error: error instanceof Error ? error.message : 'Firefly eligibility verification failed.',
+          retryAfterSeconds: error?.retryAfterSeconds || 0,
+          status: error?.status || getXAccountEligibilityStatus(auth, session, request, { xFollowStatus: xFollow }),
+        },
+      )
+    }
     return true
   }
 

@@ -28,49 +28,101 @@ function statusMessageKey(status) {
   return map[status] || "xFollowGate.statusIdle";
 }
 
+function eligibilityStatusMessageKey(status) {
+  const map = {
+    api_error: "xFollowGate.statusEligibilityApiError",
+    eligibility_expired: "xFollowGate.statusEligibilityExpired",
+    ineligible: "xFollowGate.statusEligibilityIneligible",
+    login_required: "xFollowGate.statusEligibilityLoginRequired",
+    missing_firefly_account: "xFollowGate.statusMissingFireflyAccount",
+    missing_predict_bet: "xFollowGate.statusMissingPredictBet",
+    rate_limited: "xFollowGate.statusEligibilityRateLimited",
+    request_timeout: "xFollowGate.statusEligibilityTimeout",
+    service_unconfigured: "xFollowGate.statusEligibilityUnconfigured",
+    unverified: "xFollowGate.statusEligibilityIdle",
+    wallet_required: "xFollowGate.statusWalletRequired",
+    x_follow_required: "xFollowGate.statusEligibilityFollowRequired",
+    x_identity_required: "xFollowGate.statusEligibilityIdentityRequired",
+  };
+  return map[status] || "xFollowGate.statusEligibilityIdle";
+}
+
+function initialStepForSession(authSession) {
+  const xFollow = authSession?.xFollow || {};
+  if (!authSession?.authenticated || !authSession?.walletAddress || !xFollow.xConnected) return 1;
+  if (!xFollow.gatePassed) return 2;
+  return 3;
+}
+
 export function XFollowGate({
   authSession,
   authConfig,
   authEndpointReady,
   onRefreshAuth,
   onRequestClose,
+  onRequestLogin,
 }) {
   const { t } = useCampaignCopy();
-  const [activeStep, setActiveStep] = useState(authSession?.xFollow?.xConnected ? 2 : 1);
+  const [activeStep, setActiveStep] = useState(() => initialStepForSession(authSession));
   const [verifying, setVerifying] = useState(false);
+  const [verifyingEligibility, setVerifyingEligibility] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [issue, setIssue] = useState("");
+  const [eligibilityIssue, setEligibilityIssue] = useState("");
   const [localStatus, setLocalStatus] = useState(authSession?.xFollow || null);
+  const [localEligibilityStatus, setLocalEligibilityStatus] = useState(authSession?.xAccountEligibility || null);
   const gate = localStatus || authSession?.xFollow || {};
+  const eligibility = localEligibilityStatus || authSession?.xAccountEligibility || {};
   const gateConfig = authConfig?.xFollowGate || gate.target || {};
+  const eligibilityConfig = authConfig?.xAccountEligibility || {};
   const target = gate.target || gateConfig;
   const targetHandle = target?.handle || gateConfig.targetHandle || "thefireflyapp";
   const targetUrl = target?.url || gateConfig.targetUrl || `https://x.com/${targetHandle}`;
   const xConnected = Boolean(gate.xConnected);
+  const needsRenaissSession = authEndpointReady && (!authSession?.authenticated || !authSession?.walletAddress);
   const identityBlockingStatus = ["wallet_required", "profile_store_missing", "renaiss_twitter_required"].includes(gate.status);
   const identityIssueStatus = ["wallet_required", "profile_store_missing", "renaiss_twitter_required", "twitter_identity_missing", "twitter_identity_mismatch"].includes(gate.status);
   const identityIssue = identityIssueStatus ? t(statusMessageKey(gate.status)) : "";
-  const xProviderReady = Boolean(authConfig?.providers?.x) && !identityBlockingStatus;
+  const xProviderReady = Boolean(authConfig?.providers?.x) && !identityBlockingStatus && !needsRenaissSession;
+  const eligibilityRequired = eligibility.required ?? eligibilityConfig.required ?? true;
+  const eligibilityGatePassed = !eligibilityRequired || Boolean(eligibility.gatePassed);
   const skipEnabled = Boolean(gate.skipEnabled || gateConfig.skipEnabled);
   const retryAfterSeconds = Math.max(0, Number(gate.retryAfterSeconds || 0));
-  const canContinueToVerify = authEndpointReady && xConnected && !identityIssueStatus;
+  const canContinueToFollow = authEndpointReady && xConnected && !identityIssueStatus && !needsRenaissSession;
   const canVerify = authEndpointReady && xConnected && xProviderReady && !identityIssueStatus && !verifying && !skipping && retryAfterSeconds <= 0;
-  const canSkip = authEndpointReady && skipEnabled && !verifying && !skipping;
+  const canContinueToEligibility = authEndpointReady && Boolean(gate.gatePassed);
+  const canVerifyEligibility = authEndpointReady && Boolean(gate.gatePassed) && !eligibilityGatePassed && !verifyingEligibility && !verifying && !skipping;
+  const canSkip = authEndpointReady && skipEnabled && !verifying && !verifyingEligibility && !skipping;
   const canClose = typeof onRequestClose === "function";
+  const eligibilityStatusIssue = eligibilityGatePassed || !eligibility.status
+    ? ""
+    : t(eligibilityStatusMessageKey(eligibility.status));
 
   useEffect(() => {
     setLocalStatus(authSession?.xFollow || null);
-    setActiveStep(authSession?.xFollow?.xConnected ? 2 : 1);
-  }, [authSession?.xFollow]);
+    setLocalEligibilityStatus(authSession?.xAccountEligibility || null);
+    setActiveStep(initialStepForSession(authSession));
+  }, [authSession?.authenticated, authSession?.walletAddress, authSession?.xFollow, authSession?.xAccountEligibility]);
 
   const stepLabels = useMemo(() => ({
     back: t("xFollowGate.back"),
-    next: activeStep === 1 ? t("xFollowGate.continue") : verifying ? t("xFollowGate.verifying") : t("xFollowGate.verify"),
+    next: activeStep === 1
+      ? t("xFollowGate.continue")
+      : activeStep === 2
+        ? gate.gatePassed
+          ? t("xFollowGate.continue")
+          : verifying
+            ? t("xFollowGate.verifying")
+            : t("xFollowGate.verify")
+        : verifyingEligibility
+          ? t("xFollowGate.verifyingEligibility")
+          : t("xFollowGate.verifyEligibility"),
     indicators: [
       t("xFollowGate.stepConnect"),
       t("xFollowGate.stepVerify"),
+      t("xFollowGate.stepEligibility"),
     ],
-  }), [activeStep, t, verifying]);
+  }), [activeStep, gate.gatePassed, t, verifying, verifyingEligibility]);
 
   async function handleVerify() {
     if (!canVerify) return;
@@ -89,6 +141,7 @@ export function XFollowGate({
         setIssue(t(statusMessageKey(payload.status), { seconds: payload.retryAfterSeconds || 0 }));
         return;
       }
+      setActiveStep(3);
       await onRefreshAuth?.();
     } catch (error) {
       if (error?.payload?.status) setLocalStatus(error.payload.status || localStatus);
@@ -97,6 +150,33 @@ export function XFollowGate({
       setIssue(key ? t(key, { seconds }) : error.message);
     } finally {
       setVerifying(false);
+    }
+  }
+
+  async function handleVerifyEligibility() {
+    if (!canVerifyEligibility) return;
+
+    setEligibilityIssue("");
+    setVerifyingEligibility(true);
+    try {
+      const { payload } = await fetchJsonWithTimeout("/api/auth/x-account-eligibility/verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        timeoutMs: 15000,
+      });
+      setLocalEligibilityStatus(payload);
+      if (!payload.gatePassed) {
+        setEligibilityIssue(t(eligibilityStatusMessageKey(payload.status)));
+        return;
+      }
+      await onRefreshAuth?.();
+    } catch (error) {
+      if (error?.payload?.status) setLocalEligibilityStatus(error.payload.status || localEligibilityStatus);
+      const key = eligibilityStatusMessageKey(error?.code || error?.payload?.code);
+      setEligibilityIssue(key ? t(key) : error.message);
+    } finally {
+      setVerifyingEligibility(false);
     }
   }
 
@@ -123,6 +203,13 @@ export function XFollowGate({
     }
   }
 
+  function stepComplete(step) {
+    if (step === 1) return Boolean(authSession?.walletAddress && xConnected && !identityIssueStatus);
+    if (step === 2) return Boolean(gate.gatePassed);
+    if (step === 3) return Boolean(eligibilityGatePassed);
+    return false;
+  }
+
   return (
     <section className="x-follow-gate" aria-label={t("xFollowGate.aria")}>
       {canClose ? (
@@ -140,9 +227,13 @@ export function XFollowGate({
       </header>
 
       <Stepper
-        initialStep={xConnected ? 2 : 1}
+        initialStep={initialStepForSession({
+          ...authSession,
+          xFollow: gate,
+          xAccountEligibility: eligibility,
+        })}
         onStepChange={setActiveStep}
-        onFinalStepCompleted={handleVerify}
+        onFinalStepCompleted={handleVerifyEligibility}
         backButtonText={stepLabels.back}
         nextButtonText={stepLabels.next}
         disableStepIndicators
@@ -152,41 +243,65 @@ export function XFollowGate({
         renderStepIndicator={({ step, state }) => (
           <span className="x-follow-gate__rail-item">
             <span className="x-follow-gate__rail-node" aria-hidden="true">
-              {step < activeStep || (step === 2 && gate.gatePassed) ? <CheckCircle2 size={14} strokeWidth={2.4} /> : String(step).padStart(2, "0")}
+              {stepComplete(step) ? <CheckCircle2 size={14} strokeWidth={2.4} /> : String(step).padStart(2, "0")}
             </span>
             <span className="x-follow-gate__rail-copy">
               <span className="x-follow-gate__step-label">{stepLabels.indicators[step - 1]}</span>
-              <span className="x-follow-gate__step-state">{t(`xFollowGate.stepState.${state}`)}</span>
+              <span className="x-follow-gate__step-state">{t(`xFollowGate.stepState.${stepComplete(step) ? "complete" : state}`)}</span>
             </span>
           </span>
         )}
         nextButtonProps={{
-          disabled: activeStep === 1 ? !canContinueToVerify : !canVerify,
+          disabled: activeStep === 1
+            ? !canContinueToFollow
+            : activeStep === 2
+              ? gate.gatePassed ? !canContinueToEligibility : !canVerify
+              : !canVerifyEligibility,
+          onClick: (event) => {
+            if (activeStep === 2 && !gate.gatePassed) {
+              event.preventDefault();
+              handleVerify();
+            }
+          },
         }}
       >
         <Step>
           <section className="x-follow-gate__step">
-            <span className={xConnected ? "is-complete" : "is-locked"}>
-              {xConnected ? <CheckCircle2 size={18} /> : <X size={18} />}
-              {xConnected
-                ? t("xFollowGate.xConnected", { username: gate.username ? `@${gate.username}` : "X" })
-                : t("xFollowGate.xRequired")}
+            <span className={xConnected && !needsRenaissSession ? "is-complete" : "is-locked"}>
+              {xConnected && !needsRenaissSession ? <CheckCircle2 size={18} /> : <X size={18} />}
+              {needsRenaissSession
+                ? t("xFollowGate.renaissRequired")
+                : xConnected
+                  ? t("xFollowGate.xConnected", { username: gate.username ? `@${gate.username}` : "X" })
+                  : t("xFollowGate.xRequired")}
             </span>
             <h2>{t("xFollowGate.connectTitle")}</h2>
-            <p>{t("xFollowGate.connectBody")}</p>
+            <p>{needsRenaissSession ? t("xFollowGate.renaissBody") : t("xFollowGate.connectBody")}</p>
             {identityIssue ? <p className="x-follow-gate__issue">{identityIssue}</p> : null}
-            <Magnet
-              as="a"
-              className={xProviderReady ? "x-follow-gate__action" : "x-follow-gate__action is-disabled"}
-              href={xProviderReady ? xLoginHref() : undefined}
-              aria-disabled={!xProviderReady}
-              onClick={(event) => {
-                if (!xProviderReady) event.preventDefault();
-              }}
-            >
-              <X size={17} strokeWidth={2.35} />
-              <span>{xConnected ? t("xFollowGate.reconnectX") : t("xFollowGate.connectX")}</span>
-            </Magnet>
+            {needsRenaissSession ? (
+              <Magnet
+                as="button"
+                type="button"
+                className="x-follow-gate__action"
+                onClick={onRequestLogin}
+              >
+                <LockKeyhole size={17} strokeWidth={2.35} />
+                <span>{t("xFollowGate.signInRenaiss")}</span>
+              </Magnet>
+            ) : (
+              <Magnet
+                as="a"
+                className={xProviderReady ? "x-follow-gate__action" : "x-follow-gate__action is-disabled"}
+                href={xProviderReady ? xLoginHref() : undefined}
+                aria-disabled={!xProviderReady}
+                onClick={(event) => {
+                  if (!xProviderReady) event.preventDefault();
+                }}
+              >
+                <X size={17} strokeWidth={2.35} />
+                <span>{xConnected ? t("xFollowGate.reconnectX") : t("xFollowGate.connectX")}</span>
+              </Magnet>
+            )}
           </section>
         </Step>
         <Step>
@@ -213,6 +328,25 @@ export function XFollowGate({
               <p className="x-follow-gate__checking">
                 <Loader2 className="is-spinning" size={16} />
                 {t("xFollowGate.checking")}
+              </p>
+            ) : null}
+          </section>
+        </Step>
+        <Step>
+          <section className="x-follow-gate__step">
+            <span className={eligibilityGatePassed ? "is-complete" : "is-locked"}>
+              {eligibilityGatePassed ? <CheckCircle2 size={18} /> : <ShieldCheck size={18} />}
+              {eligibilityGatePassed ? t("xFollowGate.eligibilityVerified") : t("xFollowGate.eligibilityNotVerified")}
+            </span>
+            <h2>{t("xFollowGate.eligibilityTitle")}</h2>
+            <p>{t("xFollowGate.eligibilityBody")}</p>
+            {eligibilityIssue || eligibilityStatusIssue ? (
+              <p className="x-follow-gate__issue">{eligibilityIssue || eligibilityStatusIssue}</p>
+            ) : null}
+            {verifyingEligibility ? (
+              <p className="x-follow-gate__checking">
+                <Loader2 className="is-spinning" size={16} />
+                {t("xFollowGate.checkingEligibility")}
               </p>
             ) : null}
           </section>

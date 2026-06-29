@@ -12764,6 +12764,10 @@ body,
   pointer-events: none;
 }
 
+.round-simulator.is-rail-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .round-switch.round-switch--read-only {
   display: grid !important;
   grid-template-columns: repeat(5, minmax(130px, 1fr)) !important;
@@ -14097,6 +14101,14 @@ body,
   font-size: 1.35rem;
 }
 
+.vote-allocation-panel.is-action-blocked {
+  border-color: rgba(240, 209, 139, 0.26);
+}
+
+.vote-allocation-panel.is-action-blocked header p {
+  color: rgba(240, 209, 139, 0.78);
+}
+
 .vote-allocation-panel p {
   margin: 0;
   color: rgba(245, 246, 241, 0.56);
@@ -14370,6 +14382,10 @@ body {
 
 .control-room[data-view="schedule"][data-simulation="realtime"] .tournament-arena {
   padding-top: 204px;
+}
+
+.control-room[data-view="schedule"][data-local-tools="true"] .tournament-arena {
+  padding-top: 244px;
 }
 
 .control-room[data-view="schedule"] .tournament-arena::before,
@@ -15383,6 +15399,10 @@ body {
 
   .control-room[data-view="schedule"][data-simulation="realtime"] .tournament-arena {
     padding-top: 302px;
+  }
+
+  .control-room[data-view="schedule"][data-local-tools="true"] .tournament-arena {
+    padding-top: 268px;
   }
 
   .control-room[data-view="schedule"] .tournament-arena__scroll,
@@ -17117,7 +17137,7 @@ body {
 /* Round 175: vote workspace gets its own safe top rhythm and compact match lanes. */
 .control-room[data-view="vote"] {
   --vote-rail-top: 86px;
-  --vote-content-top: 150px;
+  --vote-content-top: 108px;
   --vote-summary-count: 3;
   --vote-page-gutter: clamp(24px, 4vw, 72px);
   --vote-panel-bg: rgba(9, 11, 11, 0.76);
@@ -17231,6 +17251,10 @@ body {
   gap: clamp(14px, 2.4vw, 34px) !important;
   padding: 0 !important;
   transform: translateX(-50%);
+}
+
+.control-room[data-view="vote"] .round-simulator.is-rail-only {
+  grid-template-columns: minmax(0, 1fr) !important;
 }
 
 .control-room[data-view="vote"] .round-switch.round-switch--read-only {

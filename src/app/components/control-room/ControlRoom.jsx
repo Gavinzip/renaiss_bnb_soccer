@@ -433,6 +433,7 @@ function RoundSwitch({
   liveQualification,
   drawStats,
   remainingRoundTickets,
+  showModeTools = false,
   onSelectRound,
   onSelectSimulatedRound,
   onSelectSimulationMode,
@@ -479,7 +480,7 @@ function RoundSwitch({
   }
 
   return (
-    <section className="round-simulator" aria-label={t("roundRail.simulatorAria")}>
+    <section className={showModeTools ? "round-simulator" : "round-simulator is-rail-only"} aria-label={t("roundRail.simulatorAria")}>
       <ol className="round-switch round-switch--read-only" aria-label={t("common.round")}>
         {rounds.map((round, index) => {
           const draw = drawById.get(round.id);
@@ -518,45 +519,47 @@ function RoundSwitch({
           );
         })}
       </ol>
-      <section className="round-simulator__tools" aria-label={t("roundRail.modeAria")}>
-        <div className="round-simulator__mode" role="group" aria-label={t("roundRail.modeAria")}>
-          <button
-            type="button"
-            className={simulationMode === "scenario" ? "is-active" : ""}
-            onClick={() => onSelectSimulationMode("scenario")}
-            aria-pressed={simulationMode === "scenario"}
-          >
-            {t("roundRail.modeScenario")}
-          </button>
-          <button
-            type="button"
-            className={simulationMode === "realtime" ? "is-active" : ""}
-            onClick={() => onSelectSimulationMode("realtime")}
-            aria-pressed={simulationMode === "realtime"}
-          >
-            {t("roundRail.modeRealtime")}
-          </button>
-        </div>
-        <label className="round-simulator__control">
-          <span>{t("roundRail.simulateStage")}</span>
-          <select
-            value={simulatedRoundId}
-            onChange={(event) => onSelectSimulatedRound(event.target.value)}
-            disabled={simulationMode === "realtime"}
-          >
-            {rounds.map((round) => (
-              <option key={round.id} value={round.id}>
-                {roundLabel(round, "advanceLabel")}
-              </option>
-            ))}
-          </select>
-        </label>
-        {simulationMode === "realtime" ? (
-          <p className={`round-simulator__source is-${liveSourceTone}`}>
-            {liveSourceLine}
-          </p>
-        ) : null}
-      </section>
+      {showModeTools ? (
+        <section className="round-simulator__tools" aria-label={t("roundRail.modeAria")}>
+          <div className="round-simulator__mode" role="group" aria-label={t("roundRail.modeAria")}>
+            <button
+              type="button"
+              className={simulationMode === "scenario" ? "is-active" : ""}
+              onClick={() => onSelectSimulationMode("scenario")}
+              aria-pressed={simulationMode === "scenario"}
+            >
+              {t("roundRail.modeScenario")}
+            </button>
+            <button
+              type="button"
+              className={simulationMode === "realtime" ? "is-active" : ""}
+              onClick={() => onSelectSimulationMode("realtime")}
+              aria-pressed={simulationMode === "realtime"}
+            >
+              {t("roundRail.modeRealtime")}
+            </button>
+          </div>
+          <label className="round-simulator__control">
+            <span>{t("roundRail.simulateStage")}</span>
+            <select
+              value={simulatedRoundId}
+              onChange={(event) => onSelectSimulatedRound(event.target.value)}
+              disabled={simulationMode === "realtime"}
+            >
+              {rounds.map((round) => (
+                <option key={round.id} value={round.id}>
+                  {roundLabel(round, "advanceLabel")}
+                </option>
+              ))}
+            </select>
+          </label>
+          {simulationMode === "realtime" ? (
+            <p className={`round-simulator__source is-${liveSourceTone}`}>
+              {liveSourceLine}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -793,19 +796,22 @@ export function ControlRoom({
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
   const [xFollowOverlayDismissed, setXFollowOverlayDismissed] = useState(false);
   const xFollowGateRequired = authConfig?.xFollowGate?.required !== false;
-  const voteRequiresXFollow = authEndpointReady && xFollowGateRequired && !authSession?.xFollow?.gatePassed;
-  const showOptionalXFollowButton = authEndpointReady && !xFollowGateRequired && effectiveActiveViewId === "vote";
-  const canDismissXFollowOverlay = !voteRequiresXFollow || isLocalTestOrigin();
+  const xAccountEligibilityRequired = authConfig?.xAccountEligibility?.required !== false;
+  const preVoteGateRequired = xFollowGateRequired || xAccountEligibilityRequired;
+  const xFollowGatePassed = !xFollowGateRequired || Boolean(authSession?.xFollow?.gatePassed);
+  const xAccountEligibilityPassed = !xAccountEligibilityRequired || Boolean(authSession?.xAccountEligibility?.gatePassed);
+  const voteRequiresPreVoteGate = authEndpointReady && preVoteGateRequired && (!xFollowGatePassed || !xAccountEligibilityPassed);
+  const voteActionBlockReason = voteRequiresPreVoteGate ? t("vote.voteEligibilityBlocked") : "";
+  const showXFollowVerifyButton = authEndpointReady && preVoteGateRequired && effectiveActiveViewId === "vote";
+  const canDismissXFollowOverlay = true;
   const closeXFollowOverlay = useCallback(() => {
-    if (voteRequiresXFollow && canDismissXFollowOverlay) {
-      setXFollowOverlayDismissed(true);
-    }
+    setXFollowOverlayDismissed(true);
     setXFollowPanelOpen(false);
-  }, [canDismissXFollowOverlay, voteRequiresXFollow]);
+  }, []);
   const showXFollowOverlay = effectiveActiveViewId === "vote"
-    && !authSession?.xFollow?.gatePassed
     && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
-    && (voteRequiresXFollow || (showOptionalXFollowButton && xFollowPanelOpen));
+    && showXFollowVerifyButton
+    && xFollowPanelOpen;
 
   async function handleLogout() {
     if (typeof window === "undefined") return;
@@ -844,11 +850,11 @@ export function ControlRoom({
   }, [drawViewEnabled, effectiveActiveViewId, visibleCommandViews]);
 
   useEffect(() => {
-    if (effectiveActiveViewId !== "vote" || authSession?.xFollow?.gatePassed || !voteRequiresXFollow) {
+    if (effectiveActiveViewId !== "vote" || !voteRequiresPreVoteGate) {
       setXFollowPanelOpen(false);
       setXFollowOverlayDismissed(false);
     }
-  }, [effectiveActiveViewId, authSession?.xFollow?.gatePassed, voteRequiresXFollow]);
+  }, [effectiveActiveViewId, voteRequiresPreVoteGate]);
 
   useEffect(() => {
     if (!showXFollowOverlay || !canDismissXFollowOverlay) return undefined;
@@ -896,10 +902,10 @@ export function ControlRoom({
           winnersAlert={currentUserWinnerCount > 0}
         />
         <LanguageSwitch />
-        {showOptionalXFollowButton ? (
+        {showXFollowVerifyButton ? (
           <button
             type="button"
-            className={authSession?.xFollow?.gatePassed ? "header-x-verify is-complete" : "header-x-verify"}
+            className={xFollowGatePassed && xAccountEligibilityPassed ? "header-x-verify is-complete" : "header-x-verify"}
             onClick={() => {
               setXFollowOverlayDismissed(false);
               setXFollowPanelOpen((current) => !current);
@@ -907,7 +913,7 @@ export function ControlRoom({
             aria-expanded={xFollowPanelOpen}
           >
             <ShieldCheck size={16} strokeWidth={2.25} />
-            <span>{authSession?.xFollow?.gatePassed ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>
+            <span>{xFollowGatePassed && xAccountEligibilityPassed ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>
           </button>
         ) : null}
         <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
@@ -974,7 +980,7 @@ export function ControlRoom({
               />
             ) : null}
 
-            {showSimulationControls && !["draw", "winners"].includes(effectiveActiveViewId) ? (
+            {showSimulationControls && ["schedule", "vote"].includes(effectiveActiveViewId) ? (
               <RoundSwitch
                 rounds={rounds}
                 activeRoundId={activeRoundId}
@@ -983,6 +989,7 @@ export function ControlRoom({
                 liveQualification={liveQualification}
                 drawStats={drawStats}
                 remainingRoundTickets={remainingRoundTickets}
+                showModeTools={showSimulationControls}
                 onSelectRound={onSelectRound}
                 onSelectSimulatedRound={onSelectSimulatedRound}
                 onSelectSimulationMode={onSelectSimulationMode}
@@ -1031,6 +1038,8 @@ export function ControlRoom({
               roundVoteOutcomes={roundVoteOutcomes}
               roundOutcomeSummary={roundOutcomeSummary}
               previewVoteIssue={previewVoteIssue}
+              voteActionBlocked={voteRequiresPreVoteGate}
+              voteActionBlockReason={voteActionBlockReason}
               authSession={authSession}
               authEndpointReady={authEndpointReady}
               onRequestLogin={onRequestLogin}
@@ -1063,6 +1072,7 @@ export function ControlRoom({
                   authConfig={authConfig}
                   authEndpointReady={authEndpointReady}
                   onRefreshAuth={onRefreshAuth}
+                  onRequestLogin={onRequestLogin}
                   onRequestClose={canDismissXFollowOverlay ? closeXFollowOverlay : undefined}
                 />
               </div>

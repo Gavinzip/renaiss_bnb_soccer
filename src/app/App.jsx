@@ -6,7 +6,9 @@ import { InitialPageLoader } from "./components/InitialPageLoader";
 import {
   buildRealtimeRound32Preview,
   createPendingFifaQualificationSnapshot,
+  createPendingFifaRound32MatchesSnapshot,
   fetchFifaQualificationSnapshot,
+  fetchFifaRound32MatchesSnapshot,
 } from "./data/fifaRealtime";
 import { verifiedLedgerSnapshot } from "./data/ticketLedgerSnapshot";
 import { campaignMatches, milestones, roundDefinitions } from "./data/worldCupCampaign";
@@ -208,6 +210,39 @@ function normalizeLedgerEntryPayload(payload) {
   };
 }
 
+function isLiveVotePreview(data) {
+  return data?.sourceStatus === "live";
+}
+
+function voteAllocationMergeKey(allocation) {
+  return [
+    allocation.walletAddress,
+    allocation.roundId,
+    allocation.matchId,
+    allocation.teamId,
+  ].join(":");
+}
+
+function buildLiveVoteTotalsByMatchTeam(...sources) {
+  const allocationsByKey = new Map();
+
+  sources.forEach((source) => {
+    if (!isLiveVotePreview(source)) return;
+    source.allocations.forEach((allocation) => {
+      if (allocation.source === "local-preview") return;
+      allocationsByKey.set(voteAllocationMergeKey(allocation), allocation);
+    });
+  });
+
+  const totals = new Map();
+  allocationsByKey.forEach((allocation) => {
+    const key = `${allocation.matchId}:${allocation.teamId}`;
+    totals.set(key, (totals.get(key) ?? 0) + allocation.tickets);
+  });
+
+  return totals;
+}
+
 function AppContent() {
   const copy = useCampaignCopy();
   const { t } = copy;
@@ -228,6 +263,12 @@ function AppContent() {
       ? "/api/live-qualification"
       : localApiOrigin
         ? `${localApiOrigin}/api/live-qualification`
+        : "");
+  const liveRound32MatchesUrl = import.meta.env.VITE_LIVE_ROUND32_MATCHES_URL
+    || (import.meta.env.PROD || !localTestOrigin
+      ? "/api/live-round32-matches"
+      : localApiOrigin
+        ? `${localApiOrigin}/api/live-round32-matches`
         : "");
   const winnerRevealVideoUrl = import.meta.env.VITE_WINNER_REVEAL_VIDEO_URL || DEFAULT_WINNER_REVEAL_VIDEO_URL;
   const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL
@@ -255,6 +296,7 @@ function AppContent() {
   const [localSimulationMode, setLocalSimulationMode] = useState(localTestOrigin ? "scenario" : "realtime");
   const simulationMode = localTestOrigin ? localSimulationMode : "realtime";
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
+  const [liveRound32Matches, setLiveRound32Matches] = useState(() => createPendingFifaRound32MatchesSnapshot());
   const [simulatedRoundId, setSimulatedRoundId] = useState(initialRoundId);
   const [activeRoundId, setActiveRoundId] = useState(initialRoundId);
   const [selectedMatchId, setSelectedMatchId] = useState(initialMatchId);
@@ -617,10 +659,60 @@ function AppContent() {
     };
   }, [liveQualificationUrl, simulationMode, t]);
 
+  useEffect(() => {
+    if (simulationMode !== "realtime") return undefined;
+
+    let cancelled = false;
+    let intervalId = 0;
+
+    async function syncFifaRound32Matches() {
+      setLiveRound32Matches((current) => (
+        current.fetchedAt
+          ? { ...current, sourceStatus: "stale", issue: t("liveQualification.refreshing") }
+          : createPendingFifaRound32MatchesSnapshot(t("liveQualification.connecting"))
+      ));
+
+      try {
+        const snapshot = liveRound32MatchesUrl
+          ? (await fetchJsonWithTimeout(liveRound32MatchesUrl, {
+            cache: "no-store",
+            timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+          })).payload
+          : await fetchFifaRound32MatchesSnapshot();
+        if (!cancelled) setLiveRound32Matches(snapshot);
+      } catch (error) {
+        if (cancelled) return;
+        setLiveRound32Matches((current) => (
+          current.fetchedAt
+            ? { ...current, sourceStatus: "stale", issue: error.message }
+            : createPendingFifaRound32MatchesSnapshot(error.message)
+        ));
+      }
+    }
+
+    syncFifaRound32Matches();
+    intervalId = window.setInterval(syncFifaRound32Matches, 60000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [liveRound32MatchesUrl, simulationMode, t]);
+
   const staticTeamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), []);
+  const liveVoteTotalsByMatchTeam = useMemo(
+    () => buildLiveVoteTotalsByMatchTeam(globalPreviewVoteData, previewVoteData),
+    [globalPreviewVoteData, previewVoteData],
+  );
   const realtimeRound32Preview = useMemo(
-    () => buildRealtimeRound32Preview({ matches: campaignMatches, teams, snapshot: liveQualification }),
-    [liveQualification],
+    () => buildRealtimeRound32Preview({
+      matches: campaignMatches,
+      teams,
+      snapshot: liveQualification,
+      fixtures: liveRound32Matches,
+      voteTotalsByMatchTeam: liveVoteTotalsByMatchTeam,
+    }),
+    [liveQualification, liveRound32Matches, liveVoteTotalsByMatchTeam],
   );
   const sourceMatches = simulationMode === "realtime" ? realtimeRound32Preview.matches : campaignMatches;
   const matches = useMemo(
@@ -856,9 +948,20 @@ function AppContent() {
   }
 
   function handleRequestPreviewVote(amount) {
-    if (voteSubmitUrl && authMeUrl && !authSession?.walletAddress) {
-      redirectToRenaissLogin();
-      return;
+    if (voteSubmitUrl && authMeUrl) {
+      if (!authSession?.walletAddress) {
+        redirectToRenaissLogin();
+        return;
+      }
+
+      const xFollowGateRequired = authSession?.config?.xFollowGate?.required !== false;
+      const xAccountEligibilityRequired = authSession?.config?.xAccountEligibility?.required !== false;
+      const xFollowGatePassed = !xFollowGateRequired || Boolean(authSession?.xFollow?.gatePassed);
+      const xAccountEligibilityPassed = !xAccountEligibilityRequired || Boolean(authSession?.xAccountEligibility?.gatePassed);
+      if (!xFollowGatePassed || !xAccountEligibilityPassed) {
+        setPreviewVoteIssue(t("vote.voteEligibilityBlocked"));
+        return;
+      }
     }
     if (!selectedTeamId || remainingRoundTickets <= 0) return;
     setPendingVoteAmount(Math.max(1, Math.min(Math.floor(amount || 0), remainingRoundTickets)));

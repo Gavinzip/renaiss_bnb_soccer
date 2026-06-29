@@ -66,6 +66,10 @@ function getTeamAllocation(roundAllocations, matchId, teamId) {
   return roundAllocations.find((entry) => entry.matchId === matchId && entry.teamId === teamId) ?? null;
 }
 
+function matchDisplayCode(match) {
+  return String(match?.displayCode || match?.id || "").toUpperCase();
+}
+
 function formatHitRate(value) {
   const percent = Math.max(0, Number(value) || 0) * 100;
   if (percent > 0 && percent < 0.0001) return "<0.0001%";
@@ -178,7 +182,7 @@ export function MatchPrizeList({
             >
               <header className="match-prize-lane__head">
                 <span className="match-prize-lane__meta">
-                  <span className="match-prize-lane__code">{match.id.toUpperCase()}</span>
+                  <span className="match-prize-lane__code">{matchDisplayCode(match)}</span>
                   <small className="match-prize-lane__status">
                     <MatchIcon size={13} strokeWidth={2.35} />
                     <span data-short={statusTextCompact}>{statusText}</span>
@@ -187,7 +191,7 @@ export function MatchPrizeList({
                 <MatchPrizeImageDialog copy={copy} matchId={match.id} />
               </header>
 
-              <section className="match-prize-lane__teams" aria-label={t("schedule.teamsAria", { match: match.id.toUpperCase() })}>
+              <section className="match-prize-lane__teams" aria-label={t("schedule.teamsAria", { match: matchDisplayCode(match) })}>
                 {teams.map((team, teamIndex) => {
                   const allocation = getTeamAllocation(roundAllocations, match.id, team.id);
                   const canPickTeam = canPickMatch;

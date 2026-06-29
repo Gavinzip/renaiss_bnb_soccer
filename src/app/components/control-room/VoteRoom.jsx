@@ -46,24 +46,30 @@ function compactRoundValue(round, fallbackLabel = "") {
   return values[round?.id] ?? fallbackLabel;
 }
 
+function matchDisplayCode(match) {
+  return String(match?.displayCode || match?.id || "").toUpperCase();
+}
+
 function getTicketVoteState({
   copy,
   remainingRoundTickets,
   selectedMatch,
   selectedTeam,
   ticketAmount,
+  voteActionBlocked = false,
 }) {
   const maxTickets = Math.max(1, remainingRoundTickets);
   const boundedTicketAmount = clampTicketAmount(ticketAmount, maxTickets);
   const selectedTeamName = selectedTeam ? copy.teamName(selectedTeam) : null;
-  const selectedMatchLabel = selectedMatch ? selectedMatch.id.toUpperCase() : null;
+  const selectedMatchLabel = selectedMatch ? matchDisplayCode(selectedMatch) : null;
   const selectedPhase = selectedMatch ? getMatchPhase(selectedMatch) : null;
   const hasNoRemainingTickets = remainingRoundTickets <= 0;
   const canSubmit = Boolean(
     selectedTeam
     && selectedMatch
     && voteableStatuses.has(selectedMatch.status)
-    && remainingRoundTickets > 0,
+    && remainingRoundTickets > 0
+    && !voteActionBlocked,
   );
 
   return {
@@ -188,7 +194,7 @@ function MatchVoteGroup({
     ].filter(Boolean).join(" ")}
     >
       <header className="vote-match-group__header">
-        <span className="vote-match-group__code">{match.id.toUpperCase()}</span>
+        <span className="vote-match-group__code">{matchDisplayCode(match)}</span>
         <strong>
           <MatchIcon size={15} strokeWidth={2.35} />
           {t(phase.labelKey)}
@@ -204,7 +210,7 @@ function MatchVoteGroup({
         <small>{venueName(match.venue)} · {dateTime(match.cutoffAt)} {t("common.hkt")}</small>
       </header>
 
-      <section className="vote-match-group__teams" aria-label={t("schedule.teamsAria", { match: match.id.toUpperCase() })}>
+      <section className="vote-match-group__teams" aria-label={t("schedule.teamsAria", { match: matchDisplayCode(match) })}>
         {teams.map((team, index) => {
           const allocation = getTeamAllocation(allocations, match.id, team.id);
           const teamTone = getTeamTone(match, team, allocation, selected && selectedTeamId);
@@ -258,6 +264,8 @@ function TicketAllocationPanel({
   remainingRoundTickets,
   roundTicketBreakdown,
   usedRoundTickets,
+  voteActionBlocked,
+  voteActionBlockReason,
   onSetTicketAmount,
   onConfirmPreviewVote,
   copy,
@@ -277,22 +285,24 @@ function TicketAllocationPanel({
     selectedMatch,
     selectedTeam,
     ticketAmount,
+    voteActionBlocked,
   });
+  const statusMessage = voteActionBlocked
+    ? voteActionBlockReason || t("vote.voteEligibilityBlocked")
+    : canSubmit
+      ? t("vote.votePanelReady", { team: selectedTeamName, match: selectedMatchLabel })
+      : t("vote.votePanelIdle");
 
   function handleSetTicketAmount(value) {
     onSetTicketAmount(clampTicketAmount(value, maxTickets));
   }
 
   return (
-    <aside className="vote-allocation-panel" aria-label={t("vote.votePanelTitle")}>
+    <aside className={voteActionBlocked ? "vote-allocation-panel is-action-blocked" : "vote-allocation-panel"} aria-label={t("vote.votePanelTitle")}>
       <header>
         <span>{roundLabel(activeRound, "advanceLabel")}</span>
         <h2>{t("vote.votePanelTitle")}</h2>
-        <p>
-          {canSubmit
-            ? t("vote.votePanelReady", { team: selectedTeamName, match: selectedMatchLabel })
-            : t("vote.votePanelIdle")}
-        </p>
+        <p>{statusMessage}</p>
       </header>
 
       <section className={["vote-selected-target", selectedTeam ? "has-team" : ""].filter(Boolean).join(" ")} aria-live="polite">
@@ -402,6 +412,7 @@ function MobileTicketDock({
   selectedTeam,
   ticketAmount,
   remainingRoundTickets,
+  voteActionBlocked,
   onSetTicketAmount,
   onConfirmPreviewVote,
   copy,
@@ -421,6 +432,7 @@ function MobileTicketDock({
     selectedMatch,
     selectedTeam,
     ticketAmount,
+    voteActionBlocked,
   });
   const selectedPhaseLabel = selectedPhase ? t(selectedPhase.labelKey) : "";
 
@@ -493,7 +505,7 @@ function MobileTicketDock({
       />
 
       <Action className="mobile-vote-dock__cta" {...actionProps}>
-        <span>{hasNoRemainingTickets ? t("vote.getMoreTickets") : t("vote.mobilePreviewCta")}</span>
+        <span>{hasNoRemainingTickets ? t("vote.getMoreTickets") : voteActionBlocked ? t("vote.mobileEligibilityBlockedCta") : t("vote.mobilePreviewCta")}</span>
       </Action>
     </aside>
   );
@@ -575,6 +587,8 @@ export function VoteRoom({
   roundVoteOutcomes = [],
   roundOutcomeSummary,
   previewVoteIssue = "",
+  voteActionBlocked = false,
+  voteActionBlockReason = "",
   authSession,
   authEndpointReady = false,
   onSelectWallet,
@@ -714,6 +728,8 @@ export function VoteRoom({
             remainingRoundTickets={remainingRoundTickets}
             roundTicketBreakdown={roundTicketBreakdown}
             usedRoundTickets={usedRoundTickets}
+            voteActionBlocked={voteActionBlocked}
+            voteActionBlockReason={voteActionBlockReason}
             onSetTicketAmount={onSetTicketAmount}
             onConfirmPreviewVote={onConfirmPreviewVote}
             copy={copy}
@@ -738,6 +754,7 @@ export function VoteRoom({
         selectedTeam={selectedTeam}
         ticketAmount={ticketAmount}
         remainingRoundTickets={remainingRoundTickets}
+        voteActionBlocked={voteActionBlocked}
         onSetTicketAmount={onSetTicketAmount}
         onConfirmPreviewVote={onConfirmPreviewVote}
         copy={copy}

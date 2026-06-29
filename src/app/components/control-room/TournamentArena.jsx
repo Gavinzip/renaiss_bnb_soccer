@@ -50,6 +50,10 @@ function displayPoolForMatch(match, teamsById) {
   return Math.max(4200, Math.round(voteSignal * 0.082));
 }
 
+function matchDisplayCode(match) {
+  return String(match?.displayCode || match?.id || "").toUpperCase();
+}
+
 function getTeamAllocation(match, team, allocations) {
   return allocations.find((allocation) => allocation.matchId === match?.id && allocation.teamId === team?.id);
 }
@@ -490,7 +494,7 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
             data-route-advancing-team-id={match.advancingTeamId || ""}
             style={{ "--pair-index": index, "--pair-rgb": pairAccent }}
           >
-            <span className="arena-pair__match">{match.id.toUpperCase()}</span>
+            <span className="arena-pair__match">{matchDisplayCode(match)}</span>
             {teams.map((team) => (
               <ArenaTeamCard
                 key={team.id}
@@ -647,7 +651,7 @@ function ArenaDetailPanel({
     : matchStatus(detailMatch.status);
   const detailDescription = t("schedule.panelState", {
     round: detailStatus,
-    match: detailMatch.id.toUpperCase(),
+    match: matchDisplayCode(detailMatch),
   });
   const detailAria = t("schedule.voteShare");
   const canSubmit = mode === "vote" && voteableStatuses.has(detailMatch.status) && remainingRoundTickets > 0;
@@ -667,7 +671,7 @@ function ArenaDetailPanel({
       </button>
       <header>
         <span>{detailTitle}</span>
-        <strong>{detailMatch.id.toUpperCase()} · {detailStatus}</strong>
+        <strong>{matchDisplayCode(detailMatch)} · {detailStatus}</strong>
       </header>
       <p>{detailDescription}</p>
       <dl>
@@ -856,7 +860,7 @@ export function TournamentArena({
         <p>
           <CircleDollarSign size={15} strokeWidth={2.25} />
           {nextCutoff
-            ? t("schedule.nextCutoff", { match: nextCutoff.id.toUpperCase(), time: dateTime(nextCutoff.cutoffAt) })
+            ? t("schedule.nextCutoff", { match: matchDisplayCode(nextCutoff), time: dateTime(nextCutoff.cutoffAt) })
             : t("schedule.noOpenMatches")}
         </p>
       </header>
@@ -890,7 +894,7 @@ export function TournamentArena({
       </section>
       {mode === "vote" ? (
         <footer className="tournament-arena__footer">
-          <span>{activeDetailMatch?.id?.toUpperCase()} · {activeDetailMatch ? venueName(activeDetailMatch.venue) : ""}</span>
+          <span>{activeDetailMatch ? matchDisplayCode(activeDetailMatch) : ""} · {activeDetailMatch ? venueName(activeDetailMatch.venue) : ""}</span>
           <strong>
             {activeDetailMatch?.teams?.map((teamId) => teamName(teamsById.get(teamId))).join(` ${t("vote.versusShort")} `)}
           </strong>

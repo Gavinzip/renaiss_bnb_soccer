@@ -28,6 +28,7 @@ COPY package*.json ./
 COPY --from=runtime-deps /app/node_modules ./node_modules
 
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/config ./config
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/src/app/data/fifaRealtime.js ./src/app/data/fifaRealtime.js
 COPY --from=build /app/src/app/data/ticketEligibility.js ./src/app/data/ticketEligibility.js

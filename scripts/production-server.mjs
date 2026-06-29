@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { createGzip } from 'node:zlib'
 
 import { milestones } from '../src/app/data/worldCupCampaign.js'
-import { fetchFifaQualificationSnapshot } from '../src/app/data/fifaRealtime.js'
+import { fetchFifaQualificationSnapshot, fetchFifaRound32MatchesSnapshot } from '../src/app/data/fifaRealtime.js'
 import {
   createAuthContext,
   getAuthPublicStatus,
@@ -17,6 +17,7 @@ import {
 } from './auth/routes.mjs'
 import { createUserProfileStore } from './auth/user-profile-store.mjs'
 import { getXFollowStatus } from './auth/x-follow-gate.mjs'
+import { assertXAccountEligibilityForVote, getXAccountEligibilityStatus } from './auth/x-account-eligibility.mjs'
 import {
   buildLedgerEntryResponse,
   buildLedgerSummary,
@@ -86,6 +87,9 @@ const authRequiredForVotes = process.env.AUTH_REQUIRE_SESSION_FOR_VOTES !== '0'
 const fifaStandingsCacheSeconds = readIntegerEnv('FIFA_STANDINGS_CACHE_SECONDS', 45, 0)
 const fifaStandingsCacheMs = fifaStandingsCacheSeconds * 1000
 let fifaStandingsCache = null
+const fifaRound32MatchesCacheSeconds = readIntegerEnv('FIFA_ROUND32_MATCHES_CACHE_SECONDS', 45, 0)
+const fifaRound32MatchesCacheMs = fifaRound32MatchesCacheSeconds * 1000
+let fifaRound32MatchesCache = null
 
 function normalizeVoteStoreMode(value) {
   const mode = String(value || '').trim().toLowerCase()
@@ -189,6 +193,7 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
   applyDefaultEnv('AUTH_REQUIRE_SESSION_FOR_VOTES', '0', { replace: ['1'] })
   applyDefaultEnv('X_FOLLOW_GATE_REQUIRED', '0', { replace: ['1'] })
   applyDefaultEnv('X_FOLLOW_SKIP_ENABLED', '1', { replace: ['0'] })
+  applyDefaultEnv('FIREFLY_X_ACCOUNT_ELIGIBILITY_REQUIRED', '0', { replace: ['1'] })
 
   applyDefaultEnv('LUCKY_DRAW_REFRESH_ENABLED', '0')
   applyDefaultEnv('LUCKY_DRAW_REFRESH_ON_STARTUP', '0')
@@ -657,6 +662,39 @@ async function readLiveQualificationSnapshot() {
         ...cached.snapshot,
         sourceStatus: 'stale',
         issue: error instanceof Error ? error.message : 'Could not fetch FIFA standings.',
+        cacheStatus: 'stale',
+        cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
+      }
+    }
+    throw error
+  }
+}
+
+async function readLiveRound32MatchesSnapshot() {
+  const now = Date.now()
+  const cached = fifaRound32MatchesCache
+  if (cached?.snapshot && now - cached.fetchedAtMs <= fifaRound32MatchesCacheMs) {
+    return {
+      ...cached.snapshot,
+      cacheStatus: 'hit',
+      cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
+    }
+  }
+
+  try {
+    const snapshot = await fetchFifaRound32MatchesSnapshot(fetch)
+    fifaRound32MatchesCache = { snapshot, fetchedAtMs: now }
+    return {
+      ...snapshot,
+      cacheStatus: 'fresh',
+      cacheAgeSeconds: 0,
+    }
+  } catch (error) {
+    if (cached?.snapshot) {
+      return {
+        ...cached.snapshot,
+        sourceStatus: 'stale',
+        issue: error instanceof Error ? error.message : 'Could not fetch FIFA round32 matches.',
         cacheStatus: 'stale',
         cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
       }
@@ -1242,6 +1280,27 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  if (url.pathname === '/api/live-round32-matches') {
+    try {
+      sendJson(request, response, 200, await readLiveRound32MatchesSnapshot(), {
+        'cache-control': 'no-store',
+      })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        503,
+        {
+          error: error instanceof Error ? error.message : 'Could not read FIFA round32 matches.',
+        },
+        {
+          'cache-control': 'no-store',
+        },
+      )
+    }
+    return
+  }
+
   if (url.pathname === '/api/raffle-entry') {
     const session = readAuthSession(auth, request)
     const walletQuery = url.searchParams.get('wallet') || session?.walletAddress || ''
@@ -1374,9 +1433,29 @@ const server = createServer(async (request, response) => {
         sendJson(request, response, 403, { ok: false, error: 'This login is not linked to a voting wallet yet.' }, { 'cache-control': 'no-store' })
         return
       }
-      if (authRequiredForVotes && auth.xFollowGateConfig.required && !getXFollowStatus(auth, session, request).gatePassed) {
+      const xFollowStatus = getXFollowStatus(auth, session, request)
+      if (authRequiredForVotes && auth.xFollowGateConfig.required && !xFollowStatus.gatePassed) {
         sendJson(request, response, 403, { ok: false, error: 'Follow verification is required before submitting votes.' }, { 'cache-control': 'no-store' })
         return
+      }
+      if (authRequiredForVotes) {
+        try {
+          assertXAccountEligibilityForVote(auth, session, request, { xFollowStatus })
+        } catch (error) {
+          sendJson(
+            request,
+            response,
+            Number(error?.statusCode || 403),
+            {
+              ok: false,
+              code: error?.code || 'x_account_eligibility_required',
+              error: error instanceof Error ? error.message : 'Firefly eligibility verification is required before submitting votes.',
+              status: error?.status || getXAccountEligibilityStatus(auth, session, request, { xFollowStatus }),
+            },
+            { 'cache-control': 'no-store' },
+          )
+          return
+        }
       }
       const ledger = readLedgerPayload(ledgerPath)
       const matchResults = readMatchResultsSnapshot(matchResultsPath)

@@ -38,6 +38,18 @@
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
 
+.vote-eligibility-inline {
+  width: min(760px, calc(100% - 28px));
+  margin: clamp(76px, 9vw, 108px) auto clamp(42px, 7vw, 88px);
+  display: grid;
+}
+
+.vote-eligibility-inline .x-follow-gate {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    0 22px 60px rgba(0, 0, 0, 0.34);
+}
+
 .x-follow-gate {
   position: relative;
   width: 100%;

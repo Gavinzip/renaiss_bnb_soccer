@@ -7,6 +7,7 @@ export function VoteConfirmModal({ amount, match, team, onCancel, onConfirm }) {
   const { dateTime, teamName, t } = useCampaignCopy();
 
   if (!amount || !match || !team) return null;
+  const matchCode = String(match.displayCode || match.id || "").toUpperCase();
 
   return (
     <aside className="confirm-layer" role="presentation">
@@ -28,7 +29,7 @@ export function VoteConfirmModal({ amount, match, team, onCancel, onConfirm }) {
 
         <dl>
           <dt>{t("common.match")}</dt>
-          <dd>{match.id.toUpperCase()}</dd>
+          <dd>{matchCode}</dd>
           <dt>{t("confirm.ticketsUsed")}</dt>
           <dd>{formatNumber(amount)}</dd>
           <dt>

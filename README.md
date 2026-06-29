@@ -101,6 +101,7 @@ Production builds read the server APIs by default:
 - `/api/auth/me`
 - `/api/auth/google/start`
 - `/api/auth/x/start`
+- `/api/auth/x-account-eligibility/verify`
 - `/api/auth/discord/start`
 - `/api/auth/wallet/nonce`
 - `/api/auth/email/start`
@@ -192,7 +193,14 @@ GOOGLE_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/google/callback
 X_CLIENT_ID=...
 X_CLIENT_SECRET=...
 X_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/x/callback
-X_OAUTH_SCOPE=users.read
+X_OAUTH_SCOPE=users.read follows.read offline.access
+X_FOLLOW_GATE_HANDLE=thefireflyapp
+X_FOLLOW_GATE_REQUIRED=1
+X_FOLLOW_SKIP_ENABLED=0
+FIREFLY_X_ACCOUNT_ELIGIBILITY_REQUIRED=1
+FIREFLY_RENAISS_API_KEY=...
+FIREFLY_X_ACCOUNT_ELIGIBILITY_TTL_SECONDS=86400
+FIREFLY_X_ACCOUNT_ELIGIBILITY_TIMEOUT_MS=8000
 DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
 DISCORD_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/discord/callback
@@ -228,6 +236,13 @@ and email logins create identity sessions first, then call `IDENTITY_RESOLVER_AP
 voting wallet. Wallet login verifies a signed message and can resolve directly to the signing address. If Renaiss
 returns `safe_wallet_address: null`, or if another provider cannot resolve a wallet, the user can be logged in but
 cannot submit votes.
+
+Vote access is gated before the Vote room is rendered and again before `POST /api/votes` writes any allocation.
+The required production path is: Renaiss wallet session, wallet-bound Renaiss X identity, verified follow of
+`X_FOLLOW_GATE_HANDLE`, then Firefly/Predict eligibility through the server-side
+`FIREFLY_RENAISS_API_KEY`. The Firefly request uses the verified numeric X user id from the session chain; the
+client never supplies `x_account_id`. If the Firefly API is unconfigured or unavailable, production voting is blocked
+instead of falling back to a permissive state.
 
 Successful login flows enqueue a SQLite profile write and a `user_login_audits`
 row in `SOCCER_PROFILE_DB_PATH`. The audit table stores the wallet, provider,
