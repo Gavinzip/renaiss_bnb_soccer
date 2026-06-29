@@ -7,7 +7,17 @@ import { fetchJsonWithTimeout } from "../../utils/httpClient";
 import "./XFollowGate.css";
 
 function xLoginHref() {
-  return `/api/auth/x/start?connect=1&return_to=${encodeURIComponent("/?view=vote&auth=success")}`;
+  let returnTo = "/?view=vote&auth=success&xgate=1";
+
+  if (typeof window !== "undefined") {
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "vote");
+    url.searchParams.set("auth", "success");
+    url.searchParams.set("xgate", "1");
+    returnTo = `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  return `/api/auth/x/start?connect=1&return_to=${encodeURIComponent(returnTo)}`;
 }
 
 function statusMessageKey(status) {

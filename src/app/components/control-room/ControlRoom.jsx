@@ -795,8 +795,8 @@ export function ControlRoom({
   const headerWalletActionable = authIdentityActionable || ticketSourceActionable;
   const HeaderWalletIdentity = headerWalletActionable ? "button" : "div";
   const headerTicketCount = Math.max(
-    toLedgerInteger(activeEntry?.totalVotingTickets),
-    toLedgerInteger(activeEntry?.finalTickets),
+    toLedgerInteger(roundTicketBreakdown?.usableTickets),
+    toLedgerInteger(remainingRoundTickets),
   );
   const [ticketSourceOpen, setTicketSourceOpen] = useState(false);
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
@@ -861,6 +861,17 @@ export function ControlRoom({
       setXFollowOverlayDismissed(false);
     }
   }, [effectiveActiveViewId, voteRequiresPreVoteGate]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (effectiveActiveViewId !== "vote" || !showXFollowVerifyButton || !voteRequiresPreVoteGate) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("xgate") !== "1") return;
+
+    setXFollowOverlayDismissed(false);
+    setXFollowPanelOpen(true);
+  }, [effectiveActiveViewId, showXFollowVerifyButton, voteRequiresPreVoteGate]);
 
   useEffect(() => {
     if (!showXFollowOverlay || !canDismissXFollowOverlay) return undefined;
@@ -986,7 +997,7 @@ export function ControlRoom({
               />
             ) : null}
 
-            {showSimulationControls && ["schedule", "vote"].includes(effectiveActiveViewId) ? (
+            {effectiveActiveViewId === "schedule" ? (
               <RoundSwitch
                 rounds={rounds}
                 activeRoundId={activeRoundId}

@@ -54,6 +54,20 @@ function matchDisplayCode(match) {
   return String(match?.displayCode || match?.id || "").toUpperCase();
 }
 
+function matchGmtDateTime(match, locale) {
+  const date = new Date(match?.kickoffAt || "");
+  if (Number.isNaN(date.getTime())) return "";
+
+  return `${new Intl.DateTimeFormat(locale === "zh-Hant" ? "zh-Hant" : "en-US", {
+    timeZone: "GMT",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date)} GMT`;
+}
+
 function getTeamAllocation(match, team, allocations) {
   return allocations.find((allocation) => allocation.matchId === match?.id && allocation.teamId === team?.id);
 }
@@ -477,11 +491,14 @@ function ArenaTeamCard({ match, team, side, allocation, selected, onPickTeam, co
 }
 
 function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, copy }) {
+  const { locale } = copy;
+
   return (
     <section className={`arena-side is-${side}`} aria-label={copy.t(side === "left" ? "schedule.leftBracket" : "schedule.rightBracket")}>
       {matches.map((match, index) => {
         const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
         const pairAccent = pairAccentColors[index % pairAccentColors.length];
+        const gmtDateTime = matchGmtDateTime(match, locale);
         return (
           <article
             className={[
@@ -494,7 +511,14 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
             data-route-advancing-team-id={match.advancingTeamId || ""}
             style={{ "--pair-index": index, "--pair-rgb": pairAccent }}
           >
-            <span className="arena-pair__match">{matchDisplayCode(match)}</span>
+            <span className="arena-pair__meta" aria-label={gmtDateTime ? `${matchDisplayCode(match)} ${gmtDateTime}` : matchDisplayCode(match)}>
+              <span className="arena-pair__match">{matchDisplayCode(match)}</span>
+              {gmtDateTime ? (
+                <time className="arena-pair__time" dateTime={match.kickoffAt}>
+                  {gmtDateTime}
+                </time>
+              ) : null}
+            </span>
             {teams.map((team) => (
               <ArenaTeamCard
                 key={team.id}

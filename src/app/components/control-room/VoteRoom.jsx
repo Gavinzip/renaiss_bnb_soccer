@@ -620,31 +620,6 @@ export function VoteRoom({
     0,
     Math.floor(Number(roundTicketBreakdown?.usableTickets ?? activeEntry?.totalVotingTickets ?? activeEntry?.finalTickets) || 0),
   );
-  const buybackTickets = Math.max(0, Math.floor(Number(roundTicketBreakdown?.rawTickets ?? activeEntry?.rawTickets) || 0));
-  const carryoverTickets = Math.max(0, Math.floor(Number(roundTicketBreakdown?.carryoverTickets ?? activeEntry?.carryoverTickets) || 0));
-  const activeInsiderTickets = Math.max(
-    0,
-    Math.floor(
-      Number(
-        (roundTicketBreakdown?.insiderPracticeUnlocked
-          ? roundTicketBreakdown?.insiderPracticeTickets
-          : roundTicketBreakdown?.insiderGrantUnlocked
-            ? roundTicketBreakdown?.insiderGrantTickets
-            : 0) || 0,
-      ),
-    ),
-  );
-  const activeAddonTickets = (roundTicketBreakdown?.carryoverUnlocked ? carryoverTickets : 0) + activeInsiderTickets;
-  const showAddonTickets = activeAddonTickets > 0;
-  const addonHint = roundTicketBreakdown?.insiderGrantUnlocked
-    ? t("vote.stageSummaryInsiderGrantRemaining", {
-      tickets: formatNumber(roundTicketBreakdown?.sharedInsiderGrantTicketsRemaining || 0),
-    })
-    : roundTicketBreakdown?.insiderPracticeUnlocked
-      ? t("vote.stageSummaryPracticeHint")
-      : roundTicketBreakdown?.carryoverUnlocked
-        ? t("vote.stageSummaryCarryoverUnlocked")
-        : t("vote.stageSummaryCarryoverLocked");
 
   useEffect(() => {
     const selectedIsVoteable = Boolean(
@@ -674,7 +649,7 @@ export function VoteRoom({
         <div className="vote-stage-hero">
           <section
             className="vote-stage-summary"
-            style={{ "--vote-summary-count": showAddonTickets ? 4 : 3 }}
+            style={{ "--vote-summary-count": 3 }}
             aria-label={t("vote.currentRoundSummary")}
           >
             <output className="is-round">
@@ -685,15 +660,8 @@ export function VoteRoom({
             <output className="is-user-tickets">
               <span>{t("vote.stageSummaryYourTickets")}</span>
               <strong>{formatNumber(userTotalTickets)}</strong>
-              <small>{t("vote.stageSummaryBuybackTickets", { tickets: formatNumber(buybackTickets) })}</small>
+              <small>{t("vote.stageSummaryWalletHint")}</small>
             </output>
-            {showAddonTickets ? (
-              <output className="is-carryover">
-                <span>{t("vote.stageSummaryAddonTickets")}</span>
-                <strong>{formatNumber(activeAddonTickets)}</strong>
-                <small>{addonHint}</small>
-              </output>
-            ) : null}
             <output className="is-remaining">
               <span>{t("vote.stageSummaryRemainingTickets")}</span>
               <strong>{formatNumber(remainingRoundTickets)}</strong>

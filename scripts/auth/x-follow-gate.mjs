@@ -6,9 +6,10 @@ import { readJsonFile, writeJsonFileAtomic } from './json-store.mjs'
 import { readOAuthToken, saveOAuthToken } from './oauth-token-store.mjs'
 
 const DEFAULT_TARGET_HANDLE = 'thefireflyapp'
-const DEFAULT_RETRY_SECONDS = 60
+const DEFAULT_RETRY_SECONDS = 10
 const SKIP_COOKIE = 'renaiss_x_follow_skip'
 const SKIP_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const RETRY_GATED_STATUSES = new Set(['rate_limited', 'api_error', 'retry_later'])
 
 function nowIso() {
   return new Date().toISOString()
@@ -28,6 +29,15 @@ function envEnabled(value, defaultValue = true) {
   if (['0', 'false', 'no', 'off'].includes(raw)) return false
   if (['1', 'true', 'yes', 'on'].includes(raw)) return true
   return defaultValue
+}
+
+function isLocalRuntime(env) {
+  const runtimeTarget = String(env.SOCCER_RUNTIME_TARGET || env.RENAISS_RUNTIME_TARGET || '').trim().toLowerCase()
+  if (['local', 'dev', 'development'].includes(runtimeTarget)) return true
+
+  const origin = String(env.PUBLIC_APP_ORIGIN || env.AUTH_PUBLIC_ORIGIN || '').trim().toLowerCase()
+  return /^http:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::|\/|$)/.test(origin)
+    || /^http:\/\/127\.0\.0\.1\.nip\.io(?::|\/|$)/.test(origin)
 }
 
 function hasSigningSecret(config) {
@@ -176,6 +186,7 @@ function writeState(path, state) {
 
 function retryAfterSeconds(record, retrySeconds) {
   if (['verified', 'skipped'].includes(record?.status)) return 0
+  if (!RETRY_GATED_STATUSES.has(record?.status)) return 0
   const lastCheckedAt = Date.parse(record?.lastCheckedAt || '')
   if (!Number.isFinite(lastCheckedAt)) return 0
   const retryAt = lastCheckedAt + retrySeconds * 1000
@@ -485,6 +496,8 @@ function saveVerificationFailure(auth, session, status, error) {
 export function createXFollowGateConfig({ authDir, env = process.env }) {
   const targetHandle = normalizeHandle(env.X_FOLLOW_GATE_HANDLE || env.X_REQUIRED_FOLLOW_HANDLE || DEFAULT_TARGET_HANDLE)
   const retrySeconds = Math.max(10, Math.floor(Number(env.X_FOLLOW_VERIFY_RETRY_SECONDS || DEFAULT_RETRY_SECONDS) || DEFAULT_RETRY_SECONDS))
+  const skipRequested = envFlag(env.X_FOLLOW_SKIP_ENABLED || env.X_FOLLOW_GATE_SKIP_ENABLED)
+  const skipAllowed = isLocalRuntime(env)
 
   return {
     path: join(authDir, 'x-follow-verifications.json'),
@@ -492,7 +505,7 @@ export function createXFollowGateConfig({ authDir, env = process.env }) {
     targetUrl: `https://x.com/${targetHandle}`,
     retrySeconds,
     required: envEnabled(env.X_FOLLOW_GATE_REQUIRED ?? env.X_FOLLOW_REQUIRED, true),
-    skipEnabled: envFlag(env.X_FOLLOW_SKIP_ENABLED || env.X_FOLLOW_GATE_SKIP_ENABLED),
+    skipEnabled: skipRequested && skipAllowed,
     skipCookieName: SKIP_COOKIE,
     sessionSecret: String(env.AUTH_SESSION_SECRET || env.SESSION_SECRET || ''),
     secureCookies: (env.AUTH_COOKIE_SECURE || '').trim()

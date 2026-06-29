@@ -16557,6 +16557,7 @@ body {
 .control-room[data-view="schedule"] .arena-center__route,
 .control-room[data-view="vote"] .arena-center__route,
 .control-room[data-view="schedule"] .arena-pair__match,
+.control-room[data-view="vote"] .arena-pair__meta,
 .control-room[data-view="vote"] .arena-pair__match {
   display: none !important;
 }
@@ -27685,15 +27686,36 @@ body {
   content: none !important;
 }
 
-.control-room[data-view="schedule"] .arena-pair__match,
-.control-room[data-view="schedule"] .arena-side.is-left .arena-pair__match,
-.control-room[data-view="schedule"] .arena-side.is-right .arena-pair__match {
+.control-room[data-view="schedule"] .arena-pair {
+  --match-card-base: rgba(8, 9, 9, 0.9);
+  --match-card-wash: rgba(245, 246, 241, 0.024);
+  --match-card-edge: rgba(245, 246, 241, 0.16);
+}
+
+.control-room[data-view="schedule"] .arena-pair__meta,
+.control-room[data-view="schedule"] .arena-side.is-left .arena-pair__meta,
+.control-room[data-view="schedule"] .arena-side.is-right .arena-pair__meta {
   position: relative !important;
   top: auto !important;
   right: auto !important;
   left: auto !important;
   z-index: 3;
   width: fit-content;
+  max-width: 100%;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  color: rgba(240, 209, 139, 0.72);
+  pointer-events: none;
+  transform: none !important;
+}
+
+.control-room[data-view="schedule"] .arena-pair__match {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  left: auto !important;
+  flex: 0 0 auto;
   display: inline-flex !important;
   align-items: center;
   border: 1px solid rgba(240, 209, 139, 0.22);
@@ -27705,16 +27727,13 @@ body {
   transform: none !important;
 }
 
-.control-room[data-view="schedule"] .arena-pair:nth-child(odd) {
-  --match-card-base: rgba(8, 9, 9, 0.9);
-  --match-card-wash: rgba(245, 246, 241, 0.022);
-  --match-card-edge: rgba(245, 246, 241, 0.14);
-}
-
-.control-room[data-view="schedule"] .arena-pair:nth-child(even) {
-  --match-card-base: rgba(24, 25, 24, 0.84);
-  --match-card-wash: rgba(245, 246, 241, 0.048);
-  --match-card-edge: rgba(245, 246, 241, 0.18);
+.control-room[data-view="schedule"] .arena-pair__time {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(245, 246, 241, 0.48);
 }
 
 .control-room[data-view="schedule"] .arena-pair .arena-team-card {
@@ -27735,6 +27754,12 @@ body {
   box-shadow:
     0 0 0 1px rgba(245, 246, 241, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+@media (min-width: 761px) {
+  .control-room[data-view="schedule"] .tournament-arena__scroll {
+    margin-top: clamp(-116px, -8vh, -86px);
+  }
 }
 
 .control-room[data-view="schedule"] .arena-detail-panel {
@@ -30720,5 +30745,30 @@ body {
 
   .control-room[data-view="home"] .rules-flow-map li:last-child .rules-flow-map__arrow {
     display: none !important;
+  }
+}
+
+/* Vote launch cleanup: the summary now exposes only round, wallet tickets, and remaining votes. */
+.control-room[data-view="vote"] .vote-stage-summary {
+  grid-template-columns: minmax(0, 0.82fr) repeat(2, minmax(0, 1fr)) !important;
+}
+
+.control-room[data-view="vote"] .vote-stage-summary output:nth-child(3) {
+  border-right: 0 !important;
+}
+
+@media (max-width: 980px) {
+  .control-room[data-view="vote"] .vote-stage-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .control-room[data-view="vote"] .vote-stage-summary {
+    grid-template-columns: 1fr !important;
+  }
+
+  .control-room[data-view="vote"] .vote-stage-summary output:nth-child(3) {
+    border-bottom: 0 !important;
   }
 }
