@@ -55,7 +55,9 @@ const matchResultsPath = process.env.SOCCER_MATCH_RESULTS_PATH || join(dataDir, 
 const matchDrawLedgerPath = process.env.SOCCER_MATCH_DRAW_LEDGER_PATH || join(dataDir, 'match-draw-ledger.json')
 const drawWinnersPath = process.env.SOCCER_DRAW_WINNERS_PATH || join(dataDir, 'draw-winners.json')
 const winnerRevealVideoUrl = process.env.WINNER_REVEAL_VIDEO_URL || process.env.VITE_WINNER_REVEAL_VIDEO_URL || ''
-const fifaSourceMapPath = process.env.FIFA_RESULTS_SOURCE_MAP_PATH || join(dataDir, 'fifa-match-map.json')
+const bundledFifaSourceMapPath = join(repoRoot, 'config/fifa-match-map.production.json')
+const fifaSourceMapPath = process.env.FIFA_RESULTS_SOURCE_MAP_PATH
+  || (existsSync(bundledFifaSourceMapPath) ? bundledFifaSourceMapPath : join(dataDir, 'fifa-match-map.json'))
 const userProfileStore = createUserProfileStore({ dbPath: profileDbPath })
 const auth = createAuthContext({ dataDir, userProfileStore })
 const snapshotKeep = readIntegerEnv('LUCKY_DRAW_SNAPSHOT_KEEP', 72, 1)
