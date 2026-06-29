@@ -27,6 +27,7 @@ function statusMessageKey(status) {
     not_following: "xFollowGate.statusNotFollowing",
     rate_limited: "xFollowGate.statusRateLimited",
     api_error: "xFollowGate.statusApiError",
+    x_api_credits_depleted: "xFollowGate.statusXApiCreditsDepleted",
     x_token_missing: "xFollowGate.statusTokenMissing",
     retry_later: "xFollowGate.statusRetryLater",
     skip_disabled: "xFollowGate.statusSkipDisabled",

@@ -196,6 +196,7 @@ export const zhHantLocale = {
       "statusTwitterMissing": "X 回傳的帳號資料不完整，請重新連接 X。",
       "statusTokenMissing": "目前沒有可用的 X 授權，請重新連接 X 後再驗證。",
       "statusWalletRequired": "需要先登入有錢包地址的帳號，才能進行 X 驗證。",
+      "statusXApiCreditsDepleted": "X API credits 已用完，重新連接 X 或等待倒數都不會通過；需要管理端恢復 X API 額度後才能驗證。",
       "skipBody": "測試環境可略過 X 追蹤驗證；正式上線請關閉這個開關。",
       "skipButton": "測試略過",
       "skipped": "測試略過",

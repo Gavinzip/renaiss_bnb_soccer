@@ -196,6 +196,7 @@ export const enLocale = {
       "statusTwitterMissing": "X did not return a complete account identity. Reconnect X.",
       "statusTokenMissing": "No usable X authorization is available. Reconnect X, then verify again.",
       "statusWalletRequired": "Sign in with a wallet-linked account before X verification.",
+      "statusXApiCreditsDepleted": "X API credits are depleted. Reconnecting X or waiting for the countdown will not pass; an admin must restore X API access first.",
       "skipBody": "Testing can bypass X follow verification here. Disable this before production launch.",
       "skipButton": "Test bypass",
       "skipped": "Test bypassed",

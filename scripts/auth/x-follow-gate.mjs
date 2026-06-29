@@ -10,6 +10,8 @@ const DEFAULT_RETRY_SECONDS = 10
 const SKIP_COOKIE = 'renaiss_x_follow_skip'
 const SKIP_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const RETRY_GATED_STATUSES = new Set(['rate_limited', 'api_error', 'retry_later'])
+const TOKEN_AUTH_ERROR_STATUSES = new Set([401, 403])
+const X_API_CREDITS_DEPLETED_STATUS = 402
 
 function nowIso() {
   return new Date().toISOString()
@@ -343,7 +345,7 @@ function statusForSession(auth, session, request) {
 
 async function refreshXToken(auth, session, token) {
   const refreshToken = token?.refresh_token
-  if (!refreshToken) return token
+  if (!refreshToken) return null
 
   const config = auth.providerConfig.x
   const body = new URLSearchParams({
@@ -365,7 +367,7 @@ async function refreshXToken(auth, session, token) {
     body,
   })
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok || !payload?.access_token) return token
+  if (!response.ok || !payload?.access_token) return null
   if (!payload.refresh_token && refreshToken) {
     payload.refresh_token = refreshToken
   }
@@ -387,6 +389,34 @@ async function readUsableXToken(auth, session) {
   return token?.access_token ? token : null
 }
 
+function createXTokenReconnectError(response, payload) {
+  const error = new Error('Reconnect X to grant follow verification access.')
+  error.statusCode = 409
+  error.code = 'x_token_missing'
+  error.xStatus = response.status
+  error.payload = payload
+  error.rateLimit = {
+    limit: response.headers.get('x-rate-limit-limit'),
+    remaining: response.headers.get('x-rate-limit-remaining'),
+    reset: response.headers.get('x-rate-limit-reset'),
+  }
+  return error
+}
+
+function createXApiCreditsDepletedError(response, payload) {
+  const error = new Error('X API credits are depleted for this app.')
+  error.statusCode = 503
+  error.code = 'x_api_credits_depleted'
+  error.xStatus = response.status
+  error.payload = payload
+  error.rateLimit = {
+    limit: response.headers.get('x-rate-limit-limit'),
+    remaining: response.headers.get('x-rate-limit-remaining'),
+    reset: response.headers.get('x-rate-limit-reset'),
+  }
+  return error
+}
+
 async function fetchConnectionStatus(auth, config, session, accessToken) {
   const url = new URL(`${config.apiBaseUrl}/users/by/username/${encodeURIComponent(config.targetHandle)}`)
   url.searchParams.set('user.fields', 'connection_status,username,name')
@@ -399,12 +429,17 @@ async function fetchConnectionStatus(auth, config, session, accessToken) {
   })
   const payload = await response.json().catch(() => ({}))
 
-  if ((response.status === 401 || response.status === 403) && session) {
+  if (TOKEN_AUTH_ERROR_STATUSES.has(response.status) && session) {
     const token = readOAuthToken(auth.oauthTokenConfig, session, 'x')
     const refreshed = await refreshXToken(auth, session, token)
     if (refreshed?.access_token && refreshed.access_token !== accessToken) {
       return fetchConnectionStatus(auth, config, null, refreshed.access_token)
     }
+    throw createXTokenReconnectError(response, payload)
+  }
+
+  if (response.status === X_API_CREDITS_DEPLETED_STATUS) {
+    throw createXApiCreditsDepletedError(response, payload)
   }
 
   if (!response.ok) {
@@ -491,6 +526,13 @@ function saveVerificationFailure(auth, session, status, error) {
     lastError: error instanceof Error ? error.message : String(error || ''),
   }
   writeState(config.path, state)
+}
+
+function failureStatusForError(error) {
+  if (error?.code === 'x_token_missing') return 'x_token_missing'
+  if (error?.code === 'x_api_credits_depleted') return 'x_api_credits_depleted'
+  if (error?.statusCode === 429) return 'rate_limited'
+  return 'api_error'
 }
 
 export function createXFollowGateConfig({ authDir, env = process.env }) {
@@ -652,7 +694,7 @@ export async function verifyXFollow(auth, session, request) {
     const result = await fetchConnectionStatus(auth, auth.xFollowGateConfig, session, token.access_token)
     return saveVerificationResult(auth, session, result)
   } catch (error) {
-    const failureStatus = error?.statusCode === 429 ? 'rate_limited' : 'api_error'
+    const failureStatus = failureStatusForError(error)
     saveVerificationFailure(auth, session, failureStatus, error)
     throw Object.assign(error, {
       code: failureStatus,

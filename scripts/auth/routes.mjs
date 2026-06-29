@@ -168,6 +168,9 @@ function maskWalletAddress(value) {
 }
 
 function logXFollowVerifyFailure(session, error) {
+  const xUserId = error?.status?.xUserId
+    || (session?.identity?.provider === 'x' ? session.identity.providerUserId : null)
+
   console.warn('[x-follow] verify failed', {
     code: error?.code || 'verify_failed',
     httpStatus: Number(error?.statusCode || 500),
@@ -175,7 +178,7 @@ function logXFollowVerifyFailure(session, error) {
     retryAfterSeconds: error?.retryAfterSeconds || error?.status?.retryAfterSeconds || 0,
     status: error?.status?.status || null,
     walletAddress: maskWalletAddress(session?.walletAddress),
-    xUserId: session?.identity?.provider === 'x' ? session.identity.providerUserId : null,
+    xUserId,
     rateLimit: error?.rateLimit || null,
     message: sanitizeAuthError(error),
   })
