@@ -110,12 +110,19 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
   const { dateTime, number, sourceLabel, t } = useCampaignCopy();
   const inspectedAddress = walletAddress || entry?.userAddress || "";
   const rawTickets = toLedgerInteger(entry?.rawTickets);
+  const carryoverTickets = toLedgerInteger(entry?.carryoverTickets);
+  const insiderPracticeTickets = toLedgerInteger(entry?.insiderPracticeTickets);
+  const insiderGrantTickets = toLedgerInteger(entry?.insiderGrantTickets);
   const finalTickets = toLedgerInteger(entry?.finalTickets);
+  const totalVotingTickets = Math.max(
+    toLedgerInteger(entry?.totalVotingTickets),
+    rawTickets + carryoverTickets + insiderPracticeTickets + insiderGrantTickets,
+  );
   const eventCount = toLedgerInteger(entry?.eventCount);
   const rank = toLedgerInteger(entry?.rank);
   const ticketIntervals = Array.isArray(entry?.ticketIntervals) ? entry.ticketIntervals : [];
   const ticketIntervalCount = toLedgerInteger(entry?.ticketIntervalCount ?? ticketIntervals.length);
-  const matchedLedgerEntry = finalTickets > 0 || rawTickets > 0 || rank > 0;
+  const matchedLedgerEntry = totalVotingTickets > 0 || finalTickets > 0 || rawTickets > 0 || rank > 0;
   const ledgerHash = ledger?.ledgerHash ? compactHash(ledger.ledgerHash) : "-";
   const sourceAddresses = [...new Set([
     inspectedAddress,
@@ -181,18 +188,43 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
 
         <p className="ticket-source-panel__note">
           {matchedLedgerEntry
-            ? t("ticketSource.matchBody", { count: number(finalTickets) })
+            ? t("ticketSource.matchBody", { count: number(totalVotingTickets) })
             : t("ticketSource.noMatchBody")}
         </p>
+        {carryoverTickets > 0 ? (
+          <p className="ticket-source-panel__note is-carryover-note">
+            {t("ticketSource.carryoverRule", { count: number(carryoverTickets) })}
+          </p>
+        ) : null}
+        {insiderPracticeTickets > 0 || insiderGrantTickets > 0 ? (
+          <p className="ticket-source-panel__note is-carryover-note">
+            {t("ticketSource.insiderRule", {
+              practice: number(insiderPracticeTickets),
+              grant: number(insiderGrantTickets),
+            })}
+          </p>
+        ) : null}
 
         <dl className="ticket-source-stats">
           <div>
             <dt>{t("ticketSource.finalTickets")}</dt>
-            <dd>{number(finalTickets)}</dd>
+            <dd>{number(totalVotingTickets)}</dd>
           </div>
           <div>
             <dt>{t("ticketSource.rawTickets")}</dt>
             <dd>{number(rawTickets)}</dd>
+          </div>
+          <div>
+            <dt>{t("ticketSource.carryoverTickets")}</dt>
+            <dd>{number(carryoverTickets)}</dd>
+          </div>
+          <div>
+            <dt>{t("ticketSource.insiderPracticeTickets")}</dt>
+            <dd>{number(insiderPracticeTickets)}</dd>
+          </div>
+          <div>
+            <dt>{t("ticketSource.insiderGrantTickets")}</dt>
+            <dd>{number(insiderGrantTickets)}</dd>
           </div>
         </dl>
 
@@ -698,6 +730,7 @@ export function ControlRoom({
   selectedTeamId,
   ticketAmount,
   remainingRoundTickets,
+  roundTicketBreakdown,
   usedRoundTickets,
   roundAllocations,
   roundVoteOutcomes,
@@ -731,7 +764,9 @@ export function ControlRoom({
 }) {
   const copy = useCampaignCopy();
   const { roundLabel, t } = copy;
-  const drawViewEnabled = isLocalTestOrigin();
+  const localToolsEnabled = isLocalTestOrigin();
+  const drawViewEnabled = localToolsEnabled;
+  const showSimulationControls = localToolsEnabled;
   const visibleCommandViews = useMemo(
     () => (drawViewEnabled ? commandViews : commandViews.filter((view) => view.id !== "draw")),
     [drawViewEnabled],
@@ -750,6 +785,10 @@ export function ControlRoom({
   const ticketSourceActionable = Boolean(ticketSourceWalletAddress);
   const headerWalletActionable = authIdentityActionable || ticketSourceActionable;
   const HeaderWalletIdentity = headerWalletActionable ? "button" : "div";
+  const headerTicketCount = Math.max(
+    toLedgerInteger(activeEntry?.totalVotingTickets),
+    toLedgerInteger(activeEntry?.finalTickets),
+  );
   const [ticketSourceOpen, setTicketSourceOpen] = useState(false);
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
   const [xFollowOverlayDismissed, setXFollowOverlayDismissed] = useState(false);
@@ -823,7 +862,12 @@ export function ControlRoom({
   }, [showXFollowOverlay, canDismissXFollowOverlay, closeXFollowOverlay]);
 
   return (
-    <main className="control-room" data-view={effectiveActiveViewId} data-simulation={simulationMode}>
+    <main
+      className="control-room"
+      data-view={effectiveActiveViewId}
+      data-simulation={simulationMode}
+      data-local-tools={localToolsEnabled ? "true" : "false"}
+    >
       <header className={mobileNavOpen ? "control-header is-mobile-nav-open" : "control-header"} aria-label={t("nav.aria")}>
         <Magnet as="button" className="brand-lockup" type="button" strength={80} onClick={() => onSelectView("home")} aria-label={t("brand.homeAria")}>
           <img src={renaissLogo} alt="" aria-hidden="true" />
@@ -879,12 +923,12 @@ export function ControlRoom({
             {showAuthState ? (
               <>
                 <span>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</span>
-                <strong>{authWalletLinked ? `${formatNumber(activeEntry?.finalTickets)} ${t("common.tickets")}` : t("auth.loginDetail")}</strong>
+                <strong>{authWalletLinked ? `${formatNumber(headerTicketCount)} ${t("common.tickets")}` : t("auth.loginDetail")}</strong>
               </>
             ) : (
               <>
                 <span>{compactAddress(activeEntry?.userAddress)}</span>
-                <strong>{formatNumber(activeEntry?.finalTickets)} {t("common.tickets")}</strong>
+                <strong>{formatNumber(headerTicketCount)} {t("common.tickets")}</strong>
               </>
             )}
           </HeaderWalletIdentity>
@@ -930,7 +974,7 @@ export function ControlRoom({
               />
             ) : null}
 
-            {!["draw", "winners"].includes(effectiveActiveViewId) ? (
+            {showSimulationControls && !["draw", "winners"].includes(effectiveActiveViewId) ? (
               <RoundSwitch
                 rounds={rounds}
                 activeRoundId={activeRoundId}
@@ -981,6 +1025,7 @@ export function ControlRoom({
               selectedTeamId={selectedTeamId}
               ticketAmount={ticketAmount}
               remainingRoundTickets={remainingRoundTickets}
+              roundTicketBreakdown={roundTicketBreakdown}
               usedRoundTickets={usedRoundTickets}
               roundAllocations={roundAllocations}
               roundVoteOutcomes={roundVoteOutcomes}

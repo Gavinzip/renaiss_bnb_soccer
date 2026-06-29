@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { createGzip } from 'node:zlib'
 
 import { milestones } from '../src/app/data/worldCupCampaign.js'
+import { fetchFifaQualificationSnapshot } from '../src/app/data/fifaRealtime.js'
 import {
   createAuthContext,
   getAuthPublicStatus,
@@ -82,6 +83,9 @@ const retries = process.env.LUCKY_DRAW_RETRIES || '8'
 const backoffMs = process.env.LUCKY_DRAW_BACKOFF_MS || '1000'
 const requestBodyLimitBytes = readIntegerEnv('HTTP_JSON_BODY_LIMIT_BYTES', 64 * 1024, 1024)
 const authRequiredForVotes = process.env.AUTH_REQUIRE_SESSION_FOR_VOTES !== '0'
+const fifaStandingsCacheSeconds = readIntegerEnv('FIFA_STANDINGS_CACHE_SECONDS', 45, 0)
+const fifaStandingsCacheMs = fifaStandingsCacheSeconds * 1000
+let fifaStandingsCache = null
 
 function normalizeVoteStoreMode(value) {
   const mode = String(value || '').trim().toLowerCase()
@@ -626,6 +630,39 @@ function sendLedgerApiError(request, response, error) {
       'cache-control': 'no-store',
     },
   )
+}
+
+async function readLiveQualificationSnapshot() {
+  const now = Date.now()
+  const cached = fifaStandingsCache
+  if (cached?.snapshot && now - cached.fetchedAtMs <= fifaStandingsCacheMs) {
+    return {
+      ...cached.snapshot,
+      cacheStatus: 'hit',
+      cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
+    }
+  }
+
+  try {
+    const snapshot = await fetchFifaQualificationSnapshot(fetch)
+    fifaStandingsCache = { snapshot, fetchedAtMs: now }
+    return {
+      ...snapshot,
+      cacheStatus: 'fresh',
+      cacheAgeSeconds: 0,
+    }
+  } catch (error) {
+    if (cached?.snapshot) {
+      return {
+        ...cached.snapshot,
+        sourceStatus: 'stale',
+        issue: error instanceof Error ? error.message : 'Could not fetch FIFA standings.',
+        cacheStatus: 'stale',
+        cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
+      }
+    }
+    throw error
+  }
 }
 
 function distPathForUrl(url) {
@@ -1180,6 +1217,27 @@ const server = createServer(async (request, response) => {
       })
     } catch (error) {
       sendLedgerApiError(request, response, error)
+    }
+    return
+  }
+
+  if (url.pathname === '/api/live-qualification') {
+    try {
+      sendJson(request, response, 200, await readLiveQualificationSnapshot(), {
+        'cache-control': 'no-store',
+      })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        503,
+        {
+          error: error instanceof Error ? error.message : 'Could not read FIFA standings.',
+        },
+        {
+          'cache-control': 'no-store',
+        },
+      )
     }
     return
   }

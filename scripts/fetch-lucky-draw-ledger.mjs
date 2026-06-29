@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -22,6 +22,8 @@ import {
   toNumber,
 } from './lucky-draw/utils.mjs'
 
+const DEFAULT_INSIDER_TICKET_GRANT_PATH = 'config/soccer-insider-ticket-grants.json'
+
 function parseAddressCsv(value) {
   return String(value || '')
     .split(',')
@@ -34,6 +36,10 @@ function parseArgs(argv) {
     envFile: '',
     walletMigrationMapPath: '',
     walletMigrationUrl: process.env.WALLET_MIGRATIONS_URL || WALLET_MIGRATIONS_URL,
+    insiderGrantPath: process.env.SOCCER_INSIDER_TICKET_GRANT_PATH || DEFAULT_INSIDER_TICKET_GRANT_PATH,
+    insiderGrantAddressesRaw: process.env.SOCCER_INSIDER_TICKET_ADDRESSES || '',
+    insiderPracticeTickets: toNumber(process.env.SOCCER_INSIDER_PRACTICE_TICKETS || 100),
+    insiderGrantTickets: toNumber(process.env.SOCCER_INSIDER_GRANT_TICKETS || 100),
     cacheDir: process.env.LUCKY_DRAW_CACHE_DIR || 'cache/lucky-draw',
     walletMigrationCacheTtlMinutes: 15,
     walletResolveCacheTtlMinutes: 24 * 60,
@@ -70,6 +76,10 @@ function parseArgs(argv) {
     if (arg === '--env-file') args.envFile = argv[++index] || ''
     else if (arg === '--wallet-migration-map') args.walletMigrationMapPath = argv[++index] || ''
     else if (arg === '--wallet-migration-url') args.walletMigrationUrl = argv[++index] || ''
+    else if (arg === '--insider-grant-path') args.insiderGrantPath = argv[++index] || ''
+    else if (arg === '--insider-addresses') args.insiderGrantAddressesRaw = argv[++index] || ''
+    else if (arg === '--insider-practice-tickets') args.insiderPracticeTickets = toNumber(argv[++index])
+    else if (arg === '--insider-grant-tickets') args.insiderGrantTickets = toNumber(argv[++index])
     else if (arg === '--cache-dir') args.cacheDir = argv[++index] || args.cacheDir
     else if (arg === '--wallet-migration-cache-ttl-minutes') args.walletMigrationCacheTtlMinutes = toNumber(argv[++index])
     else if (arg === '--wallet-resolve-cache-ttl-minutes') args.walletResolveCacheTtlMinutes = toNumber(argv[++index])
@@ -121,12 +131,22 @@ function parseArgs(argv) {
     }
     if (envValues.LUCKY_DRAW_CAMPAIGN_START) args.campaignStart = toNumber(envValues.LUCKY_DRAW_CAMPAIGN_START)
     if (envValues.LUCKY_DRAW_CAMPAIGN_END) args.campaignEnd = toNumber(envValues.LUCKY_DRAW_CAMPAIGN_END)
+    args.insiderGrantPath = args.insiderGrantPath || envValues.SOCCER_INSIDER_TICKET_GRANT_PATH || ''
+    args.insiderGrantAddressesRaw = args.insiderGrantAddressesRaw || envValues.SOCCER_INSIDER_TICKET_ADDRESSES || ''
+    if (envValues.SOCCER_INSIDER_PRACTICE_TICKETS) {
+      args.insiderPracticeTickets = toNumber(envValues.SOCCER_INSIDER_PRACTICE_TICKETS)
+    }
+    if (envValues.SOCCER_INSIDER_GRANT_TICKETS) {
+      args.insiderGrantTickets = toNumber(envValues.SOCCER_INSIDER_GRANT_TICKETS)
+    }
     args.extraLegacyPacksRaw = args.extraLegacyPacksRaw || envValues[EXTRA_LEGACY_PACKS_ENV] || ''
   }
 
   getCampaignWindow(args)
   args.retries = Math.max(1, args.retries)
   args.resolveConcurrency = Math.max(1, args.resolveConcurrency)
+  args.insiderPracticeTickets = Math.max(0, Math.floor(args.insiderPracticeTickets || 0))
+  args.insiderGrantTickets = Math.max(0, Math.floor(args.insiderGrantTickets || 0))
   args.bscscanRequestTimeoutMs = Math.max(1, args.bscscanRequestTimeoutMs || 30_000)
   args.blockChunk = Math.max(100, args.blockChunk)
   args.pageSize = Math.max(1, Math.min(1000, args.pageSize))
@@ -154,6 +174,11 @@ Options:
   --campaign-start <unix>       Campaign start timestamp. Default ${DEFAULT_CAMPAIGN_START}.
   --campaign-end <unix>         Campaign end timestamp. Default ${DEFAULT_CAMPAIGN_END}.
   --extra-legacy-packs <json>   Same JSON value as ${EXTRA_LEGACY_PACKS_ENV}.
+  --insider-grant-path <path>   Optional JSON/CSV file of insider wallet grants.
+                                Default ${DEFAULT_INSIDER_TICKET_GRANT_PATH}.
+  --insider-addresses <csv>     Optional comma-separated insider wallet addresses.
+  --insider-practice-tickets <n> Practice tickets usable only in round32. Default 100.
+  --insider-grant-tickets <n>   Shared reward tickets usable across round16-final. Default 100.
   --contracts <csv>             Limit on-chain scan to specific contract addresses.
   --from-block <n>              Debug scan start block.
   --to-block <n>                Debug scan end block.
@@ -178,10 +203,14 @@ function emptyEntry(userAddress, sourceAddresses, packKeys) {
     packs: Object.fromEntries(packKeys.map((pack) => [pack, 0])),
     baseTickets: 0,
     bonusTickets: 0,
+    carryoverTickets: 0,
+    insiderPracticeTickets: 0,
+    insiderGrantTickets: 0,
     rawTickets: 0,
     sbt: 'none',
     sbtMultiplier: 1,
     finalTickets: 0,
+    totalVotingTickets: 0,
     ticketStart: null,
     ticketEnd: null,
     ticketIntervals: [],
@@ -189,6 +218,117 @@ function emptyEntry(userAddress, sourceAddresses, packKeys) {
     lastBuybackAt: null,
     eventCount: 0,
     dataWarnings: [],
+  }
+}
+
+function normalizeGrantRow(row, defaults, source, index) {
+  if (typeof row === 'string') {
+    const address = normalizeAddress(row)
+    return address
+      ? {
+        address,
+        practiceTickets: defaults.practiceTickets,
+        grantTickets: defaults.grantTickets,
+        source,
+      }
+      : null
+  }
+
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null
+  const address = normalizeAddress(row.address || row.walletAddress || row.userAddress || row.wallet)
+  if (!address) throw new Error(`Invalid insider ticket grant address at ${source}[${index}].`)
+
+  return {
+    address,
+    practiceTickets: Math.max(
+      0,
+      Math.floor(Number(row.practiceTickets ?? row.insiderPracticeTickets ?? defaults.practiceTickets) || 0),
+    ),
+    grantTickets: Math.max(0, Math.floor(Number(row.grantTickets ?? row.insiderGrantTickets ?? defaults.grantTickets) || 0)),
+    source,
+  }
+}
+
+function parseGrantPayload(text, defaults, source) {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return []
+
+  let payload = null
+  try {
+    payload = JSON.parse(trimmed)
+  } catch {
+    return trimmed
+      .split(/[\n,]/)
+      .map((row, index) => normalizeGrantRow(row, defaults, source, index))
+      .filter(Boolean)
+  }
+
+  if (Array.isArray(payload)) {
+    return payload.map((row, index) => normalizeGrantRow(row, defaults, source, index)).filter(Boolean)
+  }
+
+  if (payload && typeof payload === 'object') {
+    const nextDefaults = {
+      practiceTickets: Math.max(
+        0,
+        Math.floor(Number(payload.practiceTickets ?? payload.insiderPracticeTickets ?? defaults.practiceTickets) || 0),
+      ),
+      grantTickets: Math.max(
+        0,
+        Math.floor(Number(payload.grantTickets ?? payload.insiderGrantTickets ?? defaults.grantTickets) || 0),
+      ),
+    }
+    const rows = Array.isArray(payload.grants)
+      ? payload.grants
+      : Array.isArray(payload.addresses)
+        ? payload.addresses
+        : []
+    return rows.map((row, index) => normalizeGrantRow(row, nextDefaults, source, index)).filter(Boolean)
+  }
+
+  return []
+}
+
+function readInsiderTicketGrants(args) {
+  const defaults = {
+    practiceTickets: args.insiderPracticeTickets,
+    grantTickets: args.insiderGrantTickets,
+  }
+  const grants = []
+  const sources = []
+
+  if (args.insiderGrantAddressesRaw) {
+    grants.push(...parseGrantPayload(args.insiderGrantAddressesRaw, defaults, 'SOCCER_INSIDER_TICKET_ADDRESSES'))
+    sources.push('SOCCER_INSIDER_TICKET_ADDRESSES')
+  }
+
+  if (args.insiderGrantPath) {
+    if (!existsSync(args.insiderGrantPath)) {
+      throw new Error(`Insider ticket grant file does not exist: ${args.insiderGrantPath}`)
+    }
+    grants.push(...parseGrantPayload(readFileSync(args.insiderGrantPath, 'utf8'), defaults, args.insiderGrantPath))
+    sources.push(args.insiderGrantPath)
+  }
+
+  const merged = new Map()
+  for (const grant of grants) {
+    const existing = merged.get(grant.address) || {
+      address: grant.address,
+      practiceTickets: 0,
+      grantTickets: 0,
+      sources: [],
+    }
+    existing.practiceTickets += grant.practiceTickets
+    existing.grantTickets += grant.grantTickets
+    if (!existing.sources.includes(grant.source)) existing.sources.push(grant.source)
+    merged.set(grant.address, existing)
+  }
+
+  return {
+    grants: [...merged.values()].filter((grant) => grant.practiceTickets > 0 || grant.grantTickets > 0),
+    sources,
+    defaultPracticeTickets: defaults.practiceTickets,
+    defaultGrantTickets: defaults.grantTickets,
   }
 }
 
@@ -221,10 +361,43 @@ function aggregateBaseTickets(events, canonicalSources, packRules) {
     entry.sbt = 'none'
     entry.sbtMultiplier = 1
     entry.finalTickets = entry.rawTickets
+    entry.totalVotingTickets = entry.finalTickets + entry.insiderPracticeTickets + entry.insiderGrantTickets
     entry.bonusTickets = 0
   }
 
   return entriesByAddress
+}
+
+function applyInsiderTicketGrants(entriesByAddress, insiderGrantConfig, walletMigrationMap, packRules) {
+  const packKeys = packRules.map((rule) => rule.pack)
+  const applied = []
+
+  for (const grant of insiderGrantConfig.grants) {
+    const canonicalAddress = normalizeAddress(walletMigrationMap.get(grant.address) || grant.address)
+    if (!canonicalAddress) continue
+
+    const existing = entriesByAddress.get(canonicalAddress)
+    const entry = existing || emptyEntry(canonicalAddress, new Set([canonicalAddress]), packKeys)
+    if (!entry.sourceAddresses.includes(grant.address)) entry.sourceAddresses.push(grant.address)
+    entry.sourceAddresses = [...new Set(entry.sourceAddresses.map(normalizeAddress).filter(Boolean))].sort()
+    entry.insiderPracticeTickets += grant.practiceTickets
+    entry.insiderGrantTickets += grant.grantTickets
+    entry.totalVotingTickets = entry.finalTickets + entry.insiderPracticeTickets + entry.insiderGrantTickets
+    entriesByAddress.set(canonicalAddress, entry)
+    applied.push({
+      sourceAddress: grant.address,
+      userAddress: canonicalAddress,
+      practiceTickets: grant.practiceTickets,
+      grantTickets: grant.grantTickets,
+    })
+  }
+
+  return {
+    applied,
+    sources: insiderGrantConfig.sources,
+    defaultPracticeTickets: insiderGrantConfig.defaultPracticeTickets,
+    defaultGrantTickets: insiderGrantConfig.defaultGrantTickets,
+  }
 }
 
 function allocateRawIntervals(entriesByAddress, events) {
@@ -283,10 +456,13 @@ function allocateIntervals(entriesByAddress, events) {
 
 function finalizeEntries(entriesByAddress) {
   const entries = [...entriesByAddress.values()]
-    .filter((entry) => entry.finalTickets > 0)
+    .filter((entry) => entry.finalTickets + entry.insiderPracticeTickets + entry.insiderGrantTickets > 0)
     .sort((left, right) => {
       if (left.finalTickets !== right.finalTickets) return right.finalTickets - left.finalTickets
       if (left.rawTickets !== right.rawTickets) return right.rawTickets - left.rawTickets
+      if ((left.totalVotingTickets || 0) !== (right.totalVotingTickets || 0)) {
+        return (right.totalVotingTickets || 0) - (left.totalVotingTickets || 0)
+      }
       const leftTs = left.firstBuybackAt || Number.MAX_SAFE_INTEGER
       const rightTs = right.firstBuybackAt || Number.MAX_SAFE_INTEGER
       if (leftTs !== rightTs) return leftTs - rightTs
@@ -328,11 +504,16 @@ async function main() {
     : []
   const extraPackRules = packRules.filter((rule) => rule.configSource === EXTRA_LEGACY_PACKS_ENV)
   const entriesByAddress = aggregateBaseTickets(allEvents, resolved.canonicalSources, packRules)
+  const insiderGrantConfig = readInsiderTicketGrants(args)
+  const insiderTicketGrantSource = applyInsiderTicketGrants(entriesByAddress, insiderGrantConfig, walletMigrationMap, packRules)
   const allocation = allocateIntervals(entriesByAddress, allEvents)
   const entries = finalizeEntries(entriesByAddress)
   const totalRawTickets = entries.reduce((sum, entry) => sum + entry.rawTickets, 0)
   const totalBonusTickets = entries.reduce((sum, entry) => sum + entry.bonusTickets, 0)
+  const totalInsiderPracticeTickets = entries.reduce((sum, entry) => sum + entry.insiderPracticeTickets, 0)
+  const totalInsiderGrantTickets = entries.reduce((sum, entry) => sum + entry.insiderGrantTickets, 0)
   const totalFinalTickets = entries.reduce((sum, entry) => sum + entry.finalTickets, 0)
+  const totalVotingTickets = totalFinalTickets + totalInsiderPracticeTickets + totalInsiderGrantTickets
   if (allocation.rawTicketTotal !== totalRawTickets) {
     throw new Error(`raw ticket allocation mismatch: ${allocation.rawTicketTotal} != ${totalRawTickets}`)
   }
@@ -351,10 +532,17 @@ async function main() {
     bonusShuffleSeed: allocation.bonusShuffleSeed,
     totalRawTickets,
     totalBonusTickets,
+    totalInsiderPracticeTickets,
+    totalInsiderGrantTickets,
     totalFinalTickets,
+    totalVotingTickets,
+    insiderTicketGrantSource,
     entries: entries.map((entry) => ({
       userAddress: entry.userAddress,
       finalTickets: entry.finalTickets,
+      insiderPracticeTickets: entry.insiderPracticeTickets,
+      insiderGrantTickets: entry.insiderGrantTickets,
+      totalVotingTickets: entry.totalVotingTickets,
       ticketIntervals: entry.ticketIntervals,
     })),
   }
@@ -368,7 +556,10 @@ async function main() {
     totalEntries: entries.length,
     totalRawTickets,
     totalBonusTickets,
+    totalInsiderPracticeTickets,
+    totalInsiderGrantTickets,
     totalFinalTickets,
+    totalVotingTickets,
     sourceEntries: resolved.canonicalSources.size,
     candidateSourceLimited: false,
     ledgerHash,
@@ -378,6 +569,7 @@ async function main() {
     bonusShuffleLocked: false,
     bonusShuffleLockedAt: null,
     source: sourceResult.source,
+    insiderTicketGrantSource,
     packRules,
     entriesWithOldSourceAddresses,
     walletMigrationSource: remoteWalletMigration.meta,
@@ -397,6 +589,9 @@ async function main() {
       'Packs not listed in packRules are not counted unless the official rules change.',
       'Base ticket intervals are ordered by block number, transaction index, log index, timestamp, tx hash, then event id.',
       'This football campaign does not apply SBT ticket bonuses; final tickets equal raw buyback tickets.',
+      insiderTicketGrantSource.applied.length > 0
+        ? `Applied ${insiderTicketGrantSource.applied.length} insider ticket grant address(es): ${insiderTicketGrantSource.defaultPracticeTickets} practice ticket(s) for round32 and ${insiderTicketGrantSource.defaultGrantTickets} shared reward ticket(s) across round16-final by default.`
+        : 'No insider ticket grants were configured.',
       'Leaderboard rank is sorted by raw buyback tickets, then first eligible event time.',
       args.skipWalletResolve
         ? 'Wallet migration resolver was skipped.'
@@ -417,7 +612,7 @@ async function main() {
   }
 
   console.log(
-    `Ledger: ${entries.length} entries, ${allEvents.length} eligible events, ${totalFinalTickets} final tickets`,
+    `Ledger: ${entries.length} entries, ${allEvents.length} eligible events, ${totalFinalTickets} final tickets, ${totalVotingTickets} voting tickets`,
   )
   console.log(`Ledger hash: ${ledgerHash}`)
   console.log(`Source: ${sourceResult.source.mode}, entries with old source addresses: ${entriesWithOldSourceAddresses}`)

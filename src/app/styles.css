@@ -13159,6 +13159,10 @@ body,
   white-space: nowrap;
 }
 
+.arena-team-card > em:empty {
+  display: none;
+}
+
 .arena-team-card__state {
   width: 38px;
   height: 38px;
@@ -17114,6 +17118,7 @@ body {
 .control-room[data-view="vote"] {
   --vote-rail-top: 86px;
   --vote-content-top: 150px;
+  --vote-summary-count: 3;
   --vote-page-gutter: clamp(24px, 4vw, 72px);
   --vote-panel-bg: rgba(9, 11, 11, 0.76);
   --vote-panel-border: rgba(245, 246, 241, 0.14);
@@ -17126,6 +17131,10 @@ body {
     radial-gradient(circle at 16% 68%, rgba(255, 95, 162, 0.026), transparent 34%),
     #070808;
   background-size: 88px 88px, 88px 88px, auto, auto, auto;
+}
+
+.control-room[data-view="vote"][data-local-tools="false"] {
+  --vote-content-top: 108px;
 }
 
 .control-room[data-view="vote"] .control-header {
@@ -24295,7 +24304,7 @@ body {
 }
 
 .control-room[data-view="vote"] .vote-stage-summary {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-template-columns: repeat(var(--vote-summary-count, 3), minmax(0, 1fr)) !important;
 }
 
 .control-room[data-view="vote"] .match-prize-team span {
@@ -28018,11 +28027,11 @@ body {
 }
 
 .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-command__current strong {
-  background: linear-gradient(90deg, #42f5d7 0%, #dff58d 35%, #f0d18b 66%, #f65ca4 100%);
+  background: linear-gradient(92deg, #fff8df 0%, #ead394 48%, #c9a25b 100%);
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent !important;
-  filter: drop-shadow(0 0 18px rgba(66, 245, 215, 0.18));
+  filter: drop-shadow(0 0 14px rgba(237, 213, 156, 0.14));
   font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
   font-size: clamp(1.55rem, 2.65vw, 2.42rem) !important;
   font-weight: 950 !important;
@@ -28297,9 +28306,9 @@ body {
   content: none !important;
 }
 
-/* Final vote summary shape after removing the cash prize cell. */
+/* Final vote summary shape after adding the carryover ticket cell. */
 .control-room[data-view="vote"] .vote-stage-summary {
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr) !important;
+  grid-template-columns: minmax(0, 0.84fr) repeat(3, minmax(0, 1fr)) !important;
 }
 
 .control-room[data-view="vote"] .vote-stage-summary output:nth-child(2n),
@@ -28308,7 +28317,7 @@ body {
   border-bottom: 0 !important;
 }
 
-.control-room[data-view="vote"] .vote-stage-summary output:nth-child(3) {
+.control-room[data-view="vote"] .vote-stage-summary output:nth-child(4) {
   border-right: 0 !important;
 }
 
@@ -28318,7 +28327,7 @@ body {
 
 @media (max-width: 980px) {
   .control-room[data-view="vote"] .vote-stage-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
@@ -28330,7 +28339,8 @@ body {
   .control-room[data-view="vote"] .vote-stage-summary output,
   .control-room[data-view="vote"] .vote-stage-summary output:nth-child(odd),
   .control-room[data-view="vote"] .vote-stage-summary output:nth-child(2n),
-  .control-room[data-view="vote"] .vote-stage-summary output:nth-child(3) {
+  .control-room[data-view="vote"] .vote-stage-summary output:nth-child(3),
+  .control-room[data-view="vote"] .vote-stage-summary output:nth-child(4) {
     border-right: 0 !important;
     border-bottom: 1px solid rgba(245, 246, 241, 0.08) !important;
   }
@@ -28430,6 +28440,336 @@ body {
     width: 100%;
     margin-top: 6px;
   }
+}
+
+/* Schedule detail matchup: open team labels above a restrained red-blue share rail. */
+.control-room[data-view="schedule"] .arena-vs-breakdown {
+  grid-template-columns: minmax(0, 1fr) minmax(42px, 0.08fr) minmax(0, 1fr) !important;
+  align-items: end !important;
+  gap: clamp(16px, 3vw, 38px) !important;
+  padding: 2px clamp(44px, 4vw, 58px) 42px !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article,
+.control-room[data-view="schedule"] .arena-vs-breakdown article.is-focused {
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: 64px minmax(0, 1fr) auto !important;
+  grid-template-rows: auto auto !important;
+  align-content: end !important;
+  align-items: center !important;
+  gap: 5px 14px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) {
+  grid-template-columns: auto minmax(0, 1fr) 64px !important;
+  text-align: right !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article img {
+  grid-column: 1 !important;
+  grid-row: 1 / span 2 !important;
+  width: 64px !important;
+  height: 44px !important;
+  border-radius: 8px !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) img {
+  grid-column: 3 !important;
+  justify-self: end !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article span,
+.control-room[data-view="schedule"] .arena-vs-breakdown article strong {
+  grid-column: 2 !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) span,
+.control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) strong {
+  text-align: right !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article span {
+  font-size: clamp(1.22rem, 2vw, 1.72rem) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article strong {
+  color: rgba(231, 142, 144, 0.9) !important;
+  font-size: clamp(0.98rem, 1.35vw, 1.26rem) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) strong {
+  color: rgba(146, 181, 232, 0.9) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article small {
+  grid-column: 3 !important;
+  grid-row: 1 / span 2 !important;
+  align-self: center !important;
+  justify-self: end !important;
+  border: 0 !important;
+  padding: 0 !important;
+  color: rgba(245, 246, 241, 0.55) !important;
+  background: transparent !important;
+  font-size: 0.78rem !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) small {
+  grid-column: 1 !important;
+  justify-self: start !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-share {
+  align-self: end !important;
+  min-width: 42px !important;
+  min-height: 48px !important;
+  display: grid !important;
+  place-items: end center !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-share::before,
+.control-room[data-view="schedule"] .arena-vs-share::after {
+  display: none !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-share__label {
+  min-width: 0 !important;
+  height: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding-bottom: 9px !important;
+  color: rgba(245, 246, 241, 0.38) !important;
+  background: transparent !important;
+  font-size: 0.66rem !important;
+  letter-spacing: 0.18em !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-share__track {
+  right: clamp(44px, 4vw, 58px) !important;
+  bottom: 18px !important;
+  left: clamp(44px, 4vw, 58px) !important;
+  height: 6px !important;
+  overflow: visible !important;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(224, 105, 113, 0.84) 0%,
+      rgba(224, 105, 113, 0.84) var(--focused-share, 50%),
+      rgba(132, 166, 222, 0.82) var(--focused-share, 50%),
+      rgba(132, 166, 222, 0.82) 100%
+    ) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(245, 246, 241, 0.08),
+    0 0 18px rgba(154, 185, 228, 0.08) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-share__track i {
+  position: absolute !important;
+  top: -6px !important;
+  bottom: -6px !important;
+  left: var(--focused-share, 50%) !important;
+  width: 1px !important;
+  height: auto !important;
+  border-radius: 0 !important;
+  background: rgba(245, 246, 241, 0.55) !important;
+  box-shadow: 0 0 12px rgba(245, 246, 241, 0.18) !important;
+  transform: translateX(-50%) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-share__track i::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 7px !important;
+  height: 7px !important;
+  border-radius: 999px !important;
+  background: rgba(245, 246, 241, 0.7) !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+@media (max-width: 760px) {
+  .control-room[data-view="schedule"] .arena-vs-breakdown {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    padding: 2px 4px 34px !important;
+  }
+
+  .control-room[data-view="schedule"] .arena-vs-breakdown article,
+  .control-room[data-view="schedule"] .arena-vs-breakdown article.is-focused,
+  .control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) {
+    grid-template-columns: 52px minmax(0, 1fr) auto !important;
+    text-align: left !important;
+  }
+
+  .control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) img {
+    grid-column: 1 !important;
+    justify-self: start !important;
+  }
+
+  .control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) span,
+  .control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) strong {
+    text-align: left !important;
+  }
+
+  .control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) small {
+    grid-column: 3 !important;
+    justify-self: end !important;
+  }
+
+  .control-room[data-view="schedule"] .arena-vs-breakdown article img {
+    width: 52px !important;
+    height: 36px !important;
+  }
+
+  .control-room[data-view="schedule"] .arena-vs-share {
+    order: 3 !important;
+    min-height: 20px !important;
+    width: 100% !important;
+  }
+
+  .control-room[data-view="schedule"] .arena-vs-share__label {
+    display: none !important;
+  }
+
+  .control-room[data-view="schedule"] .arena-vs-share__track {
+    position: absolute !important;
+    right: 4px !important;
+    bottom: 16px !important;
+    left: 4px !important;
+    width: auto !important;
+    margin-top: 0 !important;
+  }
+}
+
+/* Schedule detail force meter: realtime standings are not vote share; vote share uses a restrained metal split. */
+.control-room[data-view="schedule"] .arena-vs-breakdown.is-realtime,
+.control-room[data-view="vote"] .arena-vs-breakdown.is-realtime {
+  padding-bottom: 2px !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.is-realtime .arena-vs-share,
+.control-room[data-view="vote"] .arena-vs-breakdown.is-realtime .arena-vs-share {
+  min-height: 38px !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.is-realtime .arena-vs-share__label,
+.control-room[data-view="vote"] .arena-vs-breakdown.is-realtime .arena-vs-share__label {
+  padding: 0 !important;
+  color: rgba(245, 246, 241, 0.32) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track,
+.control-room[data-view="vote"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track {
+  height: 9px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(245, 246, 241, 0.09) !important;
+  border-radius: 999px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.025) 42%, rgba(0, 0, 0, 0.38)),
+    linear-gradient(90deg, rgba(245, 246, 241, 0.08), rgba(245, 246, 241, 0.015)),
+    #101314 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.62),
+    0 9px 20px rgba(0, 0, 0, 0.2) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track::before,
+.control-room[data-view="vote"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 auto 0 0 !important;
+  width: var(--focused-share, 50%) !important;
+  border-radius: inherit !important;
+  background:
+    linear-gradient(180deg, rgba(255, 229, 221, 0.22), rgba(255, 255, 255, 0.02) 46%, rgba(0, 0, 0, 0.28)),
+    linear-gradient(90deg, #4f1017 0%, #8b2630 52%, #c6726f 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 217, 207, 0.24),
+    inset 0 -1px 0 rgba(39, 6, 11, 0.55),
+    0 0 16px rgba(160, 48, 58, 0.13) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track::after,
+.control-room[data-view="vote"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: var(--focused-share, 50%) !important;
+  border-radius: inherit !important;
+  background:
+    linear-gradient(180deg, rgba(226, 239, 255, 0.22), rgba(255, 255, 255, 0.02) 46%, rgba(0, 0, 0, 0.32)),
+    linear-gradient(90deg, #90a9d8 0%, #526d9b 48%, #172744 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(222, 238, 255, 0.22),
+    inset 0 -1px 0 rgba(8, 16, 31, 0.58),
+    0 0 16px rgba(94, 128, 187, 0.12) !important;
+  pointer-events: none !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track i,
+.control-room[data-view="vote"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track i {
+  z-index: 2 !important;
+  top: -3px !important;
+  bottom: -3px !important;
+  left: var(--focused-share, 50%) !important;
+  width: 1px !important;
+  background:
+    linear-gradient(180deg, transparent, rgba(255, 244, 218, 0.42) 24%, rgba(245, 246, 241, 0.78) 50%, rgba(204, 222, 255, 0.4) 76%, transparent) !important;
+  box-shadow:
+    0 0 8px rgba(245, 246, 241, 0.18) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track i::before,
+.control-room[data-view="vote"] .arena-vs-breakdown.has-vote-share .arena-vs-share__track i::before {
+  content: none !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.is-empty-share .arena-vs-share__track,
+.control-room[data-view="vote"] .arena-vs-breakdown.is-empty-share .arena-vs-share__track {
+  height: 7px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(245, 246, 241, 0.065) !important;
+  border-radius: 999px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02) 46%, rgba(0, 0, 0, 0.36)),
+    linear-gradient(90deg, rgba(245, 246, 241, 0.055), rgba(245, 246, 241, 0.025)),
+    rgba(245, 246, 241, 0.045) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.46) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.is-empty-share .arena-vs-share__track i,
+.control-room[data-view="vote"] .arena-vs-breakdown.is-empty-share .arena-vs-share__track i {
+  display: none !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown.is-empty-share article strong:empty,
+.control-room[data-view="schedule"] .arena-vs-breakdown.is-empty-share article small:empty,
+.control-room[data-view="vote"] .arena-vs-breakdown.is-empty-share article strong:empty,
+.control-room[data-view="vote"] .arena-vs-breakdown.is-empty-share article small:empty {
+  display: none !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article.is-focused strong,
+.control-room[data-view="vote"] .arena-vs-breakdown article.is-focused strong {
+  color: #c47774 !important;
+  text-shadow: 0 0 14px rgba(160, 48, 58, 0.12) !important;
+}
+
+.control-room[data-view="schedule"] .arena-vs-breakdown article:not(.is-focused) strong,
+.control-room[data-view="vote"] .arena-vs-breakdown article:not(.is-focused) strong {
+  color: #9eb4dd !important;
+  text-shadow: 0 0 14px rgba(94, 128, 187, 0.12) !important;
 }
 
 /* Vote prize spotlight: keep the three summary stats intact and use the right rail for the per-match prize image. */
@@ -28803,6 +29143,22 @@ body {
   width: max-content;
   max-width: min(7em, 46%);
   min-width: max-content;
+}
+
+.control-room[data-view="vote"] .match-prize-team__winner-label {
+  flex: 0 0 auto;
+  border: 1px solid rgba(240, 209, 139, 0.36);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: rgba(240, 209, 139, 0.94);
+  background: linear-gradient(135deg, rgba(240, 209, 139, 0.16), rgba(66, 245, 215, 0.06));
+  box-shadow: 0 0 16px rgba(240, 209, 139, 0.1);
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .control-room[data-view="vote"] .match-prize-team__title-row > .match-prize-team__vote-result {
@@ -29480,7 +29836,7 @@ body {
 
   .control-room[data-view="vote"] .vote-stage-hero .vote-stage-summary,
   .control-room[data-view="vote"] .vote-stage-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 0 !important;
     overflow: hidden !important;
     border: 1px solid rgba(245, 246, 241, 0.09) !important;
@@ -29495,6 +29851,7 @@ body {
   .control-room[data-view="vote"] .vote-stage-summary output:nth-child(odd),
   .control-room[data-view="vote"] .vote-stage-summary output:nth-child(2n),
   .control-room[data-view="vote"] .vote-stage-summary output:nth-child(3),
+  .control-room[data-view="vote"] .vote-stage-summary output:nth-child(4),
   .control-room[data-view="vote"] .vote-stage-summary output:last-child {
     min-height: 82px !important;
     align-content: center !important;
@@ -29504,7 +29861,7 @@ body {
     padding: 10px 8px 13px !important;
   }
 
-  .control-room[data-view="vote"] .vote-stage-summary output:last-child {
+  .control-room[data-view="vote"] .vote-stage-summary output:nth-child(2n) {
     border-right: 0 !important;
   }
 
@@ -30004,5 +30361,340 @@ body {
   .control-room[data-view="vote"] .match-prize-lane.is-phase-live,
   .control-room[data-view="vote"] .match-prize-lane.is-phase-final {
     grid-template-columns: 72px minmax(0, 1fr) !important;
+  }
+}
+
+/* Milestone rail: desktop stays horizontal; mobile keeps rows with a vertical progress spine. */
+.control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels {
+  grid-template-columns: repeat(var(--milestone-count, 4), minmax(0, 1fr)) !important;
+}
+
+@media (max-width: 640px) {
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels {
+    --mobile-milestone-spine-x: 18px;
+    position: relative !important;
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
+    min-height: 0 !important;
+    margin-top: 12px !important;
+    padding: 4px 0 4px !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels::before,
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels::after {
+    content: "" !important;
+    position: absolute !important;
+    left: var(--mobile-milestone-spine-x) !important;
+    right: auto !important;
+    display: block !important;
+    width: 3px !important;
+    border-radius: 999px !important;
+    pointer-events: none !important;
+    z-index: 0 !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels::before {
+    top: 20px !important;
+    bottom: 20px !important;
+    height: auto !important;
+    background:
+      linear-gradient(180deg, rgba(245, 246, 241, 0.18), rgba(245, 246, 241, 0.045)),
+      rgba(245, 246, 241, 0.07) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.42) !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels::after {
+    top: 20px !important;
+    height: min(calc(100% - 40px), var(--milestone-fill, 0%)) !important;
+    background:
+      linear-gradient(
+        180deg,
+        rgba(255, 242, 196, 0.96) 0%,
+        rgba(231, 201, 126, 0.92) 48%,
+        rgba(171, 131, 66, 0.74) 100%
+      ) !important;
+    box-shadow:
+      0 0 12px rgba(237, 213, 156, 0.18),
+      inset 1px 0 0 rgba(255, 255, 255, 0.24) !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li {
+    position: relative !important;
+    z-index: 1 !important;
+    grid-template-columns: 66px minmax(0, 1fr) auto !important;
+    min-height: 58px !important;
+    padding: 10px 0 10px !important;
+    border-top: 1px solid rgba(245, 246, 241, 0.08) !important;
+    text-align: left !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li:first-child {
+    border-top: 0 !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-next {
+    opacity: 1 !important;
+    filter: saturate(1) !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-scroll-dim:not(.is-next) {
+    opacity: 0.48 !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-scroll-lit:nth-child(1)::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-scroll-lit:nth-child(2)::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-scroll-lit:nth-child(3)::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-scroll-lit:nth-child(4)::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-next:not(.is-scroll-lit)::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels em {
+    grid-column: 1 !important;
+    grid-row: 1 / span 2 !important;
+    justify-self: start !important;
+    align-self: center !important;
+    margin-left: 31px !important;
+    color: rgba(237, 213, 156, 0.42) !important;
+    font-size: clamp(0.58rem, 2.7vw, 0.66rem) !important;
+    text-align: center !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels span,
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels small {
+    grid-column: 2 !important;
+    justify-self: start !important;
+    text-align: left !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels span {
+    font-size: clamp(0.78rem, 3.45vw, 0.92rem) !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-next span {
+    color: rgba(245, 246, 241, 0.9) !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels strong {
+    grid-column: 3 !important;
+    grid-row: 1 / span 2 !important;
+    align-self: center !important;
+    justify-self: end !important;
+    font-size: clamp(0.9rem, 4.2vw, 1.08rem) !important;
+    white-space: nowrap !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-next strong {
+    color: rgba(240, 209, 139, 1) !important;
+    text-shadow: 0 0 14px rgba(240, 209, 139, 0.16);
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels small {
+    width: auto !important;
+    margin-top: 2px !important;
+    font-size: clamp(0.6rem, 2.8vw, 0.7rem) !important;
+  }
+
+  .control-room[data-view="home"] .home-milestone-scroll-shell .hero-milestone-levels li.is-next small {
+    color: rgba(240, 209, 139, 0.72) !important;
+  }
+}
+
+/* Winners mobile reveal is a full-screen ceremony, so it must not inherit the generic mobile page offset. */
+@media (max-width: 820px) {
+  .control-room[data-view="winners"],
+  .control-room[data-view="winners"]:has(.control-header.is-mobile-nav-open),
+  .control-room[data-view="winners"]:has(.control-header.is-mobile-nav-open .command-menu.pill-nav[data-view-count="5"]) {
+    min-height: 100dvh !important;
+    padding-top: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .control-room[data-view="winners"] .room-shell {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 100dvh !important;
+    margin: 0 !important;
+    padding-top: 0 !important;
+    overflow: visible !important;
+  }
+
+  .control-room[data-view="winners"] .winners-room {
+    min-height: 100dvh !important;
+    overflow: visible !important;
+  }
+
+  .control-room[data-view="winners"] .winner-stage-video,
+  .control-room[data-view="winners"] .winner-stage-reveal-bg,
+  .control-room[data-view="winners"] .winner-stage-grid,
+  .control-room[data-view="winners"] .winner-stage-side-rays,
+  .control-room[data-view="winners"] .winner-stage-scrim {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+  }
+
+  .control-room[data-view="winners"] .winners-room.is-pending.is-reveal .winner-stage-reveal-bg {
+    inset: auto !important;
+    top: clamp(118px, 17dvh, 154px) !important;
+    left: 50% !important;
+    width: min(70vw, 280px) !important;
+    height: min(36dvh, 310px) !important;
+    background-position: center !important;
+    background-size: contain !important;
+    opacity: 0.76 !important;
+    filter: saturate(1.08) brightness(1.03) contrast(1.04) drop-shadow(0 22px 54px rgba(0, 0, 0, 0.36)) !important;
+    transform: translate3d(-50%, 0, 0) scale(1) !important;
+  }
+
+  .control-room[data-view="winners"] .winners-room.is-pending.is-reveal .winner-stage-reveal {
+    width: min(calc(100vw - 42px), 430px) !important;
+    min-height: 100dvh !important;
+    align-content: start !important;
+    padding-top: clamp(420px, 56dvh, 492px) !important;
+    padding-bottom: 114px !important;
+  }
+
+  .control-room[data-view="winners"] .winners-room.is-pending.is-reveal .winner-stage-board {
+    justify-items: center !important;
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  .control-room[data-view="winners"] .winners-room.is-pending.is-reveal .winner-reveal-empty {
+    justify-items: center !important;
+    max-width: min(330px, 100%) !important;
+    margin-inline: auto !important;
+    text-align: center !important;
+  }
+
+  .control-room[data-view="winners"] .winners-room.is-pending.is-reveal .winner-reveal-empty strong {
+    font-size: clamp(24px, 7.4vw, 32px) !important;
+    line-height: 1.08 !important;
+  }
+
+  .control-room[data-view="winners"] .winners-room.is-pending.is-reveal .winner-reveal-empty p {
+    max-width: 22em !important;
+    font-size: clamp(13px, 3.7vw, 15px) !important;
+  }
+}
+
+/* Mobile rules flow: keep the process centered and make arrows belong to the left rail. */
+@media (max-width: 760px) {
+  .control-room[data-view="home"] .rules-room.home-rules-panel .rules-flow-map {
+    width: min(100%, calc(100vw - 28px)) !important;
+    margin-inline: auto !important;
+    padding: 22px 16px !important;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map ol {
+    width: 100% !important;
+    max-width: 340px !important;
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
+    margin: 0 auto !important;
+    padding: 20px 0 0 !important;
+    overflow: visible !important;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map li {
+    min-height: 78px !important;
+    display: grid !important;
+    grid-template-columns: 40px minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-items: center !important;
+    gap: 4px 11px !important;
+    padding: 11px 0 15px !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-bottom: 1px solid rgba(245, 246, 241, 0.08) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-align: left !important;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map li:last-child {
+    border-bottom: 0 !important;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map__node {
+    grid-column: 1 !important;
+    grid-row: 1 / span 2 !important;
+    place-self: center !important;
+    width: 34px !important;
+    height: 34px !important;
+    margin: 0 !important;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map__node svg {
+    width: 17px !important;
+    height: 17px !important;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map li strong {
+    grid-column: 2 !important;
+    align-self: end !important;
+    padding: 0 !important;
+    font-size: clamp(0.9rem, 4vw, 1rem) !important;
+    line-height: 1.14 !important;
+    text-align: left !important;
+    text-wrap: balance;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map li p {
+    grid-column: 2 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    font-size: clamp(0.64rem, 3vw, 0.73rem) !important;
+    line-height: 1.34 !important;
+    text-align: left !important;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map__arrow,
+  .control-room[data-view="home"] .rules-flow-map li:nth-child(3) .rules-flow-map__arrow,
+  .control-room[data-view="home"] .rules-flow-map li:nth-child(4) .rules-flow-map__arrow,
+  .control-room[data-view="home"] .rules-flow-map li:nth-child(6) .rules-flow-map__arrow {
+    position: absolute !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: -9px !important;
+    left: 20px !important;
+    display: block !important;
+    width: 15px !important;
+    height: 15px !important;
+    color: rgba(240, 209, 139, 0.62) !important;
+    filter: drop-shadow(0 0 8px rgba(240, 209, 139, 0.16)) !important;
+    transform: translateX(-50%) rotate(90deg) !important;
+  }
+
+  .control-room[data-view="home"] .rules-flow-map li:last-child .rules-flow-map__arrow {
+    display: none !important;
   }
 }

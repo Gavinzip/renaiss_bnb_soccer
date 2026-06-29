@@ -39,12 +39,17 @@ import { I18nProvider } from "./i18n/I18nProvider";
 import { useCampaignCopy } from "./i18n/useCampaignCopy";
 import renaissLogo from "./assets/renaiss-logo-mark.webp";
 import { installGoogleAnalytics, trackEvent, trackPageView } from "./utils/analytics";
+import { fetchJsonWithTimeout, isRequestAbortError } from "./utils/httpClient";
 import { preloadImage } from "./utils/preloadAssets";
 import { requestRenaissProviderSignOut } from "./utils/renaissAuth";
+import { getRoundTicketAvailability } from "./data/ticketEligibility";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
 const INITIAL_LOADER_EXIT_MS = 540;
 const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i;
+const AUTH_REQUEST_TIMEOUT_MS = 10000;
+const DATA_REQUEST_TIMEOUT_MS = 12000;
+const VOTE_SUBMIT_TIMEOUT_MS = 15000;
 
 const bundledMilestoneSummary = {
   milestones,
@@ -67,8 +72,22 @@ function readInitialWalletAddress() {
 
 function readInitialViewId() {
   if (typeof window === "undefined") return DEFAULT_VIEW_ID;
-  const viewId = new URLSearchParams(window.location.search).get("view");
+  const viewId = readViewIdFromSearch(window.location.search);
   return commandViews.some((view) => view.id === viewId) ? viewId : DEFAULT_VIEW_ID;
+}
+
+function readViewIdFromSearch(search) {
+  return new URLSearchParams(search).get("view");
+}
+
+function syncViewIdToUrl(viewId, { replace = false } = {}) {
+  if (typeof window === "undefined" || !commandViews.some((view) => view.id === viewId)) return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("view") === viewId) return;
+
+  url.searchParams.set("view", viewId);
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  window.history[replace ? "replaceState" : "pushState"]({ viewId }, "", nextUrl);
 }
 
 function urlWithWalletQuery(baseUrl, walletAddress) {
@@ -106,7 +125,11 @@ function createEmptyLedgerEntry(walletAddress) {
     packs: {},
     rawTickets: 0,
     bonusTickets: 0,
+    carryoverTickets: 0,
+    insiderPracticeTickets: 0,
+    insiderGrantTickets: 0,
     finalTickets: 0,
+    totalVotingTickets: 0,
     sbt: "none",
     sbtMultiplier: 1,
     eventCount: 0,
@@ -141,16 +164,40 @@ function normalizeLedgerEntryPayload(payload) {
   const userAddress = normalizeWalletAddress(entry.userAddress ?? entry.user_address);
   const normalizedEntry = normalizeFootballLedgerEntry(entry);
   const finalTickets = Math.max(0, Math.floor(Number(normalizedEntry.finalTickets ?? normalizedEntry.final_tickets) || 0));
-  if (!userAddress || finalTickets <= 0) return null;
+  const rawTickets = Math.max(0, Math.floor(Number(normalizedEntry.rawTickets ?? normalizedEntry.raw_tickets) || 0));
+  const carryoverTickets = Math.max(
+    0,
+    Math.floor(Number(normalizedEntry.carryoverTickets ?? normalizedEntry.carryover_tickets) || 0),
+  );
+  const insiderPracticeTickets = Math.max(
+    0,
+    Math.floor(Number(normalizedEntry.insiderPracticeTickets ?? normalizedEntry.insider_practice_tickets) || 0),
+  );
+  const insiderGrantTickets = Math.max(
+    0,
+    Math.floor(Number(normalizedEntry.insiderGrantTickets ?? normalizedEntry.insider_grant_tickets) || 0),
+  );
+  const totalVotingTickets = Math.max(
+    Math.max(0, Math.floor(Number(normalizedEntry.totalVotingTickets ?? normalizedEntry.total_voting_tickets) || 0)),
+    rawTickets + carryoverTickets + insiderPracticeTickets + insiderGrantTickets,
+  );
+  if (!userAddress || totalVotingTickets <= 0) return null;
 
   return {
     ...normalizedEntry,
     userAddress,
     sourceAddresses: Array.isArray(normalizedEntry.sourceAddresses) ? normalizedEntry.sourceAddresses : [],
     packs: normalizedEntry.packs && typeof normalizedEntry.packs === "object" ? normalizedEntry.packs : {},
-    rawTickets: Math.max(0, Math.floor(Number(normalizedEntry.rawTickets ?? normalizedEntry.raw_tickets) || 0)),
+    rawTickets,
     bonusTickets: 0,
-    finalTickets,
+    carryoverTickets,
+    insiderPracticeTickets,
+    insiderGrantTickets,
+    finalTickets: Math.max(
+      finalTickets,
+      rawTickets + carryoverTickets,
+    ),
+    totalVotingTickets,
     sbt: "none",
     sbtMultiplier: 1,
     eventCount: Math.max(0, Math.floor(Number(normalizedEntry.eventCount ?? normalizedEntry.event_count) || 0)),
@@ -164,12 +211,24 @@ function normalizeLedgerEntryPayload(payload) {
 function AppContent() {
   const copy = useCampaignCopy();
   const { t } = copy;
+  const localTestOrigin = isLocalTestOrigin();
+  const initialRoundId = localTestOrigin ? DEFAULT_ROUND_ID : "round32";
+  const initialMatchId = localTestOrigin
+    ? DEFAULT_MATCH_ID
+    : campaignMatches.find((match) => match.roundId === "round32")?.id ?? DEFAULT_MATCH_ID;
   const ledgerSummaryUrl = import.meta.env.VITE_LEDGER_SUMMARY_URL || (import.meta.env.PROD ? "/api/raffle-summary" : "");
   const ledgerEntryUrl = import.meta.env.VITE_LEDGER_ENTRY_URL || (import.meta.env.PROD ? "/api/raffle-entry" : "");
   const milestoneSummaryUrl = import.meta.env.VITE_MILESTONE_SUMMARY_URL || (import.meta.env.PROD ? "/api/milestones" : "");
   const previewVoteUrl = import.meta.env.VITE_VOTE_PREVIEW_URL
     || (import.meta.env.PROD ? "/api/vote-preview" : "/mock-api/vote-preview.json");
   const voteSubmitUrl = import.meta.env.VITE_VOTE_SUBMIT_URL || (import.meta.env.PROD ? "/api/votes" : "");
+  const localApiOrigin = import.meta.env.VITE_LOCAL_API_ORIGIN || "";
+  const liveQualificationUrl = import.meta.env.VITE_LIVE_QUALIFICATION_URL
+    || (import.meta.env.PROD || !localTestOrigin
+      ? "/api/live-qualification"
+      : localApiOrigin
+        ? `${localApiOrigin}/api/live-qualification`
+        : "");
   const winnerRevealVideoUrl = import.meta.env.VITE_WINNER_REVEAL_VIDEO_URL || DEFAULT_WINNER_REVEAL_VIDEO_URL;
   const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL
     || (import.meta.env.PROD ? "/api/draw-winners" : "/mock-api/draw-winners.json");
@@ -193,11 +252,12 @@ function AppContent() {
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
   const [activeViewId, setActiveViewId] = useState(readInitialViewId);
-  const [simulationMode, setSimulationMode] = useState("scenario");
+  const [localSimulationMode, setLocalSimulationMode] = useState(localTestOrigin ? "scenario" : "realtime");
+  const simulationMode = localTestOrigin ? localSimulationMode : "realtime";
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
-  const [simulatedRoundId, setSimulatedRoundId] = useState(DEFAULT_ROUND_ID);
-  const [activeRoundId, setActiveRoundId] = useState(DEFAULT_ROUND_ID);
-  const [selectedMatchId, setSelectedMatchId] = useState(DEFAULT_MATCH_ID);
+  const [simulatedRoundId, setSimulatedRoundId] = useState(initialRoundId);
+  const [activeRoundId, setActiveRoundId] = useState(initialRoundId);
+  const [selectedMatchId, setSelectedMatchId] = useState(initialMatchId);
   const [selectedTeamId, setSelectedTeamId] = useState(null);
   const [ticketAmount, setTicketAmount] = useState(DEFAULT_TICKET_AMOUNT);
   const [previewAllocations, setPreviewAllocations] = useState([]);
@@ -222,12 +282,11 @@ function AppContent() {
 
     setAuthReady(false);
     try {
-      const response = await fetch(authMeUrl, {
+      const { payload } = await fetchJsonWithTimeout(authMeUrl, {
         cache: "no-store",
         credentials: "same-origin",
+        timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
       setAuthSession(payload);
       setAuthIssue("");
       return payload;
@@ -246,6 +305,16 @@ function AppContent() {
 
   useEffect(() => {
     installGoogleAnalytics();
+  }, []);
+
+  useEffect(() => {
+    function handlePopState() {
+      setActiveViewId(readInitialViewId());
+      setMobileNavOpen(false);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
@@ -285,12 +354,14 @@ function AppContent() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setLedgerReady(false);
-    fetch(summaryUrl, { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
+    fetchJsonWithTimeout(summaryUrl, {
+      cache: "no-store",
+      signal: controller.signal,
+      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+    })
+      .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
         const normalized = normalizeLedgerSummary(payload);
@@ -300,6 +371,7 @@ function AppContent() {
         setLedgerIssue("");
       })
       .catch((error) => {
+        if (isRequestAbortError(error)) return;
         if (cancelled) return;
         setLedgerIssue(
           t("data.ledgerIssue", { message: error.message }),
@@ -311,7 +383,8 @@ function AppContent() {
 
     return () => {
       cancelled = true;
-      };
+      controller.abort();
+    };
   }, [ledgerSummaryUrl, t]);
 
   useEffect(() => {
@@ -321,21 +394,24 @@ function AppContent() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
 
-    fetch(urlWithQueryParams(ledgerEntryUrl, {
+    fetchJsonWithTimeout(urlWithQueryParams(ledgerEntryUrl, {
       wallet: selectedWallet,
       includeIntervals: "1",
       intervalLimit: "12",
-    }), { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
+    }), {
+      cache: "no-store",
+      signal: controller.signal,
+      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+    })
+      .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
         setSelectedLedgerEntry(normalizeLedgerEntryPayload(payload));
       })
       .catch((error) => {
+        if (isRequestAbortError(error)) return;
         if (cancelled) return;
         setSelectedLedgerEntry(null);
         setLedgerIssue(t("data.ledgerIssue", { message: error.message }));
@@ -343,6 +419,7 @@ function AppContent() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [ledgerEntryUrl, selectedWallet, t]);
 
@@ -354,12 +431,14 @@ function AppContent() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setMilestoneReady(false);
-    fetch(milestoneUrl, { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
+    fetchJsonWithTimeout(milestoneUrl, {
+      cache: "no-store",
+      signal: controller.signal,
+      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+    })
+      .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
         const normalized = normalizeMilestoneSummary(payload);
@@ -368,6 +447,7 @@ function AppContent() {
         setMilestoneIssue("");
       })
       .catch((error) => {
+        if (isRequestAbortError(error)) return;
         if (cancelled) return;
         setMilestoneSummary(bundledMilestoneSummary);
         setMilestoneIssue(
@@ -380,6 +460,7 @@ function AppContent() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [milestoneSummaryUrl, t]);
 
@@ -390,13 +471,15 @@ function AppContent() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setPreviewVoteReady(false);
 
-    fetch(urlWithWalletQuery(previewVoteUrl, selectedWallet), { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
+    fetchJsonWithTimeout(urlWithWalletQuery(previewVoteUrl, selectedWallet), {
+      cache: "no-store",
+      signal: controller.signal,
+      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+    })
+      .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
         const normalized = normalizePreviewVotePayload(payload);
@@ -405,6 +488,7 @@ function AppContent() {
         setPreviewVoteIssue("");
       })
       .catch((error) => {
+        if (isRequestAbortError(error)) return;
         if (cancelled) return;
         setPreviewVoteData(getEmptyPreviewVoteData());
         setPreviewAllocations([]);
@@ -416,6 +500,7 @@ function AppContent() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [previewVoteUrl, selectedWallet, t]);
 
@@ -426,18 +511,21 @@ function AppContent() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setGlobalPreviewVoteReady(false);
 
-    fetch(urlWithQueryParams(previewVoteUrl, { scope: "all" }), { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
+    fetchJsonWithTimeout(urlWithQueryParams(previewVoteUrl, { scope: "all" }), {
+      cache: "no-store",
+      signal: controller.signal,
+      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+    })
+      .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
         setGlobalPreviewVoteData(normalizePreviewVotePayload(payload));
       })
-      .catch(() => {
+      .catch((error) => {
+        if (isRequestAbortError(error)) return;
         if (cancelled) return;
         setGlobalPreviewVoteData(getEmptyPreviewVoteData());
       })
@@ -447,6 +535,7 @@ function AppContent() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [previewVoteUrl]);
 
@@ -458,19 +547,22 @@ function AppContent() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setWinnerRevealReady(false);
 
-    fetch(drawWinnersUrl, { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
+    fetchJsonWithTimeout(drawWinnersUrl, {
+      cache: "no-store",
+      signal: controller.signal,
+      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+    })
+      .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
         setWinnerRevealData(normalizeWinnerRevealPayload(payload, winnerRevealVideoUrl));
         setWinnerRevealIssue("");
       })
       .catch((error) => {
+        if (isRequestAbortError(error)) return;
         if (cancelled) return;
         setWinnerRevealData(getEmptyWinnerRevealData(winnerRevealVideoUrl));
         setWinnerRevealIssue(t("winnerReveal.dataIssue", { message: error.message }));
@@ -481,6 +573,7 @@ function AppContent() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [drawWinnersUrl, t, winnerRevealVideoUrl]);
 
@@ -498,7 +591,12 @@ function AppContent() {
       ));
 
       try {
-        const snapshot = await fetchFifaQualificationSnapshot();
+        const snapshot = liveQualificationUrl
+          ? (await fetchJsonWithTimeout(liveQualificationUrl, {
+            cache: "no-store",
+            timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+          })).payload
+          : await fetchFifaQualificationSnapshot();
         if (!cancelled) setLiveQualification(snapshot);
       } catch (error) {
         if (cancelled) return;
@@ -517,7 +615,7 @@ function AppContent() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [simulationMode, t]);
+  }, [liveQualificationUrl, simulationMode, t]);
 
   const staticTeamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), []);
   const realtimeRound32Preview = useMemo(
@@ -569,7 +667,16 @@ function AppContent() {
     () => roundAllocations.reduce((total, allocation) => total + allocation.tickets, 0),
     [roundAllocations],
   );
-  const remainingRoundTickets = Math.max(0, (activeEntry?.finalTickets ?? 0) - usedRoundTickets);
+  const roundTicketBreakdown = useMemo(
+    () => getRoundTicketAvailability({
+      entry: activeEntry,
+      roundId: activeRoundId,
+      allocations: walletAllocations,
+      walletAddress: selectedWallet,
+    }),
+    [activeEntry, activeRoundId, selectedWallet, walletAllocations],
+  );
+  const remainingRoundTickets = roundTicketBreakdown.remainingTickets;
   const isRealtimeRound32 = simulationMode === "realtime" && activeRoundId === "round32";
   const visibleRoundAllocations = isRealtimeRound32 ? [] : roundAllocations;
   const visibleRoundVoteOutcomes = isRealtimeRound32 ? [] : roundVoteOutcomes;
@@ -577,7 +684,7 @@ function AppContent() {
     ? 0
     : usedRoundTickets;
   const visibleRemainingRoundTickets = isRealtimeRound32
-    ? Math.max(0, activeEntry?.finalTickets ?? 0)
+    ? Math.max(0, roundTicketBreakdown.usableTickets)
     : remainingRoundTickets;
   const visibleRoundOutcomeSummary = isRealtimeRound32
     ? { lostTickets: 0, winnerTickets: 0, pendingTickets: 0 }
@@ -687,6 +794,7 @@ function AppContent() {
 
   function handleSelectView(viewId) {
     setActiveViewId(viewId);
+    syncViewIdToUrl(viewId);
     setMobileNavOpen(false);
   }
 
@@ -699,8 +807,9 @@ function AppContent() {
   }
 
   function handleSelectSimulatedRound(roundId) {
+    if (!localTestOrigin) return;
     const firstMatch = campaignMatches.find((match) => match.roundId === roundId);
-    setSimulationMode("scenario");
+    setLocalSimulationMode("scenario");
     setSimulatedRoundId(roundId);
     setActiveRoundId(roundId);
     setSelectedMatchId(firstMatch?.id ?? selectedMatchId);
@@ -709,8 +818,9 @@ function AppContent() {
   }
 
   function handleSelectSimulationMode(nextMode) {
+    if (!localTestOrigin) return;
     if (!["scenario", "realtime"].includes(nextMode)) return;
-    setSimulationMode(nextMode);
+    setLocalSimulationMode(nextMode);
     setSelectedTeamId(null);
     setTicketAmount(DEFAULT_TICKET_AMOUNT);
 
@@ -796,10 +906,11 @@ function AppContent() {
 
     if (voteSubmitUrl) {
       try {
-        const response = await fetch(voteSubmitUrl, {
+        const { payload } = await fetchJsonWithTimeout(voteSubmitUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
           credentials: "same-origin",
+          timeoutMs: VOTE_SUBMIT_TIMEOUT_MS,
           body: JSON.stringify({
             ...(authMeUrl ? {} : { walletAddress: selectedWallet }),
             roundId: activeRoundId,
@@ -809,8 +920,6 @@ function AppContent() {
             requestId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           }),
         });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
         const normalized = normalizePreviewVotePayload(payload.preview);
         setPreviewVoteData(normalized);
         setPreviewAllocations(normalized.allocations);
@@ -851,6 +960,7 @@ function AppContent() {
         selectedTeamId={selectedTeamId}
         ticketAmount={ticketAmount}
         remainingRoundTickets={visibleRemainingRoundTickets}
+        roundTicketBreakdown={roundTicketBreakdown}
         usedRoundTickets={visibleUsedRoundTickets}
         roundAllocations={visibleRoundAllocations}
         roundVoteOutcomes={visibleRoundVoteOutcomes}

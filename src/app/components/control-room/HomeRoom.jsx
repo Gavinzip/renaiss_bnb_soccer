@@ -258,10 +258,52 @@ function formatMilestoneRewardCompact(milestone) {
   return `${formatNumber(milestone.rewardAmount)} ${currency || ""}`.trim();
 }
 
-function getMilestoneOverallProgress(milestoneSnapshot, currentValue) {
-  const finalThreshold = milestoneSnapshot.sorted[milestoneSnapshot.sorted.length - 1]?.threshold ?? 0;
-  if (!finalThreshold) return 100;
-  return Math.min(100, Math.max(0, (currentValue / finalThreshold) * 100));
+const MILESTONE_RAIL_START = 4;
+const MILESTONE_RAIL_END = 96;
+const MILESTONE_NODE_START = 12.5;
+const MILESTONE_NODE_END = 87.5;
+
+function clampPercent(value) {
+  return Math.min(100, Math.max(0, value));
+}
+
+function getMilestoneNodePosition(index, totalMilestones) {
+  if (totalMilestones <= 1) return 50;
+  const step = index / (totalMilestones - 1);
+  return MILESTONE_NODE_START + ((MILESTONE_NODE_END - MILESTONE_NODE_START) * step);
+}
+
+function getMilestoneVisualRatio(ratio) {
+  const clamped = clampPercent(ratio * 100) / 100;
+  return 1 - Math.pow(1 - clamped, 2.15);
+}
+
+function getMilestoneRailProgress(milestoneSnapshot, currentValue) {
+  const sorted = milestoneSnapshot.sorted;
+  if (sorted.length === 0) return MILESTONE_RAIL_END;
+
+  const value = Math.max(0, Number(currentValue) || 0);
+  const firstMilestone = sorted[0];
+  const firstPosition = getMilestoneNodePosition(0, sorted.length);
+
+  if (value <= firstMilestone.threshold) {
+    const firstRatio = getMilestoneVisualRatio(firstMilestone.threshold > 0 ? value / firstMilestone.threshold : 1);
+    return MILESTONE_RAIL_START + ((firstPosition - MILESTONE_RAIL_START) * clampPercent(firstRatio * 100) / 100);
+  }
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previousMilestone = sorted[index - 1];
+    const nextMilestone = sorted[index];
+    if (value < nextMilestone.threshold) {
+      const previousPosition = getMilestoneNodePosition(index - 1, sorted.length);
+      const nextPosition = getMilestoneNodePosition(index, sorted.length);
+      const segmentRange = Math.max(1, nextMilestone.threshold - previousMilestone.threshold);
+      const segmentRatio = getMilestoneVisualRatio((value - previousMilestone.threshold) / segmentRange);
+      return previousPosition + ((nextPosition - previousPosition) * segmentRatio);
+    }
+  }
+
+  return MILESTONE_RAIL_END;
 }
 
 function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTitle, heroMilestoneDetail, copy, className = "" }) {
@@ -274,10 +316,14 @@ function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTi
     : milestoneSnapshot.next;
   const focusedReward = formatMilestoneReward(focusedMilestone);
   const focusedSlots = focusedMilestone?.rewardSlots ?? 0;
-  const campaignProgress = getMilestoneOverallProgress(milestoneSnapshot, currentValue);
-  const visualProgress = Math.min(campaignProgress, Math.max(0, campaignProgress * scrollRatio));
-  const finalThreshold = milestoneSnapshot.sorted[milestoneSnapshot.sorted.length - 1]?.threshold ?? 0;
-  const railFill = Math.min(92, Math.max(0, visualProgress * 0.92));
+  const campaignProgress = getMilestoneRailProgress(milestoneSnapshot, currentValue);
+  const revealRatio = 1 - Math.pow(1 - scrollRatio, 2.4);
+  const visualProgress = MILESTONE_RAIL_START + ((campaignProgress - MILESTONE_RAIL_START) * revealRatio);
+  const railFill = Math.min(
+    MILESTONE_RAIL_END - MILESTONE_RAIL_START,
+    Math.max(0, visualProgress - MILESTONE_RAIL_START),
+  );
+  const verticalFill = clampPercent((railFill / (MILESTONE_RAIL_END - MILESTONE_RAIL_START)) * 100);
   const nextTargetSummary = milestoneSnapshot.complete
     ? t("home.milestoneCompleteSummary")
     : t("home.milestoneNextTicketSummary", {
@@ -376,20 +422,18 @@ function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTi
         <ol
           className="hero-milestone-levels"
           style={{
-            "--milestone-fill": `${visualProgress}%`,
+            "--milestone-fill": `${verticalFill}%`,
             "--milestone-rail-fill": `${railFill}%`,
+            "--milestone-count": totalMilestones,
           }}
           aria-label={t("home.milestoneTrack")}
         >
           {milestoneSnapshot.sorted.map((milestone, index) => {
             const isUnlocked = currentValue >= milestone.threshold;
             const isNext = !isUnlocked && milestone.id === milestoneSnapshot.next?.id;
-            const thresholdProgress = finalThreshold
-              ? Math.min(100, Math.max(0, (milestone.threshold / finalThreshold) * 100))
-              : 100;
+            const thresholdProgress = getMilestoneNodePosition(index, totalMilestones);
             const isScrollLit = visualProgress + 0.35 >= thresholdProgress;
-            const stepProgress = totalMilestones > 1 ? index / (totalMilestones - 1) : 0.5;
-            const dotLeft = Math.min(94, Math.max(6, 6 + (stepProgress * 88)));
+            const dotLeft = thresholdProgress;
             const statusLabel = isUnlocked
               ? t("home.unlockedStatus")
               : isNext

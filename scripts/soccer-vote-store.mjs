@@ -3,6 +3,11 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { dirname } from 'node:path'
 
 import { campaignMatches, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
+import {
+  getSharedInsiderGrantTicketsUsed,
+  getTicketBreakdownForRound,
+  roundAllowsSharedInsiderGrantTickets,
+} from '../src/app/data/ticketEligibility.js'
 import { buildMatchResultIndex, confirmedMatchResultFor } from './soccer-match-results.mjs'
 import { findLedgerEntryByAddress } from './soccer-ledger-api.mjs'
 
@@ -176,9 +181,24 @@ export function roundTicketsUsedByWallet(allocations, walletAddress, roundId, ex
 
 export function findLedgerTickets(ledger, walletAddress) {
   const entry = findLedgerEntryByAddress(ledger, walletAddress)
+  const breakdown = getTicketBreakdownForRound(entry, '')
   return {
     entry,
-    finalTickets: toPositiveInteger(entry?.finalTickets),
+    rawTickets: breakdown.rawTickets,
+    carryoverTickets: breakdown.carryoverTickets,
+    insiderPracticeTickets: breakdown.insiderPracticeTickets,
+    insiderGrantTickets: breakdown.insiderGrantTickets,
+    finalTickets: breakdown.finalTickets,
+    totalTickets: breakdown.totalTickets,
+  }
+}
+
+export function findRoundLedgerTickets(ledger, walletAddress, roundId) {
+  const ledgerTickets = findLedgerTickets(ledger, walletAddress)
+  const breakdown = getTicketBreakdownForRound(ledgerTickets.entry, roundId)
+  return {
+    ...ledgerTickets,
+    ...breakdown,
   }
 }
 
@@ -190,7 +210,7 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input, 
   const allocations = normalizeStateAllocations(state)
   const key = allocationKey({ walletAddress, roundId, matchId, teamId })
   const existingIndex = allocations.findIndex((allocation) => allocationKey(allocation) === key)
-  const ledgerTickets = findLedgerTickets(ledger, walletAddress)
+  const ledgerTickets = findRoundLedgerTickets(ledger, walletAddress, roundId)
 
   if (!ledgerTickets.entry) {
     throw Object.assign(new Error('Wallet is not in the ticket ledger.'), { statusCode: 403 })
@@ -201,10 +221,39 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input, 
   const nextTeamTickets = currentTeamTickets + tickets
   const nextRoundTickets = usedOutsideCurrentTeam + nextTeamTickets
 
-  if (nextRoundTickets > ledgerTickets.finalTickets) {
+  if (nextRoundTickets > ledgerTickets.usableTickets) {
     throw Object.assign(new Error('Vote amount exceeds available tickets for this round.'), {
       statusCode: 409,
-      availableTickets: Math.max(0, ledgerTickets.finalTickets - usedOutsideCurrentTeam - currentTeamTickets),
+      availableTickets: Math.max(0, ledgerTickets.usableTickets - usedOutsideCurrentTeam - currentTeamTickets),
+      lockedRawTickets: ledgerTickets.lockedRawTickets,
+      lockedCarryoverTickets: ledgerTickets.lockedCarryoverTickets,
+      lockedInsiderPracticeTickets: ledgerTickets.lockedInsiderPracticeTickets,
+      lockedInsiderGrantTickets: ledgerTickets.lockedInsiderGrantTickets,
+    })
+  }
+
+  const sharedInsiderGrantTicketsUsed = roundAllowsSharedInsiderGrantTickets(roundId)
+    ? getSharedInsiderGrantTicketsUsed(allocations, walletAddress, ledgerTickets.entry, {
+      overrideRoundId: roundId,
+      overrideRoundTickets: nextRoundTickets,
+    })
+    : 0
+
+  if (sharedInsiderGrantTicketsUsed > ledgerTickets.insiderGrantTickets) {
+    const usedOutsideThisRound = getSharedInsiderGrantTicketsUsed(allocations, walletAddress, ledgerTickets.entry, {
+      excludeRoundId: roundId,
+    })
+    throw Object.assign(new Error('Vote amount exceeds shared insider reward tickets.'), {
+      statusCode: 409,
+      availableTickets: Math.max(
+        0,
+        ledgerTickets.baseTickets
+          + Math.max(0, ledgerTickets.insiderGrantTickets - usedOutsideThisRound)
+          - usedOutsideCurrentTeam
+          - currentTeamTickets,
+      ),
+      sharedInsiderGrantTickets: ledgerTickets.insiderGrantTickets,
+      sharedInsiderGrantTicketsUsed: usedOutsideThisRound,
     })
   }
 
@@ -223,7 +272,18 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input, 
     nextTeamTickets,
     previousMatchTickets: currentTeamTickets,
     nextMatchTickets: nextTeamTickets,
-    finalRoundTickets: ledgerTickets.finalTickets,
+    finalRoundTickets: ledgerTickets.usableTickets,
+    rawRoundTickets: ledgerTickets.rawTickets,
+    lockedRawTickets: ledgerTickets.lockedRawTickets,
+    carryoverRoundTickets: ledgerTickets.carryoverUnlocked ? ledgerTickets.carryoverTickets : 0,
+    lockedCarryoverTickets: ledgerTickets.lockedCarryoverTickets,
+    insiderPracticeRoundTickets: ledgerTickets.usableInsiderPracticeTickets,
+    insiderGrantRoundTickets: ledgerTickets.usableInsiderGrantTickets,
+    lockedInsiderPracticeTickets: ledgerTickets.lockedInsiderPracticeTickets,
+    lockedInsiderGrantTickets: ledgerTickets.lockedInsiderGrantTickets,
+    sharedInsiderGrantTickets: ledgerTickets.insiderGrantTickets,
+    sharedInsiderGrantTicketsUsed,
+    sharedInsiderGrantTicketsRemaining: Math.max(0, ledgerTickets.insiderGrantTickets - sharedInsiderGrantTicketsUsed),
     requestId: normalizeId(input?.requestId) || null,
   }
 

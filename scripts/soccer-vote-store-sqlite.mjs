@@ -6,11 +6,16 @@ import Database from 'better-sqlite3'
 
 import { buildMatchResultIndex } from './soccer-match-results.mjs'
 import {
+  SHARED_INSIDER_GRANT_ROUND_IDS,
+  getSharedInsiderGrantTicketsUsed,
+  roundAllowsSharedInsiderGrantTickets,
+} from '../src/app/data/ticketEligibility.js'
+import {
   STATE_VERSION,
   allocationId,
   assertVoteInput,
   buildVotePreview,
-  findLedgerTickets,
+  findRoundLedgerTickets,
   normalizeAllocation,
   normalizeAddress,
   normalizeId,
@@ -179,7 +184,7 @@ function submitVoteInDatabase({ db, ledger, input, matchResults }) {
   const normalizedInput = assertVoteInput(input, { resultIndex })
   const { walletAddress, roundId, matchId, teamId, tickets } = normalizedInput
   const requestId = normalizeId(input?.requestId) || null
-  const ledgerTickets = findLedgerTickets(ledger, walletAddress)
+  const ledgerTickets = findRoundLedgerTickets(ledger, walletAddress, roundId)
 
   if (!ledgerTickets.entry) {
     throw Object.assign(new Error('Wallet is not in the ticket ledger.'), { statusCode: 403 })
@@ -211,10 +216,55 @@ function submitVoteInDatabase({ db, ledger, input, matchResults }) {
     const nextTeamTickets = currentTeamTickets + tickets
     const nextRoundTickets = usedOutsideCurrentTeam + nextTeamTickets
 
-    if (nextRoundTickets > ledgerTickets.finalTickets) {
+    if (nextRoundTickets > ledgerTickets.usableTickets) {
       throw Object.assign(new Error('Vote amount exceeds available tickets for this round.'), {
         statusCode: 409,
-        availableTickets: Math.max(0, ledgerTickets.finalTickets - usedOutsideCurrentTeam - currentTeamTickets),
+        availableTickets: Math.max(0, ledgerTickets.usableTickets - usedOutsideCurrentTeam - currentTeamTickets),
+        lockedRawTickets: ledgerTickets.lockedRawTickets,
+        lockedCarryoverTickets: ledgerTickets.lockedCarryoverTickets,
+        lockedInsiderPracticeTickets: ledgerTickets.lockedInsiderPracticeTickets,
+        lockedInsiderGrantTickets: ledgerTickets.lockedInsiderGrantTickets,
+      })
+    }
+
+    const sharedRoundRows = roundAllowsSharedInsiderGrantTickets(roundId)
+      ? db.prepare(`
+        SELECT round_id, SUM(tickets) AS tickets
+        FROM vote_allocations
+        WHERE wallet_address = ?
+          AND round_id IN (${SHARED_INSIDER_GRANT_ROUND_IDS.map(() => '?').join(', ')})
+        GROUP BY round_id
+      `).all(walletAddress, ...SHARED_INSIDER_GRANT_ROUND_IDS)
+      : []
+    const sharedRoundAllocations = sharedRoundRows.map((row) => ({
+      walletAddress,
+      roundId: String(row.round_id || ''),
+      matchId: '',
+      teamId: '',
+      tickets: toPositiveInteger(row.tickets),
+    }))
+    const sharedInsiderGrantTicketsUsed = roundAllowsSharedInsiderGrantTickets(roundId)
+      ? getSharedInsiderGrantTicketsUsed(sharedRoundAllocations, walletAddress, ledgerTickets.entry, {
+        overrideRoundId: roundId,
+        overrideRoundTickets: nextRoundTickets,
+      })
+      : 0
+
+    if (sharedInsiderGrantTicketsUsed > ledgerTickets.insiderGrantTickets) {
+      const usedOutsideThisRound = getSharedInsiderGrantTicketsUsed(sharedRoundAllocations, walletAddress, ledgerTickets.entry, {
+        excludeRoundId: roundId,
+      })
+      throw Object.assign(new Error('Vote amount exceeds shared insider reward tickets.'), {
+        statusCode: 409,
+        availableTickets: Math.max(
+          0,
+          ledgerTickets.baseTickets
+            + Math.max(0, ledgerTickets.insiderGrantTickets - usedOutsideThisRound)
+            - usedOutsideCurrentTeam
+            - currentTeamTickets,
+        ),
+        sharedInsiderGrantTickets: ledgerTickets.insiderGrantTickets,
+        sharedInsiderGrantTicketsUsed: usedOutsideThisRound,
       })
     }
 
@@ -233,7 +283,18 @@ function submitVoteInDatabase({ db, ledger, input, matchResults }) {
       nextTeamTickets,
       previousMatchTickets: currentTeamTickets,
       nextMatchTickets: nextTeamTickets,
-      finalRoundTickets: ledgerTickets.finalTickets,
+      finalRoundTickets: ledgerTickets.usableTickets,
+      rawRoundTickets: ledgerTickets.rawTickets,
+      lockedRawTickets: ledgerTickets.lockedRawTickets,
+      carryoverRoundTickets: ledgerTickets.carryoverUnlocked ? ledgerTickets.carryoverTickets : 0,
+      lockedCarryoverTickets: ledgerTickets.lockedCarryoverTickets,
+      insiderPracticeRoundTickets: ledgerTickets.usableInsiderPracticeTickets,
+      insiderGrantRoundTickets: ledgerTickets.usableInsiderGrantTickets,
+      lockedInsiderPracticeTickets: ledgerTickets.lockedInsiderPracticeTickets,
+      lockedInsiderGrantTickets: ledgerTickets.lockedInsiderGrantTickets,
+      sharedInsiderGrantTickets: ledgerTickets.insiderGrantTickets,
+      sharedInsiderGrantTicketsUsed,
+      sharedInsiderGrantTicketsRemaining: Math.max(0, ledgerTickets.insiderGrantTickets - sharedInsiderGrantTicketsUsed),
       requestId,
     }
     const id = existing?.id || allocationId({ walletAddress, matchId, teamId })
@@ -257,7 +318,7 @@ function submitVoteInDatabase({ db, ledger, input, matchResults }) {
       tickets,
       currentTeamTickets,
       nextTeamTickets,
-      ledgerTickets.finalTickets,
+      ledgerTickets.usableTickets,
       requestId,
       JSON.stringify(event),
     )

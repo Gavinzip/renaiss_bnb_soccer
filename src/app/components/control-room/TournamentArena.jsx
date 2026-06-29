@@ -43,6 +43,7 @@ export function preloadTournamentArenaAssets() {
 }
 
 function displayPoolForMatch(match, teamsById) {
+  if (match?.realtimePreview) return 0;
   if ((match?.poolEntries ?? 0) > 0) return match.poolEntries;
   const teams = match?.teams?.map((teamId) => teamsById.get(teamId)).filter(Boolean) ?? [];
   const voteSignal = teams.reduce((total, team) => total + (team.votes ?? 0), 0);
@@ -64,22 +65,11 @@ function getTeamTone(match, team, allocation) {
 
 function getTeamLabel({ match, team, allocation, copy }) {
   const { matchStatusCompact, t } = copy;
-  if (team?.liveQualification?.status) {
-    return t(`liveQualification.slotStatus.${team.liveQualification.status}`, {
-      route: team.liveQualification.routeLabel ?? "",
-    });
-  }
   if (allocation?.teamId === team?.id) return t("schedule.myPick", { tickets: formatNumber(allocation.tickets) });
   if (match?.advancingTeamId === team?.id) return t("common.advancing");
   if (match?.advancingTeamId && match.advancingTeamId !== team?.id) return t("schedule.eliminated");
+  if (match?.awaitingOfficialResult) return t("vote.phasePendingResult");
   return matchStatusCompact(match?.status ?? "scheduled");
-}
-
-function formatGoalDifference(value) {
-  const numeric = Math.trunc(Number(value) || 0);
-  if (numeric > 0) return `+${formatNumber(numeric)}`;
-  if (numeric < 0) return `-${formatNumber(Math.abs(numeric))}`;
-  return "0";
 }
 
 function formatRoutePoint(value) {
@@ -187,6 +177,27 @@ function hasSelectedTeam(node, selectedDetail) {
   return Boolean(selectedDetail?.teamId && node.teamIds.has(selectedDetail.teamId));
 }
 
+function isSelectedCard(card, selectedDetail) {
+  return Boolean(
+    selectedDetail?.teamId
+      && selectedDetail?.matchId
+      && card.teamId === selectedDetail.teamId
+      && card.matchId === selectedDetail.matchId,
+  );
+}
+
+function getPairActiveDepth(pair, selectedDetail) {
+  if (!selectedDetail?.teamId || pair.id !== selectedDetail.matchId) return -1;
+  const hasTeam = pair.cards.some((card) => card.teamId === selectedDetail.teamId);
+  if (!hasTeam) return -1;
+  return pair.advancingTeamId === selectedDetail.teamId ? 1 : 0;
+}
+
+function pushRouteNode(renderNodes, node, delay = 0) {
+  if (renderNodes.some((renderNode) => renderNode.id === node.id)) return;
+  renderNodes.push(formatRouteNode(node, delay));
+}
+
 function collectSidePairs(stage, side, stageRect) {
   const sideElement = stage.querySelector(`.arena-side.is-${side}`);
   if (!sideElement) return [];
@@ -210,6 +221,7 @@ function collectSidePairs(stage, side, stageRect) {
       return {
         id: pair.dataset.routeMatchId || cards[0]?.matchId || `${side}-${pairIndex}`,
         index: pairIndex,
+        advancingTeamId: pair.dataset.routeAdvancingTeamId || "",
         cards,
       };
     })
@@ -267,6 +279,7 @@ function measureSideBracketRoutes({ side, pairs, stageRect, trophyRect, trophyCe
 
   let frontier = pairs.map((pair) => {
     const pairDelay = Math.round(pair.index * 42);
+    const activeDepth = getPairActiveDepth(pair, selectedDetail);
     const node = {
       id: `${side}-${pair.id}-match-node`,
       side,
@@ -275,11 +288,12 @@ function measureSideBracketRoutes({ side, pairs, stageRect, trophyRect, trophyCe
       teamIds: new Set(pair.cards.map((card) => card.teamId).filter(Boolean)),
       matchIds: new Set([pair.id]),
       final: pairs.length <= 1,
+      activeDepth,
     };
-    node.active = hasSelectedTeam(node, selectedDetail);
+    node.active = activeDepth >= 0;
 
     pair.cards.forEach((card, cardIndex) => {
-      const active = Boolean(selectedDetail?.teamId && card.teamId === selectedDetail.teamId);
+      const active = isSelectedCard(card, selectedDetail);
       paths.push(createRoutePath({
         id: `${side}-${pair.id}-${card.teamId}-leaf`,
         side,
@@ -289,8 +303,8 @@ function measureSideBracketRoutes({ side, pairs, stageRect, trophyRect, trophyCe
         delay: pairDelay + cardIndex * 24,
       }));
     });
-    if (node.final) {
-      renderNodes.push(formatRouteNode(node, pairDelay + 210));
+    if (node.final || node.active) {
+      pushRouteNode(renderNodes, node, pairDelay + 210);
     }
     return node;
   });
@@ -315,7 +329,9 @@ function measureSideBracketRoutes({ side, pairs, stageRect, trophyRect, trophyCe
         matchIds: unionSets(children, "matchIds"),
         final: isFinalMerge,
       };
-      parent.active = hasSelectedTeam(parent, selectedDetail);
+      const activeChildDepth = Math.max(...children.map((child) => child.activeDepth ?? -1));
+      parent.activeDepth = activeChildDepth > 0 ? activeChildDepth - 1 : -1;
+      parent.active = activeChildDepth > 0;
 
       children.forEach((child, childIndex) => {
         paths.push(createRoutePath({
@@ -324,12 +340,12 @@ function measureSideBracketRoutes({ side, pairs, stageRect, trophyRect, trophyCe
           start: child,
           end: parent,
           trophy: false,
-          active: hasSelectedTeam(child, selectedDetail),
+          active: (child.activeDepth ?? -1) > 0,
           delay: 190 + level * 170 + (index / 2) * 46 + childIndex * 26,
         }));
       });
-      if (parent.final) {
-        renderNodes.push(formatRouteNode(parent, 360 + level * 170 + (index / 2) * 46));
+      if (parent.final || parent.active) {
+        pushRouteNode(renderNodes, parent, 360 + level * 170 + (index / 2) * 46);
       }
       nextFrontier.push(parent);
     }
@@ -345,12 +361,10 @@ function measureSideBracketRoutes({ side, pairs, stageRect, trophyRect, trophyCe
       side,
       start: championNode,
       endX: trophySocketX,
-      active: hasSelectedTeam(championNode, selectedDetail),
+      active: (championNode.activeDepth ?? -1) > 0,
       delay: 420 + level * 190,
     }));
-    if (!renderNodes.some((node) => node.id === championNode.id)) {
-      renderNodes.push(formatRouteNode(championNode, 460 + level * 190));
-    }
+    pushRouteNode(renderNodes, championNode, 460 + level * 190);
   }
 
   return { paths, nodes: renderNodes };
@@ -415,14 +429,7 @@ function ArenaTeamCard({ match, team, side, allocation, selected, onPickTeam, co
       : voteableStatuses.has(match.status)
         ? Plus
         : LockKeyhole;
-  const teamMetric = liveQualification
-    ? liveQualification.status === "unrevealed"
-      ? t("liveQualification.slotNumber", { slot: formatNumber(liveQualification.slot) })
-      : t("liveQualification.pointsShort", {
-        points: formatNumber(liveQualification.points),
-        gd: formatGoalDifference(liveQualification.goalDifference),
-      })
-    : compactVotes(team.votes);
+  const teamMetric = liveQualification ? "" : compactVotes(team.votes);
   const borderGlowHandlers = useBorderGlow({ edgeSensitivity: 30 });
 
   return (
@@ -480,6 +487,7 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
             ].filter(Boolean).join(" ")}
             key={match.id}
             data-route-match-id={match.id}
+            data-route-advancing-team-id={match.advancingTeamId || ""}
             style={{ "--pair-index": index, "--pair-rgb": pairAccent }}
           >
             <span className="arena-pair__match">{match.id.toUpperCase()}</span>
@@ -626,10 +634,22 @@ function ArenaDetailPanel({
   const teamVotes = detailTeam.votes ?? 0;
   const opponentVotes = opponentTeam.votes ?? 0;
   const displayPool = displayPoolForMatch(detailMatch, teamsById);
-  const totalVotes = Math.max(1, teamVotes + opponentVotes);
-  const teamShare = Math.round((teamVotes / totalVotes) * 100);
-  const opponentShare = 100 - teamShare;
-  const simulatedVoters = Math.max(4, Math.round(displayPool / 45));
+  const totalVotes = teamVotes + opponentVotes;
+  const teamShare = totalVotes > 0 ? Math.round((teamVotes / totalVotes) * 100) : 0;
+  const opponentShare = totalVotes > 0 ? 100 - teamShare : 0;
+  const isRealtimePreview = Boolean(detailMatch.realtimePreview || detailTeam.liveQualification || opponentTeam.liveQualification);
+  const hasVoteShare = !isRealtimePreview && totalVotes > 0;
+  const sharePosition = hasVoteShare ? teamShare : 50;
+  const simulatedVoters = isRealtimePreview ? 0 : Math.max(4, Math.round(displayPool / 45));
+  const detailTitle = t("schedule.teamVoteDetails");
+  const detailStatus = detailMatch.awaitingOfficialResult
+    ? t("vote.phasePendingResult")
+    : matchStatus(detailMatch.status);
+  const detailDescription = t("schedule.panelState", {
+    round: detailStatus,
+    match: detailMatch.id.toUpperCase(),
+  });
+  const detailAria = t("schedule.voteShare");
   const canSubmit = mode === "vote" && voteableStatuses.has(detailMatch.status) && remainingRoundTickets > 0;
   const canOpenVote = mode === "schedule" && voteableStatuses.has(detailMatch.status) && Boolean(onOpenVote);
   const resolvedTicketAmount = Math.max(1, Math.min(ticketAmount ?? 1, Math.max(1, remainingRoundTickets ?? 1)));
@@ -641,24 +661,19 @@ function ArenaDetailPanel({
       : t("schedule.inspectOnly");
 
   return (
-    <aside className={`arena-detail-panel is-${mode}`} aria-label={t("schedule.teamVoteDetails")}>
+    <aside className={`arena-detail-panel is-${mode}`} aria-label={detailTitle}>
       <button className="arena-detail-panel__close" type="button" onClick={onClose} aria-label={t("common.close")}>
         <X size={17} strokeWidth={2.3} />
       </button>
       <header>
-        <span>{t("schedule.teamVoteDetails")}</span>
-        <strong>{detailMatch.id.toUpperCase()} · {matchStatus(detailMatch.status)}</strong>
+        <span>{detailTitle}</span>
+        <strong>{detailMatch.id.toUpperCase()} · {detailStatus}</strong>
       </header>
-      <p>
-        {t("schedule.panelState", {
-          round: matchStatus(detailMatch.status),
-          match: detailMatch.id.toUpperCase(),
-        })}
-      </p>
+      <p>{detailDescription}</p>
       <dl>
         <div>
           <dt>{t("schedule.totalVotes")}</dt>
-          <dd>{formatNumber(Math.max(displayPool, allocation?.tickets ?? 0))}</dd>
+          <dd>{formatNumber(isRealtimePreview ? 0 : Math.max(displayPool, allocation?.tickets ?? 0))}</dd>
         </div>
         <div>
           <dt>{t("schedule.independentVoters")}</dt>
@@ -666,15 +681,18 @@ function ArenaDetailPanel({
         </div>
       </dl>
       <section
-        className="arena-vs-breakdown"
-        aria-label={t("schedule.voteShare")}
-        style={{ "--focused-share": `${teamShare}%`, "--opponent-share": `${opponentShare}%` }}
+        className={[
+          "arena-vs-breakdown",
+          hasVoteShare ? "has-vote-share" : "is-empty-share",
+        ].filter(Boolean).join(" ")}
+        aria-label={detailAria}
+        style={{ "--focused-share": `${sharePosition}%`, "--opponent-share": `${opponentShare}%` }}
       >
         <article className="is-focused">
           <img src={detailTeam.flagSrc} alt="" aria-hidden="true" />
           <span>{teamName(detailTeam)}</span>
-          <strong>{compactVotes(teamVotes)}</strong>
-          <small>{teamShare}%</small>
+          <strong>{hasVoteShare ? compactVotes(teamVotes) : ""}</strong>
+          <small>{hasVoteShare ? `${teamShare}%` : ""}</small>
         </article>
         <div className="arena-vs-share" aria-hidden="true">
           <span className="arena-vs-share__label">{t("vote.versusShort")}</span>
@@ -685,8 +703,8 @@ function ArenaDetailPanel({
         <article>
           <img src={opponentTeam.flagSrc} alt="" aria-hidden="true" />
           <span>{teamName(opponentTeam)}</span>
-          <strong>{compactVotes(opponentVotes)}</strong>
-          <small>{opponentShare}%</small>
+          <strong>{hasVoteShare ? compactVotes(opponentVotes) : ""}</strong>
+          <small>{hasVoteShare ? `${opponentShare}%` : ""}</small>
         </article>
       </section>
       <section className="arena-detail-actions">

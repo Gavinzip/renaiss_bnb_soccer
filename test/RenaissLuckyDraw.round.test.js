@@ -31,6 +31,29 @@ function uniqueTicketNumbers(...groups) {
   return new Set(groups.flat().map((value) => value.toString()));
 }
 
+async function parsedEvents(contract, txPromise) {
+  const receipt = await (await txPromise).wait();
+  return receipt.logs
+    .map((log) => {
+      try {
+        return contract.interface.parseLog(log);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+async function expectCustomError(txPromise, customErrorName) {
+  try {
+    await txPromise;
+  } catch (error) {
+    expect(error.message).to.include(customErrorName);
+    return;
+  }
+  expect.fail(`Expected transaction to revert with ${customErrorName}`);
+}
+
 describe("RenaissLuckyDraw round-level draws", function () {
   it("uses one VRF request to reveal winners and alternates for multiple matches", async function () {
     const { coordinator, draw } = await deployDraw();
@@ -39,22 +62,32 @@ describe("RenaissLuckyDraw round-level draws", function () {
     const matchA = roundMatchInput("m73");
     const matchB = roundMatchInput("m74", 24n);
 
-    await expect(draw.finalizeRoundLedger(roundId, ethers.id("round16-ledger"), [matchA, matchB], "/match-draw-ledger.json#round16"))
-      .to.emit(draw, "RoundLedgerFinalized")
-      .withArgs(roundId, ethers.id("round16-ledger"), 2n, "/match-draw-ledger.json#round16");
+    const finalizeEvents = await parsedEvents(
+      draw,
+      draw.finalizeRoundLedger(roundId, ethers.id("round16-ledger"), [matchA, matchB], "/match-draw-ledger.json#round16"),
+    );
+    const finalized = finalizeEvents.find((event) => event.name === "RoundLedgerFinalized");
+    expect(finalized.args.roundId).to.equal(roundId);
+    expect(finalized.args.ledgerHash).to.equal(ethers.id("round16-ledger"));
+    expect(finalized.args.matchCount).to.equal(2n);
+    expect(finalized.args.ledgerUri).to.equal("/match-draw-ledger.json#round16");
 
-    await expect(draw.requestRoundDraw(roundId))
-      .to.emit(draw, "RoundDrawRequested")
-      .withArgs(roundId, 1n, (await ethers.getSigners())[0].address);
+    const requestEvents = await parsedEvents(draw, draw.requestRoundDraw(roundId));
+    const requested = requestEvents.find((event) => event.name === "RoundDrawRequested");
+    expect(requested.args.roundId).to.equal(roundId);
+    expect(requested.args.requestId).to.equal(1n);
+    expect(requested.args.caller).to.equal((await ethers.getSigners())[0].address);
 
     await coordinator.fulfill(drawAddress, 1n, 123456789n);
     let status = await draw.roundDrawStatus(roundId);
     expect(status.randomnessReady).to.equal(true);
     expect(status.fulfilled).to.equal(false);
 
-    await expect(draw.revealRoundMatch(roundId, matchA.matchId))
-      .to.emit(draw, "RoundMatchRevealed")
-      .withArgs(roundId, matchA.matchId, 0n);
+    const revealEvents = await parsedEvents(draw, draw.revealRoundMatch(roundId, matchA.matchId));
+    const revealed = revealEvents.find((event) => event.name === "RoundMatchRevealed");
+    expect(revealed.args.roundId).to.equal(roundId);
+    expect(revealed.args.matchId).to.equal(matchA.matchId);
+    expect(revealed.args.revealIndex).to.equal(0n);
 
     const matchAWinners = await draw.roundMatchWinnerTicketsBySlot(roundId, matchA.matchId);
     const matchAAlternates0 = await draw.roundMatchAlternateTicketsBySlot(roundId, matchA.matchId, 0);
@@ -87,8 +120,9 @@ describe("RenaissLuckyDraw round-level draws", function () {
     const roundId = ethers.id("round16");
     const tooSmall = roundMatchInput("m73", 2n);
 
-    await expect(
+    await expectCustomError(
       draw.finalizeRoundLedger(roundId, ethers.id("round16-ledger"), [tooSmall], "/match-draw-ledger.json#round16"),
-    ).to.be.revertedWithCustomError(draw, "InvalidPrizeSlots");
+      "InvalidPrizeSlots",
+    );
   });
 });

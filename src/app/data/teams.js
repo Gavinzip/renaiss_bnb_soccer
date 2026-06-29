@@ -1,18 +1,24 @@
 import argentinaFlag from "flag-icons/flags/4x3/ar.svg";
+import algeriaFlag from "flag-icons/flags/4x3/dz.svg";
 import australiaFlag from "flag-icons/flags/4x3/au.svg";
 import austriaFlag from "flag-icons/flags/4x3/at.svg";
 import belgiumFlag from "flag-icons/flags/4x3/be.svg";
+import bosniaAndHerzegovinaFlag from "flag-icons/flags/4x3/ba.svg";
 import brazilFlag from "flag-icons/flags/4x3/br.svg";
+import caboVerdeFlag from "flag-icons/flags/4x3/cv.svg";
 import cameroonFlag from "flag-icons/flags/4x3/cm.svg";
 import canadaFlag from "flag-icons/flags/4x3/ca.svg";
 import chileFlag from "flag-icons/flags/4x3/cl.svg";
 import colombiaFlag from "flag-icons/flags/4x3/co.svg";
+import congoDrFlag from "flag-icons/flags/4x3/cd.svg";
 import costaRicaFlag from "flag-icons/flags/4x3/cr.svg";
+import coteDIvoireFlag from "flag-icons/flags/4x3/ci.svg";
 import croatiaFlag from "flag-icons/flags/4x3/hr.svg";
 import czechiaFlag from "flag-icons/flags/4x3/cz.svg";
 import denmarkFlag from "flag-icons/flags/4x3/dk.svg";
 import englandFlag from "flag-icons/flags/4x3/gb-eng.svg";
 import ecuadorFlag from "flag-icons/flags/4x3/ec.svg";
+import egyptFlag from "flag-icons/flags/4x3/eg.svg";
 import franceFlag from "flag-icons/flags/4x3/fr.svg";
 import germanyFlag from "flag-icons/flags/4x3/de.svg";
 import ghanaFlag from "flag-icons/flags/4x3/gh.svg";
@@ -25,6 +31,7 @@ import moroccoFlag from "flag-icons/flags/4x3/ma.svg";
 import netherlandsFlag from "flag-icons/flags/4x3/nl.svg";
 import nigeriaFlag from "flag-icons/flags/4x3/ng.svg";
 import norwayFlag from "flag-icons/flags/4x3/no.svg";
+import paraguayFlag from "flag-icons/flags/4x3/py.svg";
 import polandFlag from "flag-icons/flags/4x3/pl.svg";
 import portugalFlag from "flag-icons/flags/4x3/pt.svg";
 import qatarFlag from "flag-icons/flags/4x3/qa.svg";
@@ -32,6 +39,7 @@ import saudiArabiaFlag from "flag-icons/flags/4x3/sa.svg";
 import senegalFlag from "flag-icons/flags/4x3/sn.svg";
 import serbiaFlag from "flag-icons/flags/4x3/rs.svg";
 import southKoreaFlag from "flag-icons/flags/4x3/kr.svg";
+import southAfricaFlag from "flag-icons/flags/4x3/za.svg";
 import spainFlag from "flag-icons/flags/4x3/es.svg";
 import swedenFlag from "flag-icons/flags/4x3/se.svg";
 import switzerlandFlag from "flag-icons/flags/4x3/ch.svg";
@@ -368,5 +376,69 @@ export const teams = [
     flagSrc: greeceFlag,
     side: "right",
     votes: 38640,
+  },
+  {
+    id: "south-africa",
+    seed: "42",
+    name: "South Africa",
+    flagSrc: southAfricaFlag,
+    side: "left",
+    votes: 0,
+  },
+  {
+    id: "cote-d-ivoire",
+    seed: "43",
+    name: "Côte d'Ivoire",
+    flagSrc: coteDIvoireFlag,
+    side: "right",
+    votes: 0,
+  },
+  {
+    id: "egypt",
+    seed: "44",
+    name: "Egypt",
+    flagSrc: egyptFlag,
+    side: "left",
+    votes: 0,
+  },
+  {
+    id: "cabo-verde",
+    seed: "45",
+    name: "Cabo Verde",
+    flagSrc: caboVerdeFlag,
+    side: "right",
+    votes: 0,
+  },
+  {
+    id: "congo-dr",
+    seed: "46",
+    name: "Congo DR",
+    flagSrc: congoDrFlag,
+    side: "left",
+    votes: 0,
+  },
+  {
+    id: "bosnia-and-herzegovina",
+    seed: "47",
+    name: "Bosnia and Herzegovina",
+    flagSrc: bosniaAndHerzegovinaFlag,
+    side: "right",
+    votes: 0,
+  },
+  {
+    id: "algeria",
+    seed: "48",
+    name: "Algeria",
+    flagSrc: algeriaFlag,
+    side: "left",
+    votes: 0,
+  },
+  {
+    id: "paraguay",
+    seed: "49",
+    name: "Paraguay",
+    flagSrc: paraguayFlag,
+    side: "right",
+    votes: 0,
   },
 ];

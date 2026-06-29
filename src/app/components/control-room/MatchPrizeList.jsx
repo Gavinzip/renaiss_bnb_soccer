@@ -1,5 +1,6 @@
 import {
   Clock3,
+  LockKeyhole,
   ShieldCheck,
   Ticket,
 } from "lucide-react";
@@ -10,6 +11,14 @@ import { MatchPrizeImageDialog } from "./MatchPrizeImageDialog";
 const voteableStatuses = new Set(["open", "closing_soon"]);
 
 function getMatchPhase(match) {
+  if (match.awaitingOfficialResult) {
+    return {
+      id: "locked",
+      icon: Clock3,
+      labelKey: "vote.phasePendingResult",
+    };
+  }
+
   if (match.status === "official_final") {
     return {
       id: "final",
@@ -26,10 +35,26 @@ function getMatchPhase(match) {
     };
   }
 
+  if (match.status === "locked") {
+    return {
+      id: "locked",
+      icon: LockKeyhole,
+      labelKey: "vote.phaseLocked",
+    };
+  }
+
+  if (match.status === "in_play") {
+    return {
+      id: "live",
+      icon: Clock3,
+      labelKey: "vote.phaseInPlay",
+    };
+  }
+
   return {
-    id: "live",
+    id: "scheduled",
     icon: Clock3,
-    labelKey: "vote.phaseInPlay",
+    labelKey: "vote.phaseScheduled",
   };
 }
 
@@ -203,6 +228,11 @@ export function MatchPrizeList({
                         <span className="match-prize-team__copy">
                           <span className="match-prize-team__title-row">
                             <strong>{teamName(team)}</strong>
+                            {isWinner ? (
+                              <b className="match-prize-team__winner-label">
+                                {t("common.advancing")}
+                              </b>
+                            ) : null}
                             {voteOutcome ? (
                               <b className={[
                                 "match-prize-team__vote-result",

@@ -1,6 +1,7 @@
 import { verifiedLedgerSnapshot } from "./ticketLedgerSnapshot";
 import { campaignMatches, roundDefinitions } from "./worldCupCampaign";
 import { estimateMultiPrizeChance } from "./ticketMath";
+import { toTicketInteger } from "./ticketEligibility";
 
 export const DEFAULT_VIEW_ID = "home";
 export const DEFAULT_ROUND_ID = "round16";
@@ -16,13 +17,21 @@ export const commandViews = [
 ];
 
 function toLedgerTickets(value) {
-  return Math.max(0, Math.floor(Number(value) || 0));
+  return toTicketInteger(value);
 }
 
 export function normalizeFootballLedgerEntry(entry) {
   if (!entry || typeof entry !== "object") return entry;
 
-  const rawTickets = toLedgerTickets(entry.rawTickets ?? entry.raw_tickets ?? entry.finalTickets ?? entry.final_tickets);
+  const carryoverTickets = toLedgerTickets(entry.carryoverTickets ?? entry.carryover_tickets);
+  const insiderPracticeTickets = toLedgerTickets(entry.insiderPracticeTickets ?? entry.insider_practice_tickets);
+  const insiderGrantTickets = toLedgerTickets(entry.insiderGrantTickets ?? entry.insider_grant_tickets);
+  const fallbackFinalTickets = toLedgerTickets(entry.finalTickets ?? entry.final_tickets);
+  const rawTickets = toLedgerTickets(
+    entry.rawTickets ?? entry.raw_tickets ?? Math.max(0, fallbackFinalTickets - carryoverTickets),
+  );
+  const finalTickets = Math.max(fallbackFinalTickets, rawTickets + carryoverTickets);
+  const totalVotingTickets = rawTickets + carryoverTickets + insiderPracticeTickets + insiderGrantTickets;
   const ticketIntervals = Array.isArray(entry.ticketIntervals)
     ? entry.ticketIntervals.filter((interval) => interval?.namespace !== "bonus" && interval?.source !== "sbt-bonus")
     : entry.ticketIntervals;
@@ -31,7 +40,11 @@ export function normalizeFootballLedgerEntry(entry) {
     ...entry,
     rawTickets,
     bonusTickets: 0,
-    finalTickets: rawTickets,
+    carryoverTickets,
+    insiderPracticeTickets,
+    insiderGrantTickets,
+    finalTickets,
+    totalVotingTickets,
     sbt: "none",
     sbtMultiplier: 1,
     ticketIntervals,
@@ -48,16 +61,24 @@ export function normalizeFootballLedger(payload) {
     ? payload.entries.map(normalizeFootballLedgerEntry)
     : payload.entries;
   const rawTotal = toLedgerTickets(payload.totalRawTickets ?? payload.total_raw_tickets);
-  const totalFinalTickets = rawTotal || (Array.isArray(leaderboardEntries)
+  const carryoverTotal = toLedgerTickets(payload.totalCarryoverTickets ?? payload.total_carryover_tickets);
+  const insiderPracticeTotal = toLedgerTickets(payload.totalInsiderPracticeTickets ?? payload.total_insider_practice_tickets);
+  const insiderGrantTotal = toLedgerTickets(payload.totalInsiderGrantTickets ?? payload.total_insider_grant_tickets);
+  const totalFinalTickets = rawTotal + carryoverTotal || (Array.isArray(leaderboardEntries)
     ? leaderboardEntries.reduce((sum, entry) => sum + toLedgerTickets(entry?.finalTickets), 0)
     : toLedgerTickets(payload.totalFinalTickets ?? payload.total_final_tickets));
+  const totalVotingTickets = totalFinalTickets + insiderPracticeTotal + insiderGrantTotal;
 
   return {
     ...payload,
     leaderboardEntries,
     entries,
     totalBonusTickets: 0,
+    totalCarryoverTickets: carryoverTotal,
+    totalInsiderPracticeTickets: insiderPracticeTotal,
+    totalInsiderGrantTickets: insiderGrantTotal,
     totalFinalTickets,
+    totalVotingTickets,
     bonusShuffleVersion: null,
     bonusShuffleSeed: null,
     bonusShuffleLocked: false,

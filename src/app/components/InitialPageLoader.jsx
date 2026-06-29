@@ -1,8 +1,11 @@
 import renaissLogo from "../assets/renaiss-logo-mark.webp";
+import { useCampaignCopy } from "../i18n/useCampaignCopy";
 import { CircularText } from "./CircularText";
 import "./InitialPageLoader.css";
 
 export function InitialPageLoader({ isLeaving }) {
+  const { t } = useCampaignCopy();
+
   return (
     <div
       className={`initial-loader${isLeaving ? " is-leaving" : ""}`}
@@ -19,7 +22,7 @@ export function InitialPageLoader({ isLeaving }) {
         />
         <img className="initial-loader__logo" src={renaissLogo} alt="" draggable={false} decoding="async" />
       </div>
-      <span className="initial-loader__sr">Loading Renaiss World Cup</span>
+      <span className="initial-loader__sr">{t("common.loadingCampaign")}</span>
     </div>
   );
 }

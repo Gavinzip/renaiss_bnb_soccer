@@ -22,6 +22,7 @@ const voteableStatuses = new Set(["open", "closing_soon"]);
 const matchPhaseOrder = {
   official_final: 0,
   locked: 1,
+  in_play: 1,
   scheduled: 1,
   closing_soon: 2,
   open: 2,
@@ -77,13 +78,22 @@ function getTicketVoteState({
 }
 
 function getMatchIcon(match, allocation) {
+  if (match.awaitingOfficialResult) return Clock3;
   if (match.status === "open") return Ticket;
   if (match.status === "closing_soon") return Clock3;
   if (match.status === "official_final") return ShieldCheck;
+  if (match.status === "in_play") return Clock3;
   return LockKeyhole;
 }
 
 function getMatchPhase(match) {
+  if (match.awaitingOfficialResult) {
+    return {
+      id: "locked",
+      labelKey: "vote.phasePendingResult",
+    };
+  }
+
   if (match.status === "official_final") {
     return {
       id: "final",
@@ -98,9 +108,23 @@ function getMatchPhase(match) {
     };
   }
 
+  if (match.status === "locked") {
+    return {
+      id: "locked",
+      labelKey: "vote.phaseLocked",
+    };
+  }
+
+  if (match.status === "in_play") {
+    return {
+      id: "live",
+      labelKey: "vote.phaseInPlay",
+    };
+  }
+
   return {
-    id: "live",
-    labelKey: "vote.phaseInPlay",
+    id: "scheduled",
+    labelKey: "vote.phaseScheduled",
   };
 }
 
@@ -232,6 +256,7 @@ function TicketAllocationPanel({
   activeRound,
   ticketAmount,
   remainingRoundTickets,
+  roundTicketBreakdown,
   usedRoundTickets,
   onSetTicketAmount,
   onConfirmPreviewVote,
@@ -544,6 +569,7 @@ export function VoteRoom({
   selectedTeamId,
   ticketAmount,
   remainingRoundTickets,
+  roundTicketBreakdown,
   usedRoundTickets,
   roundAllocations,
   roundVoteOutcomes = [],
@@ -576,7 +602,35 @@ export function VoteRoom({
   const activeRoundLabel = roundLabel(activeRound);
   const activeRoundSummaryValue = compactRoundValue(activeRound, activeRoundLabel);
   const activeRoundAdvanceLabel = roundLabel(activeRound, "advanceLabel");
-  const userTotalTickets = Math.max(0, Math.floor(Number(activeEntry?.finalTickets) || 0));
+  const userTotalTickets = Math.max(
+    0,
+    Math.floor(Number(roundTicketBreakdown?.usableTickets ?? activeEntry?.totalVotingTickets ?? activeEntry?.finalTickets) || 0),
+  );
+  const buybackTickets = Math.max(0, Math.floor(Number(roundTicketBreakdown?.rawTickets ?? activeEntry?.rawTickets) || 0));
+  const carryoverTickets = Math.max(0, Math.floor(Number(roundTicketBreakdown?.carryoverTickets ?? activeEntry?.carryoverTickets) || 0));
+  const activeInsiderTickets = Math.max(
+    0,
+    Math.floor(
+      Number(
+        (roundTicketBreakdown?.insiderPracticeUnlocked
+          ? roundTicketBreakdown?.insiderPracticeTickets
+          : roundTicketBreakdown?.insiderGrantUnlocked
+            ? roundTicketBreakdown?.insiderGrantTickets
+            : 0) || 0,
+      ),
+    ),
+  );
+  const activeAddonTickets = (roundTicketBreakdown?.carryoverUnlocked ? carryoverTickets : 0) + activeInsiderTickets;
+  const showAddonTickets = activeAddonTickets > 0;
+  const addonHint = roundTicketBreakdown?.insiderGrantUnlocked
+    ? t("vote.stageSummaryInsiderGrantRemaining", {
+      tickets: formatNumber(roundTicketBreakdown?.sharedInsiderGrantTicketsRemaining || 0),
+    })
+    : roundTicketBreakdown?.insiderPracticeUnlocked
+      ? t("vote.stageSummaryPracticeHint")
+      : roundTicketBreakdown?.carryoverUnlocked
+        ? t("vote.stageSummaryCarryoverUnlocked")
+        : t("vote.stageSummaryCarryoverLocked");
 
   useEffect(() => {
     const selectedIsVoteable = Boolean(
@@ -604,7 +658,11 @@ export function VoteRoom({
       <header className="vote-stage-head">
         <h1 className="vote-stage-head__sr-title">{t("vote.stageDeckTitle", { round: activeRoundAdvanceLabel })}</h1>
         <div className="vote-stage-hero">
-          <section className="vote-stage-summary" aria-label={t("vote.currentRoundSummary")}>
+          <section
+            className="vote-stage-summary"
+            style={{ "--vote-summary-count": showAddonTickets ? 4 : 3 }}
+            aria-label={t("vote.currentRoundSummary")}
+          >
             <output className="is-round">
               <span>{t("vote.stageSummaryRound")}</span>
               <strong>{activeRoundSummaryValue}</strong>
@@ -613,8 +671,15 @@ export function VoteRoom({
             <output className="is-user-tickets">
               <span>{t("vote.stageSummaryYourTickets")}</span>
               <strong>{formatNumber(userTotalTickets)}</strong>
-              <small>{t("vote.stageSummaryWalletHint")}</small>
+              <small>{t("vote.stageSummaryBuybackTickets", { tickets: formatNumber(buybackTickets) })}</small>
             </output>
+            {showAddonTickets ? (
+              <output className="is-carryover">
+                <span>{t("vote.stageSummaryAddonTickets")}</span>
+                <strong>{formatNumber(activeAddonTickets)}</strong>
+                <small>{addonHint}</small>
+              </output>
+            ) : null}
             <output className="is-remaining">
               <span>{t("vote.stageSummaryRemainingTickets")}</span>
               <strong>{formatNumber(remainingRoundTickets)}</strong>
@@ -647,6 +712,7 @@ export function VoteRoom({
             activeRound={activeRound}
             ticketAmount={ticketAmount}
             remainingRoundTickets={remainingRoundTickets}
+            roundTicketBreakdown={roundTicketBreakdown}
             usedRoundTickets={usedRoundTickets}
             onSetTicketAmount={onSetTicketAmount}
             onConfirmPreviewVote={onConfirmPreviewVote}

@@ -7,6 +7,7 @@ const maxDragOffset = 120;
 const voteableStatuses = new Set(["open", "closing_soon"]);
 
 function getMatchPhase(match) {
+  if (match.awaitingOfficialResult) return { id: "locked", labelKey: "vote.phasePendingResult" };
   if (match.status === "official_final") return { id: "final", labelKey: "vote.phaseFinal" };
   if (voteableStatuses.has(match.status)) return { id: "voteable", labelKey: "vote.phaseVoteable" };
   return { id: "live", labelKey: "vote.phaseInPlay" };

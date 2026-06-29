@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Stepper, { Step } from "../Stepper/Stepper";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+import { fetchJsonWithTimeout } from "../../utils/httpClient";
 import "./XFollowGate.css";
 
 function xLoginHref() {
@@ -77,19 +78,12 @@ export function XFollowGate({
     setIssue("");
     setVerifying(true);
     try {
-      const response = await fetch("/api/auth/x-follow/verify", {
+      const { payload } = await fetchJsonWithTimeout("/api/auth/x-follow/verify", {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
+        timeoutMs: 15000,
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setLocalStatus(payload.status || localStatus);
-        throw Object.assign(new Error(payload.error || `HTTP ${response.status}`), {
-          code: payload.code,
-          retryAfterSeconds: payload.retryAfterSeconds,
-        });
-      }
       setLocalStatus(payload);
       if (!payload.gatePassed) {
         setIssue(t(statusMessageKey(payload.status), { seconds: payload.retryAfterSeconds || 0 }));
@@ -97,6 +91,7 @@ export function XFollowGate({
       }
       await onRefreshAuth?.();
     } catch (error) {
+      if (error?.payload?.status) setLocalStatus(error.payload.status || localStatus);
       const seconds = error?.retryAfterSeconds || 0;
       const key = statusMessageKey(error?.code);
       setIssue(key ? t(key, { seconds }) : error.message);
@@ -111,21 +106,16 @@ export function XFollowGate({
     setIssue("");
     setSkipping(true);
     try {
-      const response = await fetch("/api/auth/x-follow/skip", {
+      const { payload } = await fetchJsonWithTimeout("/api/auth/x-follow/skip", {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
+        timeoutMs: 15000,
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setLocalStatus(payload.status || localStatus);
-        throw Object.assign(new Error(payload.error || `HTTP ${response.status}`), {
-          code: payload.code,
-        });
-      }
       setLocalStatus(payload);
       await onRefreshAuth?.();
     } catch (error) {
+      if (error?.payload?.status) setLocalStatus(error.payload.status || localStatus);
       const key = statusMessageKey(error?.code);
       setIssue(key ? t(key) : error.message);
     } finally {
