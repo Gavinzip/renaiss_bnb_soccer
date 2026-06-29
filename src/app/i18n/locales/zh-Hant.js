@@ -915,8 +915,8 @@ export const zhHantLocale = {
           "VRF隨機揭曉幸運兒"
         ],
         "winner": [
-          "抱走巨額獎金",
-          "憑中獎票號錢包領U"
+          "抱走豐富禮品",
+          "將自動空投卡片到中獎錢包"
         ]
       },
       "eligibility": {

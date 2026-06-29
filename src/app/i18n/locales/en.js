@@ -915,8 +915,8 @@ export const enLocale = {
           "VRF reveals the winners"
         ],
         "winner": [
-          "Claim the prize",
-          "Winning ticket wallet claims U"
+          "Win card prizes",
+          "Cards will be airdropped to winning wallets"
         ]
       },
       "eligibility": {

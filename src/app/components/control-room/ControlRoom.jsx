@@ -1,5 +1,6 @@
 import {
   CalendarClock,
+  ChevronDown,
   Clock3,
   Database,
   Medal,
@@ -706,18 +707,57 @@ function ViewMenu({ activeViewId, id, onSelectView, t, views = commandViews, win
 
 function LanguageSwitch() {
   const { locale, locales, setLocale, t } = useCampaignCopy();
+  const [open, setOpen] = useState(false);
+  const activeOption = locales.find((option) => option.id === locale) ?? locales[0];
+  const shortLabel = (option) => (option.id === "zh-Hant" ? "CN" : "EN");
+
+  function handleSelect(nextLocale) {
+    setLocale(nextLocale);
+    setOpen(false);
+  }
 
   return (
-    <label className="language-switch language-switch--select">
-      <span>{t("language.label")}</span>
-      <select value={locale} onChange={(event) => setLocale(event.target.value)} aria-label={t("language.label")}>
-        {locales.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.id === "zh-Hant" ? "CN" : "EN"}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div
+      className={open ? "language-switch language-switch--select language-switch--popover is-open" : "language-switch language-switch--select language-switch--popover"}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setOpen(false);
+      }}
+    >
+      <button
+        className="language-switch__trigger"
+        type="button"
+        aria-label={t("language.toggle")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{shortLabel(activeOption)}</span>
+        <ChevronDown size={16} strokeWidth={2.2} aria-hidden="true" />
+      </button>
+      {open ? (
+        <menu className="language-switch__menu" role="menu" aria-label={t("language.label")}>
+          {locales.map((option) => {
+            const active = option.id === locale;
+            return (
+              <li key={option.id}>
+                <button
+                  className={active ? "is-active" : ""}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={active}
+                  onClick={() => handleSelect(option.id)}
+                >
+                  <span>{shortLabel(option)}</span>
+                </button>
+              </li>
+            );
+          })}
+        </menu>
+      ) : null}
+    </div>
   );
 }
 
