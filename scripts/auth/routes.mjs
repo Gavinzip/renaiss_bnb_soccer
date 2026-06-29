@@ -162,6 +162,25 @@ function logOAuthCallbackFailure(provider, stage, error) {
   })
 }
 
+function maskWalletAddress(value) {
+  const address = normalizeAddress(value)
+  return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : null
+}
+
+function logXFollowVerifyFailure(session, error) {
+  console.warn('[x-follow] verify failed', {
+    code: error?.code || 'verify_failed',
+    httpStatus: Number(error?.statusCode || 500),
+    xStatus: error?.xStatus || null,
+    retryAfterSeconds: error?.retryAfterSeconds || error?.status?.retryAfterSeconds || 0,
+    status: error?.status?.status || null,
+    walletAddress: maskWalletAddress(session?.walletAddress),
+    xUserId: session?.identity?.provider === 'x' ? session.identity.providerUserId : null,
+    rateLimit: error?.rateLimit || null,
+    message: sanitizeAuthError(error),
+  })
+}
+
 function redirect(response, location, headers = {}) {
   response.writeHead(302, { location, ...headers })
   response.end()
@@ -596,6 +615,7 @@ export async function handleAuthRoute({
       const status = await verifyXFollow(auth, session, request)
       sendJsonResponse(sendJson, request, response, 200, { ok: true, ...status })
     } catch (error) {
+      logXFollowVerifyFailure(session, error)
       sendJsonResponse(
         sendJson,
         request,

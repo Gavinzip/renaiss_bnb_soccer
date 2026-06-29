@@ -6,6 +6,8 @@ import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { fetchJsonWithTimeout } from "../../utils/httpClient";
 import "./XFollowGate.css";
 
+const RETRY_GATED_STATUSES = new Set(["rate_limited", "api_error", "retry_later"]);
+
 function xLoginHref() {
   let returnTo = "/?view=vote&auth=success&xgate=1";
 
@@ -81,6 +83,7 @@ export function XFollowGate({
   const [eligibilityIssue, setEligibilityIssue] = useState("");
   const [localStatus, setLocalStatus] = useState(authSession?.xFollow || null);
   const [localEligibilityStatus, setLocalEligibilityStatus] = useState(authSession?.xAccountEligibility || null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const gate = localStatus || authSession?.xFollow || {};
   const eligibility = localEligibilityStatus || authSession?.xAccountEligibility || {};
   const gateConfig = authConfig?.xFollowGate || gate.target || {};
@@ -97,7 +100,19 @@ export function XFollowGate({
   const eligibilityRequired = eligibility.required ?? eligibilityConfig.required ?? true;
   const eligibilityGatePassed = !eligibilityRequired || Boolean(eligibility.gatePassed);
   const skipEnabled = Boolean(gate.skipEnabled || gateConfig.skipEnabled);
-  const retryAfterSeconds = Math.max(0, Number(gate.retryAfterSeconds || 0));
+  const retryUntilMs = useMemo(() => {
+    if (!RETRY_GATED_STATUSES.has(gate.status)) return 0;
+
+    const lastCheckedAtMs = Date.parse(gate.lastCheckedAt || "");
+    const configuredSeconds = Math.max(0, Number(gateConfig.retrySeconds || 0));
+    if (Number.isFinite(lastCheckedAtMs) && configuredSeconds > 0) {
+      return lastCheckedAtMs + configuredSeconds * 1000;
+    }
+
+    const serverSeconds = Math.max(0, Number(gate.retryAfterSeconds || 0));
+    return serverSeconds > 0 ? Date.now() + serverSeconds * 1000 : 0;
+  }, [gate.lastCheckedAt, gate.retryAfterSeconds, gate.status, gateConfig.retrySeconds]);
+  const retryAfterSeconds = retryUntilMs > nowMs ? Math.ceil((retryUntilMs - nowMs) / 1000) : 0;
   const canContinueToFollow = authEndpointReady && xConnected && !identityIssueStatus && !needsRenaissSession;
   const canVerify = authEndpointReady && xConnected && xProviderReady && !identityIssueStatus && !verifying && !skipping && retryAfterSeconds <= 0;
   const canContinueToEligibility = authEndpointReady && Boolean(gate.gatePassed);
@@ -113,6 +128,16 @@ export function XFollowGate({
     setLocalEligibilityStatus(authSession?.xAccountEligibility || null);
     setActiveStep(initialStepForSession(authSession));
   }, [authSession?.authenticated, authSession?.walletAddress, authSession?.xFollow, authSession?.xAccountEligibility]);
+
+  useEffect(() => {
+    if (!retryUntilMs || retryUntilMs <= Date.now()) {
+      setNowMs(Date.now());
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [retryUntilMs]);
 
   const stepLabels = useMemo(() => ({
     back: t("xFollowGate.back"),
