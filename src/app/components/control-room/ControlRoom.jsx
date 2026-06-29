@@ -709,7 +709,11 @@ function LanguageSwitch() {
   const { locale, locales, setLocale, t } = useCampaignCopy();
   const [open, setOpen] = useState(false);
   const activeOption = locales.find((option) => option.id === locale) ?? locales[0];
-  const shortLabel = (option) => (option.id === "zh-Hant" ? "CN" : "EN");
+  const shortLabel = (option) => ({
+    "zh-Hant": "CN",
+    en: "EN",
+    ko: "KR",
+  })[option.id] ?? option.label;
 
   function handleSelect(nextLocale) {
     setLocale(nextLocale);
