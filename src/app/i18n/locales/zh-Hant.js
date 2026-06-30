@@ -1020,6 +1020,10 @@ export const zhHantLocale = {
       "confirmPreview": "確認送出",
       "submitting": "送出中"
     },
+    "voteSubmitToast": {
+      "title": "票數已送出",
+      "body": "已送給 {team} · {tickets} 票"
+    },
     "data": {
       "bundledMilestoneSource": "內建里程碑設定",
       "verifiedLedgerSource": "已驗證 BSC 回購票帳本快照",

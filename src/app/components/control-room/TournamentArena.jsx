@@ -659,15 +659,19 @@ function ArenaDetailPanel({
   const { compactVotes, matchStatus, t, teamName } = copy;
   if (!detailMatch || !detailTeam || !opponentTeam) return null;
 
-  const teamVotes = detailTeam.votes ?? 0;
-  const opponentVotes = opponentTeam.votes ?? 0;
+  const leftTeam = teamsById.get(detailMatch.teams?.[0]) ?? detailTeam;
+  const rightTeam = teamsById.get(detailMatch.teams?.[1]) ?? opponentTeam;
+  if (!leftTeam || !rightTeam) return null;
+
+  const leftVotes = leftTeam.votes ?? 0;
+  const rightVotes = rightTeam.votes ?? 0;
   const displayPool = displayPoolForMatch(detailMatch, teamsById);
-  const totalVotes = teamVotes + opponentVotes;
-  const teamShare = totalVotes > 0 ? Math.round((teamVotes / totalVotes) * 100) : 0;
-  const opponentShare = totalVotes > 0 ? 100 - teamShare : 0;
-  const isRealtimePreview = Boolean(detailMatch.realtimePreview || detailTeam.liveQualification || opponentTeam.liveQualification);
+  const totalVotes = leftVotes + rightVotes;
+  const leftShare = totalVotes > 0 ? Math.round((leftVotes / totalVotes) * 100) : 0;
+  const rightShare = totalVotes > 0 ? 100 - leftShare : 0;
+  const isRealtimePreview = Boolean(detailMatch.realtimePreview || leftTeam.liveQualification || rightTeam.liveQualification);
   const hasVoteShare = totalVotes > 0;
-  const sharePosition = hasVoteShare ? teamShare : 50;
+  const sharePosition = hasVoteShare ? leftShare : 50;
   const matchVoterCount = Math.max(0, Math.floor(Number(detailMatch.voterCount) || 0));
   const displayedVoters = matchVoterCount || (isRealtimePreview ? 0 : Math.max(4, Math.round(displayPool / 45)));
   const displayedTotalVotes = Math.max(displayPool, allocation?.tickets ?? 0, totalVotes);
@@ -716,13 +720,13 @@ function ArenaDetailPanel({
           hasVoteShare ? "has-vote-share" : "is-empty-share",
         ].filter(Boolean).join(" ")}
         aria-label={detailAria}
-        style={{ "--focused-share": `${sharePosition}%`, "--opponent-share": `${opponentShare}%` }}
+        style={{ "--focused-share": `${sharePosition}%`, "--opponent-share": `${rightShare}%` }}
       >
         <article className="is-focused">
-          <img src={detailTeam.flagSrc} alt="" aria-hidden="true" />
-          <span>{teamName(detailTeam)}</span>
-          <strong>{hasVoteShare ? compactVotes(teamVotes) : ""}</strong>
-          <small>{hasVoteShare ? `${teamShare}%` : ""}</small>
+          <img src={leftTeam.flagSrc} alt="" aria-hidden="true" />
+          <span>{teamName(leftTeam)}</span>
+          <strong>{hasVoteShare ? compactVotes(leftVotes) : ""}</strong>
+          <small>{hasVoteShare ? `${leftShare}%` : ""}</small>
         </article>
         <div className="arena-vs-share" aria-hidden="true">
           <span className="arena-vs-share__label">{t("vote.versusShort")}</span>
@@ -731,10 +735,10 @@ function ArenaDetailPanel({
           </span>
         </div>
         <article>
-          <img src={opponentTeam.flagSrc} alt="" aria-hidden="true" />
-          <span>{teamName(opponentTeam)}</span>
-          <strong>{hasVoteShare ? compactVotes(opponentVotes) : ""}</strong>
-          <small>{hasVoteShare ? `${opponentShare}%` : ""}</small>
+          <img src={rightTeam.flagSrc} alt="" aria-hidden="true" />
+          <span>{teamName(rightTeam)}</span>
+          <strong>{hasVoteShare ? compactVotes(rightVotes) : ""}</strong>
+          <small>{hasVoteShare ? `${rightShare}%` : ""}</small>
         </article>
       </section>
       <section className="arena-detail-actions">

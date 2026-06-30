@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlRoom } from "./components/control-room/ControlRoom";
 import { preloadHomeRoomAssets } from "./components/control-room/HomeRoom";
 import { VoteConfirmModal } from "./components/control-room/VoteConfirmModal";
+import { VoteSubmitToast } from "./components/control-room/VoteSubmitToast";
 import { InitialPageLoader } from "./components/InitialPageLoader";
 import {
   buildRealtimeRound32Preview,
@@ -345,6 +346,7 @@ function AppContent() {
   const [pendingVote, setPendingVote] = useState(null);
   const [pendingVoteIssue, setPendingVoteIssue] = useState("");
   const [voteSubmitting, setVoteSubmitting] = useState(false);
+  const [voteSubmitNotice, setVoteSubmitNotice] = useState(null);
   const [initialAssetsReady, setInitialAssetsReady] = useState(false);
   const [initialCoverPaintReady, setInitialCoverPaintReady] = useState(false);
   const [initialLoaderVisible, setInitialLoaderVisible] = useState(true);
@@ -352,6 +354,7 @@ function AppContent() {
   const [initialLoaderStartedAt] = useState(() => Date.now());
   const [matchStatusNow, setMatchStatusNow] = useState(() => Date.now());
   const trackedLoginKeyRef = useRef("");
+  const voteSubmitNoticeTimerRef = useRef(0);
 
   const refreshAuthSession = useCallback(async () => {
     if (!authMeUrl) {
@@ -381,6 +384,10 @@ function AppContent() {
   useEffect(() => {
     refreshAuthSession();
   }, [refreshAuthSession]);
+
+  useEffect(() => () => {
+    window.clearTimeout(voteSubmitNoticeTimerRef.current);
+  }, []);
 
   useEffect(() => {
     installGoogleAnalytics();
@@ -820,6 +827,20 @@ function AppContent() {
     () => (pendingVote ? teamsById.get(pendingVote.teamId) ?? null : null),
     [pendingVote, teamsById],
   );
+  const showVoteSubmitNotice = useCallback(({ teamId, tickets }) => {
+    const team = teamsById.get(teamId);
+    const notice = {
+      id: `${teamId}-${Date.now()}`,
+      teamName: team ? copy.teamName(team) : String(teamId || ""),
+      tickets,
+    };
+
+    window.clearTimeout(voteSubmitNoticeTimerRef.current);
+    setVoteSubmitNotice(notice);
+    voteSubmitNoticeTimerRef.current = window.setTimeout(() => {
+      setVoteSubmitNotice((current) => (current?.id === notice.id ? null : current));
+    }, 3600);
+  }, [copy, teamsById]);
   const visibleRoundOutcomeSummary = isRealtimeRound32
     ? { lostTickets: 0, winnerTickets: 0, pendingTickets: 0 }
     : roundOutcomeSummary;
@@ -1131,6 +1152,7 @@ function AppContent() {
     }
 
     setVoteSubmitting(false);
+    showVoteSubmitNotice({ teamId: targetTeamId, tickets });
     setSelectedTeamId(null);
     setTicketAmount(DEFAULT_TICKET_AMOUNT);
     setPendingVote(null);
@@ -1203,6 +1225,7 @@ function AppContent() {
         }}
         onConfirm={() => handleConfirmPreviewVote(pendingVote)}
       />
+      <VoteSubmitToast notice={voteSubmitNotice} />
     </>
   );
 }

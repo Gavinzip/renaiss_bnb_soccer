@@ -1020,6 +1020,10 @@ export const enLocale = {
       "confirmPreview": "Confirm submit",
       "submitting": "Submitting"
     },
+    "voteSubmitToast": {
+      "title": "Votes submitted",
+      "body": "Sent to {team} · {tickets} tickets"
+    },
     "data": {
       "bundledMilestoneSource": "Bundled milestone config",
       "verifiedLedgerSource": "Verified BSC buyback ledger snapshot",

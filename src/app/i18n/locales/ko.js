@@ -1020,6 +1020,10 @@ export const koLocale = {
       "confirmPreview": "제출 확인",
       "submitting": "제출 중"
     },
+    "voteSubmitToast": {
+      "title": "투표가 제출되었습니다",
+      "body": "{team}에 제출됨 · {tickets}표"
+    },
     "data": {
       "bundledMilestoneSource": "번들 마일스톤 설정",
       "verifiedLedgerSource": "검증된 BSC 바이백 원장 스냅샷",
