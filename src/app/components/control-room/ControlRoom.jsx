@@ -856,6 +856,11 @@ export function ControlRoom({
     setXFollowOverlayDismissed(true);
     setXFollowPanelOpen(false);
   }, []);
+  const openXFollowOverlay = useCallback(() => {
+    if (!showXFollowVerifyButton) return;
+    setXFollowOverlayDismissed(false);
+    setXFollowPanelOpen(true);
+  }, [showXFollowVerifyButton]);
   const showXFollowOverlay = effectiveActiveViewId === "vote"
     && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
     && showXFollowVerifyButton
@@ -965,10 +970,7 @@ export function ControlRoom({
           <button
             type="button"
             className={xFollowVerifyComplete ? "header-x-verify is-complete" : "header-x-verify"}
-            onClick={() => {
-              setXFollowOverlayDismissed(false);
-              setXFollowPanelOpen((current) => !current);
-            }}
+            onClick={() => (xFollowPanelOpen ? setXFollowPanelOpen(false) : openXFollowOverlay())}
             aria-expanded={xFollowPanelOpen}
           >
             <ShieldCheck size={16} strokeWidth={2.25} />
@@ -1107,6 +1109,7 @@ export function ControlRoom({
               onSelectTeam={onSelectTeam}
               onSetTicketAmount={onSetTicketAmount}
               onConfirmPreviewVote={onConfirmPreviewVote}
+              onRequestVoteEligibility={openXFollowOverlay}
             />
           ) : null}
 

@@ -30543,6 +30543,7 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     padding: 0 10px;
     color: rgba(8, 12, 11, 0.94);
     background:
@@ -30552,6 +30553,18 @@ body {
     line-height: 1.05;
     text-align: center;
     text-decoration: none;
+  }
+
+  .mobile-vote-dock__cta.is-eligibility-action {
+    color: rgba(234, 255, 246, 0.94);
+    background:
+      linear-gradient(180deg, rgba(155, 244, 208, 0.18), rgba(155, 244, 208, 0.08)),
+      rgba(11, 18, 16, 0.92);
+    border-color: rgba(155, 244, 208, 0.26);
+  }
+
+  .mobile-vote-dock__cta.is-eligibility-action:active {
+    transform: translateY(1px);
   }
 
   .mobile-vote-dock__cta:disabled {

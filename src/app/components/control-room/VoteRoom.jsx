@@ -418,6 +418,7 @@ function MobileTicketDock({
   voteActionBlocked,
   onSetTicketAmount,
   onConfirmPreviewVote,
+  onRequestVoteEligibility,
   copy,
 }) {
   const { t } = copy;
@@ -446,6 +447,12 @@ function MobileTicketDock({
   const Action = hasNoRemainingTickets ? "a" : "button";
   const actionProps = hasNoRemainingTickets
     ? { href: ticketStoreUrl }
+    : voteActionBlocked
+      ? {
+        type: "button",
+        disabled: !onRequestVoteEligibility,
+        onClick: onRequestVoteEligibility,
+      }
     : {
       type: "button",
       disabled: !canSubmit,
@@ -454,6 +461,15 @@ function MobileTicketDock({
         teamId: selectedTeam?.id || "",
       }),
     };
+  const ctaLabel = hasNoRemainingTickets
+    ? t("vote.getMoreTickets")
+    : voteActionBlocked
+      ? t("xFollowGate.verifyEligibility")
+      : t("vote.mobilePreviewCta");
+  const ctaClassName = [
+    "mobile-vote-dock__cta",
+    voteActionBlocked && !hasNoRemainingTickets ? "is-eligibility-action" : "",
+  ].filter(Boolean).join(" ");
 
   return (
     <aside className={selectedTeam ? "mobile-vote-dock has-team" : "mobile-vote-dock"} aria-label={t("vote.mobileQuickAllocation")}>
@@ -510,8 +526,9 @@ function MobileTicketDock({
         onChange={handleSetTicketAmount}
       />
 
-      <Action className="mobile-vote-dock__cta" {...actionProps}>
-        <span>{hasNoRemainingTickets ? t("vote.getMoreTickets") : voteActionBlocked ? t("vote.mobileEligibilityBlockedCta") : t("vote.mobilePreviewCta")}</span>
+      <Action className={ctaClassName} {...actionProps}>
+        {voteActionBlocked && !hasNoRemainingTickets ? <ShieldCheck size={15} strokeWidth={2.35} /> : null}
+        <span>{ctaLabel}</span>
       </Action>
     </aside>
   );
@@ -603,6 +620,7 @@ export function VoteRoom({
   onSelectTeam,
   onSetTicketAmount,
   onConfirmPreviewVote,
+  onRequestVoteEligibility,
 }) {
   const copy = useCampaignCopy();
   const { roundLabel, t } = copy;
@@ -731,6 +749,7 @@ export function VoteRoom({
         voteActionBlocked={voteActionBlocked}
         onSetTicketAmount={onSetTicketAmount}
         onConfirmPreviewVote={onConfirmPreviewVote}
+        onRequestVoteEligibility={onRequestVoteEligibility}
         copy={copy}
       />
     </section>
