@@ -269,6 +269,7 @@ function TicketAllocationPanel({
   voteActionBlockReason,
   onSetTicketAmount,
   onConfirmPreviewVote,
+  onRequestVoteEligibility,
   copy,
 }) {
   const { roundLabel, t } = copy;
@@ -297,6 +298,21 @@ function TicketAllocationPanel({
   function handleSetTicketAmount(value) {
     onSetTicketAmount(clampTicketAmount(value, maxTickets));
   }
+
+  const ctaBlockedByEligibility = voteActionBlocked && !hasNoRemainingTickets;
+  const ctaClassName = [
+    "vote-allocation-panel__cta",
+    ctaBlockedByEligibility ? "is-eligibility-action" : "",
+  ].filter(Boolean).join(" ");
+  const ctaIcon = ctaBlockedByEligibility
+    ? <ShieldCheck size={17} strokeWidth={2.35} />
+    : canSubmit
+      ? <Send size={17} strokeWidth={2.35} />
+      : <LockKeyhole size={17} strokeWidth={2.35} />;
+  const ctaLabel = ctaBlockedByEligibility
+    ? t("xFollowGate.verifyEligibility")
+    : t("vote.submitPreviewVote");
+  const ctaDisabled = ctaBlockedByEligibility ? !onRequestVoteEligibility : !canSubmit;
 
   return (
     <aside className={voteActionBlocked ? "vote-allocation-panel is-action-blocked" : "vote-allocation-panel"} aria-label={t("vote.votePanelTitle")}>
@@ -395,18 +411,20 @@ function TicketAllocationPanel({
       ) : (
         <Magnet
           as="button"
-          className="vote-allocation-panel__cta"
+          className={ctaClassName}
           type="button"
           strength={44}
-          disabled={!canSubmit}
-          onClick={() => onConfirmPreviewVote(boundedTicketAmount, {
-            matchId: selectedMatch?.id || "",
-            teamId: selectedTeam?.id || "",
-          })}
+          disabled={ctaDisabled}
+          onClick={ctaBlockedByEligibility
+            ? onRequestVoteEligibility
+            : () => onConfirmPreviewVote(boundedTicketAmount, {
+              matchId: selectedMatch?.id || "",
+              teamId: selectedTeam?.id || "",
+            })}
         >
           <span className="vote-allocation-panel__cta-content">
-            {canSubmit ? <Send size={17} strokeWidth={2.35} /> : <LockKeyhole size={17} strokeWidth={2.35} />}
-            <span>{t("vote.submitPreviewVote")}</span>
+            {ctaIcon}
+            <span>{ctaLabel}</span>
           </span>
         </Magnet>
       )}
@@ -731,6 +749,7 @@ export function VoteRoom({
             voteActionBlockReason={voteActionBlockReason}
             onSetTicketAmount={onSetTicketAmount}
             onConfirmPreviewVote={onConfirmPreviewVote}
+            onRequestVoteEligibility={onRequestVoteEligibility}
             copy={copy}
           />
 
