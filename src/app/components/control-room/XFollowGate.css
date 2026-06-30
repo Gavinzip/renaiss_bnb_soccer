@@ -137,6 +137,24 @@
   line-height: 1.12;
 }
 
+.x-follow-gate__title-with-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.x-follow-gate__title-with-logo span {
+  min-width: 0;
+}
+
+.x-follow-gate__title-with-logo img {
+  flex: 0 0 auto;
+  width: 27px;
+  height: 34px;
+  object-fit: contain;
+}
+
 .x-follow-gate__head p,
 .x-follow-gate__step p {
   max-width: 62ch;
@@ -594,6 +612,15 @@
 
   .x-follow-gate__step h2 {
     font-size: 21px;
+  }
+
+  .x-follow-gate__title-with-logo {
+    gap: 8px;
+  }
+
+  .x-follow-gate__title-with-logo img {
+    width: 24px;
+    height: 30px;
   }
 
   .x-follow-gate__step-state {

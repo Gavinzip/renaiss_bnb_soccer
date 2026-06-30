@@ -16,6 +16,7 @@ import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { MatchPrizeList } from "./MatchPrizeList";
+import ticketIcon from "../../assets/ticket-icon-inverted.png";
 
 const ticketStoreUrl = "https://www.renaiss.xyz/gacha/omega";
 const voteableStatuses = new Set(["open", "closing_soon"]);
@@ -346,7 +347,10 @@ function TicketAllocationPanel({
           <Minus size={16} strokeWidth={2.35} />
         </button>
         <label>
-          <span>{t("common.tickets")}</span>
+          <span className="vote-ticket-unit">
+            <img src={ticketIcon} alt="" aria-hidden="true" />
+            {t("common.tickets")}
+          </span>
           <input
             type="number"
             min="1"
@@ -496,7 +500,10 @@ function MobileTicketDock({
           <Minus size={15} strokeWidth={2.35} />
         </button>
         <label>
-          <span>{t("common.tickets")}</span>
+          <span className="vote-ticket-unit">
+            <img src={ticketIcon} alt="" aria-hidden="true" />
+            {t("common.tickets")}
+          </span>
           <input
             type="number"
             min="1"

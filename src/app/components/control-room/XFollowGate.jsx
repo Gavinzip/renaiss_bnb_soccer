@@ -4,13 +4,13 @@ import Stepper, { Step } from "../Stepper/Stepper";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { fetchJsonWithTimeout } from "../../utils/httpClient";
+import fireflyIcon from "../../assets/firefly-icon.svg";
 import "./XFollowGate.css";
 
 const RETRY_GATED_STATUSES = new Set(["rate_limited", "api_error", "retry_later"]);
 const RENAISS_OFFICIAL_URL = "https://www.renaiss.xyz/";
 const FIREFLY_ELIGIBILITY_LINKS = {
   firefly: "https://firefly.social/signup?step=login_social_platform",
-  deposit: "https://firefly.social/settings/wallets",
   predict: "https://firefly.social/prediction/category/fifwc",
 };
 
@@ -150,13 +150,6 @@ export function XFollowGate({
       label: t("xFollowGate.eligibilityCheckFireflyAccount"),
       href: FIREFLY_ELIGIBILITY_LINKS.firefly,
       state: eligibilityCheckState(eligibility.hasFireflyAccount),
-    },
-    {
-      id: "deposit",
-      label: t("xFollowGate.eligibilityCheckPredictionWalletDeposit"),
-      href: FIREFLY_ELIGIBILITY_LINKS.deposit,
-      state: eligibility.hasPlacedBet === true ? "pass" : "link",
-      hideStateLabel: true,
     },
     {
       id: "predict",
@@ -425,7 +418,10 @@ export function XFollowGate({
                   ? t("xFollowGate.skipped")
                   : t("xFollowGate.notVerified")}
             </span>
-            <h2>{t("xFollowGate.followTitle", { handle: `@${targetHandle}` })}</h2>
+            <h2 className="x-follow-gate__title-with-logo">
+              <span>{t("xFollowGate.followTitle", { handle: `@${targetHandle}` })}</span>
+              <img src={fireflyIcon} alt="" aria-hidden="true" />
+            </h2>
             <p>{t("xFollowGate.followBody")}</p>
             <a className="x-follow-gate__follow-link" href={targetUrl} target="_blank" rel="noreferrer">
               <ExternalLink size={16} strokeWidth={2.35} />
@@ -449,7 +445,10 @@ export function XFollowGate({
               {eligibilityGatePassed ? <CheckCircle2 size={18} /> : <ShieldCheck size={18} />}
               {eligibilityGatePassed ? t("xFollowGate.eligibilityVerified") : t("xFollowGate.eligibilityNotVerified")}
             </span>
-            <h2>{t("xFollowGate.eligibilityTitle")}</h2>
+            <h2 className="x-follow-gate__title-with-logo">
+              <span>{t("xFollowGate.eligibilityTitle")}</span>
+              <img src={fireflyIcon} alt="" aria-hidden="true" />
+            </h2>
             <p>{t("xFollowGate.eligibilityBody")}</p>
             <ul className="x-follow-gate__eligibility-checks" aria-label={t("xFollowGate.eligibilityChecklistAria")}>
               {eligibilityChecks.map((check) => (

@@ -14353,6 +14353,21 @@ body,
   font-weight: 800;
 }
 
+.vote-ticket-stepper label .vote-ticket-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.vote-ticket-unit img {
+  width: 17px;
+  height: 17px;
+  display: block;
+  object-fit: contain;
+  opacity: 0.82;
+}
+
 .vote-ticket-stepper input {
   width: 100%;
   border: 0;
@@ -30448,6 +30463,18 @@ body {
     color: rgba(245, 246, 241, 0.46);
     font-size: 0.66rem;
     font-weight: 820;
+  }
+
+  .mobile-vote-dock__stepper label .vote-ticket-unit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .mobile-vote-dock__stepper .vote-ticket-unit img {
+    width: 16px;
+    height: 16px;
   }
 
   .mobile-vote-dock__stepper input {
