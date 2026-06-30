@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 import Database from 'better-sqlite3'
 
+import { stableStringify } from './lucky-draw/utils.mjs'
 import { buildMatchResultIndex } from './soccer-match-results.mjs'
 import {
   SHARED_INSIDER_GRANT_ROUND_IDS,
@@ -90,11 +91,114 @@ function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS vote_events_wallet_round_idx
       ON vote_events (wallet_address, round_id, created_at_unix);
   `)
+  addColumnIfMissing(db, 'vote_events', 'previous_hash TEXT')
+  addColumnIfMissing(db, 'vote_events', 'event_hash TEXT')
+  backfillVoteEventHashes(db)
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS vote_events_event_hash_idx
+      ON vote_events (event_hash)
+      WHERE event_hash IS NOT NULL;
+  `)
   db.prepare(`
     INSERT INTO vote_meta (key, value)
     VALUES ('schemaVersion', ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(String(SQLITE_SCHEMA_VERSION))
+}
+
+function addColumnIfMissing(db, tableName, definition) {
+  try {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`)
+  } catch (error) {
+    if (!/duplicate column name/i.test(String(error?.message || ''))) throw error
+  }
+}
+
+function eventPayloadForHash(event) {
+  const payload = event && typeof event === 'object' ? { ...event } : { value: event }
+  delete payload.previousEventHash
+  delete payload.eventHash
+  return payload
+}
+
+function voteEventHash(previousHash, event) {
+  return `sha256:${createHash('sha256')
+    .update(stableStringify({
+      previousHash: previousHash || null,
+      event: eventPayloadForHash(event),
+    }))
+    .digest('hex')}`
+}
+
+function parseEventPayload(value) {
+  try {
+    const payload = JSON.parse(String(value || '{}'))
+    return payload && typeof payload === 'object' ? payload : { value: payload }
+  } catch {
+    return { rawPayload: String(value || '') }
+  }
+}
+
+function latestVoteEventHash(db) {
+  return db.prepare(`
+    SELECT event_hash
+    FROM vote_events
+    WHERE event_hash IS NOT NULL
+    ORDER BY rowid DESC
+    LIMIT 1
+  `).get()?.event_hash || ''
+}
+
+function attachVoteEventHash(db, event) {
+  const previousHash = latestVoteEventHash(db)
+  const eventHash = voteEventHash(previousHash, event)
+  return {
+    ...event,
+    previousEventHash: previousHash || null,
+    eventHash,
+  }
+}
+
+function backfillVoteEventHashes(db) {
+  const rows = db.prepare(`
+    SELECT rowid, payload_json, previous_hash, event_hash
+    FROM vote_events
+    ORDER BY rowid ASC
+  `).all()
+  if (!rows.length) return
+
+  runImmediateTransaction(db, () => {
+    let previousHash = ''
+    const update = db.prepare(`
+      UPDATE vote_events
+      SET payload_json = ?, previous_hash = ?, event_hash = ?
+      WHERE rowid = ?
+    `)
+    for (const row of rows) {
+      const payload = parseEventPayload(row.payload_json)
+      const hashedPayload = eventPayloadForHash(payload)
+      const eventHash = voteEventHash(previousHash, hashedPayload)
+      const previousEventHash = previousHash || null
+      if (
+        row.previous_hash !== previousEventHash
+        || row.event_hash !== eventHash
+        || payload.previousEventHash !== previousEventHash
+        || payload.eventHash !== eventHash
+      ) {
+        update.run(
+          JSON.stringify({
+            ...hashedPayload,
+            previousEventHash,
+            eventHash,
+          }),
+          previousEventHash,
+          eventHash,
+          row.rowid,
+        )
+      }
+      previousHash = eventHash
+    }
+  })
 }
 
 function rowToAllocation(row) {
@@ -127,6 +231,13 @@ function readVoteStateFromDatabase(db) {
   `).all().map(rowToAllocation)
 
   const eventCount = toPositiveInteger(db.prepare('SELECT COUNT(*) AS count FROM vote_events').get()?.count)
+  const hashRow = db.prepare(`
+    SELECT event_hash
+    FROM vote_events
+    WHERE event_hash IS NOT NULL
+    ORDER BY rowid DESC
+    LIMIT 1
+  `).get()
   const timeRow = db.prepare(`
     SELECT MIN(created_at) AS generated_at, MAX(created_at) AS updated_at
     FROM vote_events
@@ -142,6 +253,7 @@ function readVoteStateFromDatabase(db) {
     sourceStatus: meta.sourceStatus || 'live',
     syncedFromProductionAt: meta.syncedFromProductionAt || null,
     productionOrigin: meta.productionOrigin || null,
+    eventHashHead: hashRow?.event_hash || null,
   }
 }
 
@@ -268,7 +380,7 @@ function submitVoteInDatabase({ db, ledger, input, matchResults }) {
       })
     }
 
-    const event = {
+    const event = attachVoteEventHash(db, {
       id: randomUUID(),
       type: 'vote-submitted',
       status: 'accepted',
@@ -296,15 +408,16 @@ function submitVoteInDatabase({ db, ledger, input, matchResults }) {
       sharedInsiderGrantTicketsUsed,
       sharedInsiderGrantTicketsRemaining: Math.max(0, ledgerTickets.insiderGrantTickets - sharedInsiderGrantTicketsUsed),
       requestId,
-    }
+    })
     const id = existing?.id || allocationId({ walletAddress, matchId, teamId })
 
     db.prepare(`
       INSERT INTO vote_events (
         id, type, status, created_at, created_at_unix, wallet_address, round_id, match_id, team_id,
-        tickets, previous_team_tickets, next_team_tickets, final_round_tickets, request_id, payload_json
+        tickets, previous_team_tickets, next_team_tickets, final_round_tickets, request_id, payload_json,
+        previous_hash, event_hash
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       event.id,
       event.type,
@@ -321,6 +434,8 @@ function submitVoteInDatabase({ db, ledger, input, matchResults }) {
       ledgerTickets.usableTickets,
       requestId,
       JSON.stringify(event),
+      event.previousEventHash,
+      event.eventHash,
     )
 
     db.prepare(`
@@ -387,7 +502,7 @@ export function replaceSqliteVoteState({
       for (const [index, allocation] of allocationRows.entries()) {
         const createdAt = allocation.createdAt || nowIso()
         const updatedAt = allocation.updatedAt || createdAt
-        const event = {
+        const event = attachVoteEventHash(db, {
           id: randomUUID(),
           type: 'vote-seeded',
           status: 'accepted',
@@ -405,7 +520,7 @@ export function replaceSqliteVoteState({
           finalRoundTickets: toPositiveInteger(allocation.finalRoundTickets || allocation.tickets),
           requestId: normalizeId(allocation.requestId) || `seed-${index + 1}-${allocation.id}`,
           source: allocation.source || 'server-vote-store-sqlite-seed',
-        }
+        })
 
         db.prepare(`
           INSERT INTO vote_allocations (
@@ -428,9 +543,10 @@ export function replaceSqliteVoteState({
         db.prepare(`
           INSERT INTO vote_events (
             id, type, status, created_at, created_at_unix, wallet_address, round_id, match_id, team_id,
-            tickets, previous_team_tickets, next_team_tickets, final_round_tickets, request_id, payload_json
+            tickets, previous_team_tickets, next_team_tickets, final_round_tickets, request_id, payload_json,
+            previous_hash, event_hash
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           event.id,
           event.type,
@@ -447,6 +563,8 @@ export function replaceSqliteVoteState({
           event.finalRoundTickets,
           event.requestId,
           JSON.stringify(event),
+          event.previousEventHash,
+          event.eventHash,
         )
       }
     })
@@ -507,6 +625,7 @@ export function createSqliteVoteStore({ dbPath, statePath = '', previewPath = ''
         previewPath: previewPath || null,
         allocationCount: state.allocations.length,
         eventCount: state.eventCount,
+        eventHashHead: state.eventHashHead,
         generatedAt: state.generatedAt,
         updatedAt: state.updatedAt,
         schemaVersion: SQLITE_SCHEMA_VERSION,

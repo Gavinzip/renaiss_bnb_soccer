@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   copyFileSync,
   existsSync,
@@ -12,6 +13,8 @@ import {
 } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
+
+import Database from 'better-sqlite3'
 
 import { stableStringify } from './lucky-draw/utils.mjs'
 
@@ -82,17 +85,41 @@ function removeWorktreeContents(worktree) {
   }
 }
 
+function isSqliteDatabaseFile(name) {
+  return /\.(sqlite|sqlite3|db)$/i.test(name)
+}
+
+function isSqliteSidecarFile(name) {
+  return /\.(sqlite|sqlite3|db)-(wal|shm)$/i.test(name)
+}
+
+function copySqliteSnapshot(sourcePath, targetPath) {
+  rmSync(targetPath, { force: true })
+  const db = new Database(sourcePath, { readonly: true, fileMustExist: true })
+  try {
+    db.pragma('busy_timeout = 5000')
+    db.prepare('VACUUM INTO ?').run(targetPath)
+  } finally {
+    db.close()
+  }
+}
+
 function copyDirectory(source, target, options = {}) {
   mkdirSync(target, { recursive: true })
   for (const name of readdirSync(source)) {
     if (name === '.git') continue
     if (options.excludeDirs?.has(name)) continue
+    if (isSqliteSidecarFile(name)) continue
 
     const sourcePath = join(source, name)
     const targetPath = join(target, name)
     const stat = statSync(sourcePath)
     if (stat.isDirectory()) {
       copyDirectory(sourcePath, targetPath, options)
+      continue
+    }
+    if (stat.isFile() && isSqliteDatabaseFile(name)) {
+      copySqliteSnapshot(sourcePath, targetPath)
       continue
     }
     if (stat.isFile()) copyFileSync(sourcePath, targetPath)
@@ -157,9 +184,37 @@ function readJsonIfExists(path) {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
+function readSqliteVoteSummary(dataDir) {
+  const dbPath = join(dataDir, 'votes', 'vote-store.sqlite')
+  if (!existsSync(dbPath)) return null
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true })
+  try {
+    db.pragma('busy_timeout = 5000')
+    const voteEventColumns = new Set(db.prepare('PRAGMA table_info(vote_events)').all().map((row) => String(row.name || '')))
+    return {
+      exists: true,
+      mode: 'sqlite',
+      allocationCount: Number(db.prepare('SELECT COUNT(*) AS count FROM vote_allocations').get()?.count || 0),
+      eventCount: Number(db.prepare('SELECT COUNT(*) AS count FROM vote_events').get()?.count || 0),
+      eventHashHead: voteEventColumns.has('event_hash')
+        ? db.prepare(`
+          SELECT event_hash
+          FROM vote_events
+          WHERE event_hash IS NOT NULL
+          ORDER BY rowid DESC
+          LIMIT 1
+        `).get()?.event_hash || null
+        : null,
+    }
+  } finally {
+    db.close()
+  }
+}
+
 function summarizeDataDir(dataDir) {
   const ledger = readJsonIfExists(join(dataDir, 'lucky-draw-ledger.json'))
   const voteState = readJsonIfExists(join(dataDir, 'votes', 'vote-state.json'))
+  const sqliteVotes = readSqliteVoteSummary(dataDir)
   return {
     dataDir: basename(dataDir),
     ledger: ledger
@@ -173,15 +228,49 @@ function summarizeDataDir(dataDir) {
           totalFinalTickets: ledger.totalFinalTickets,
         }
       : { exists: false },
-    votes: voteState
+    votes: sqliteVotes || (voteState
       ? {
           exists: true,
+          mode: 'json-snapshot',
           generatedAt: voteState.generatedAt,
           updatedAt: voteState.updatedAt,
           allocationCount: Array.isArray(voteState.allocations) ? voteState.allocations.length : 0,
           eventCount: voteState.eventCount || 0,
+          eventHashHead: voteState.eventHashHead || null,
         }
-      : { exists: false },
+      : { exists: false }),
+  }
+}
+
+function sha256File(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
+function listSnapshotFiles(root, relativeDir = '') {
+  const dir = join(root, relativeDir)
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name === '.git') return []
+    if (relativeDir === '' && ['backup-meta.json', 'backup-manifest.json'].includes(entry.name)) return []
+    const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name
+    const absolutePath = join(root, relativePath)
+    if (entry.isDirectory()) return listSnapshotFiles(root, relativePath)
+    if (!entry.isFile()) return []
+    const stat = statSync(absolutePath)
+    return [{
+      path: relativePath,
+      bytes: stat.size,
+      sha256: sha256File(absolutePath),
+    }]
+  })
+}
+
+function buildBackupManifest(worktree, summary) {
+  return {
+    version: 1,
+    generatedAt: Math.floor(Date.now() / 1000),
+    generatedAtIso: new Date().toISOString(),
+    summary,
+    files: listSnapshotFiles(worktree).sort((left, right) => left.path.localeCompare(right.path)),
   }
 }
 
@@ -217,15 +306,25 @@ async function main() {
     await ensureWorktree(args, gitEnv)
     removeWorktreeContents(args.worktree)
     copyDirectory(args.dataDir, args.worktree, { excludeDirs: args.excludeDirs })
+    const manifest = buildBackupManifest(args.worktree, summary)
+    writeFileSync(
+      join(args.worktree, 'backup-manifest.json'),
+      `${stableStringify(manifest)}\n`,
+    )
     writeFileSync(
       join(args.worktree, 'backup-meta.json'),
       `${stableStringify({
         backedUpAt: Math.floor(Date.now() / 1000),
+        backedUpAtIso: new Date().toISOString(),
         source: basename(args.dataDir),
         repo: args.repoUrl,
         branch: args.branch,
         excludedDirectories: Array.from(args.excludeDirs).sort(),
         summary,
+        manifest: {
+          fileCount: manifest.files.length,
+          voteEventHashHead: summary.votes?.eventHashHead || null,
+        },
       })}\n`,
     )
 

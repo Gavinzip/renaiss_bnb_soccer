@@ -14,6 +14,7 @@ import {
   createWalletChallenge,
 } from './auth-state.mjs'
 import { appendSetCookie, parseCookies, serializeCookie } from './cookies.mjs'
+import { csrfTokenForSession } from './csrf.mjs'
 import { createEmailConfig, emailSenderConfigured, sendOtpEmail } from './email-sender.mjs'
 import {
   createIdentityResolverConfig,
@@ -202,6 +203,18 @@ function readEnvString(env, names) {
     if (value) return value
   }
   return ''
+}
+
+function envEnabled(value, defaultValue = true) {
+  const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw) return defaultValue
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true
+  return defaultValue
+}
+
+function legacyLoginEnabled(env) {
+  return envEnabled(env.AUTH_LEGACY_LOGIN_ENABLED || env.AUTH_EXTRA_LOGIN_PROVIDERS_ENABLED, false)
 }
 
 function buildProviderConfig(env) {
@@ -477,6 +490,7 @@ export function createAuthContext({ dataDir, env = process.env, userProfileStore
   const providerConfig = buildProviderConfig(env)
   const identityResolverConfig = createIdentityResolverConfig(env)
   const emailConfig = createEmailConfig(env)
+  const legacyProvidersEnabled = legacyLoginEnabled(env)
 
   return {
     authDir,
@@ -490,13 +504,14 @@ export function createAuthContext({ dataDir, env = process.env, userProfileStore
     providerConfig,
     identityResolverConfig,
     emailConfig,
+    legacyProvidersEnabled,
     providers: {
       renaiss: providerConfigured(providerConfig, 'renaiss'),
-      google: providerConfigured(providerConfig, 'google'),
+      google: legacyProvidersEnabled && providerConfigured(providerConfig, 'google'),
       x: providerConfigured(providerConfig, 'x'),
-      discord: providerConfigured(providerConfig, 'discord'),
-      wallet: true,
-      email: emailSenderConfigured(emailConfig),
+      discord: legacyProvidersEnabled && providerConfigured(providerConfig, 'discord'),
+      wallet: legacyProvidersEnabled,
+      email: legacyProvidersEnabled && emailSenderConfigured(emailConfig),
     },
     sessionConfigured: hasSessionSecret(sessionConfig),
     identityResolverConfigured: identityResolverConfigured(identityResolverConfig),
@@ -548,6 +563,7 @@ export async function handleAuthRoute({
       identity: session?.identity || null,
       walletAddress: session?.walletAddress || null,
       resolver: session?.resolver || null,
+      csrfToken: csrfTokenForSession(auth.sessionConfig, session) || null,
       xFollow,
       xAccountEligibility: getXAccountEligibilityStatus(auth, session, request, { xFollowStatus: xFollow }),
       requiresWalletLink: Boolean(session && !session.walletAddress),
@@ -687,6 +703,23 @@ export async function handleAuthRoute({
 
   if (oauthRoute?.action === 'start') {
     const provider = oauthRoute.provider
+    const currentSession = readAuthSession(auth, request)
+    const connectRequested = provider === 'x' && url.searchParams.get('connect') === '1'
+    if (!auth.legacyProvidersEnabled && ['google', 'discord'].includes(provider)) {
+      sendJsonResponse(sendJson, request, response, 404, { error: `${provider} login is disabled. Use Renaiss SSO.` })
+      return true
+    }
+    if (provider === 'x' && !connectRequested) {
+      sendJsonResponse(sendJson, request, response, 404, { error: 'X is only available as a verification connection.' })
+      return true
+    }
+    if (provider === 'x' && !currentSession?.walletAddress) {
+      redirect(response, authErrorRedirectForChallenge(auth.env, { returnTo: url.searchParams.get('return_to') }, 'oauth_failed', {
+        provider,
+        stage: 'wallet_required',
+      }))
+      return true
+    }
     if (!providerConfigured(auth.providerConfig, provider)) {
       sendJsonResponse(sendJson, request, response, 503, { error: `${provider} OAuth is not configured.` })
       return true
@@ -696,8 +729,6 @@ export async function handleAuthRoute({
       return true
     }
 
-    const currentSession = readAuthSession(auth, request)
-    const connectRequested = provider === 'x' && url.searchParams.get('connect') === '1'
     const config = auth.providerConfig[provider]
     const redirectUri = config.redirectUri || createRedirectUri(provider, request, auth.env)
     const { verifier, challenge: codeChallenge } = createPkcePair()
@@ -748,6 +779,10 @@ export async function handleAuthRoute({
 
   if (oauthRoute?.action === 'callback') {
     const provider = oauthRoute.provider
+    if (!auth.legacyProvidersEnabled && ['google', 'discord'].includes(provider)) {
+      redirect(response, authErrorRedirect(auth.env, 'oauth_failed', { provider, stage: 'provider_disabled' }))
+      return true
+    }
     const stateToken = url.searchParams.get('state') || ''
     const code = url.searchParams.get('code') || ''
     const oauthError = url.searchParams.get('error') || ''
@@ -768,6 +803,12 @@ export async function handleAuthRoute({
       challenge = consumeOauthChallenge(auth.stateConfig, provider, stateToken)
       failureStage = 'state_lookup'
       if (!challenge) throw new Error('OAuth state expired.')
+      if (provider === 'x' && !challenge.connectSessionId) {
+        failureStage = 'x_connect_required'
+        throw Object.assign(new Error('X is only available as a verification connection.'), {
+          code: 'x_connect_required',
+        })
+      }
       failureStage = 'token_exchange'
       let token = null
       let identity = null
@@ -824,6 +865,13 @@ export async function handleAuthRoute({
         code: error?.code || '',
       }))
     }
+    return true
+  }
+
+  const isLegacyAuthRoute = routePathname.startsWith('/api/auth/wallet/')
+    || routePathname.startsWith('/api/auth/email/')
+  if (isLegacyAuthRoute && !auth.legacyProvidersEnabled) {
+    sendJsonResponse(sendJson, request, response, 404, { error: 'This login method is disabled. Use Renaiss SSO.' })
     return true
   }
 

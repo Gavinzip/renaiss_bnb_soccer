@@ -108,12 +108,9 @@ Production builds read the server APIs by default:
 - `POST /api/votes`
 - `/api/draw-winners`
 - `/api/auth/me`
-- `/api/auth/google/start`
-- `/api/auth/x/start`
+- `/api/auth/renaiss/start`
+- `/api/auth/x/start?connect=1`
 - `/api/auth/x-account-eligibility/verify`
-- `/api/auth/discord/start`
-- `/api/auth/wallet/nonce`
-- `/api/auth/email/start`
 
 Local dev still uses the mock vote preview unless `VITE_VOTE_PREVIEW_URL` and `VITE_VOTE_SUBMIT_URL` are set. The winner reveal page reads `VITE_DRAW_WINNERS_URL` when configured. Plain `npm run dev` reads `public/mock-api/draw-winners.json` so the reveal animation can show local-only grouped winners; set `VITE_DRAW_WINNERS_URL=/api/draw-winners` with `npm run local:server` when testing the local API snapshot instead.
 
@@ -127,7 +124,8 @@ npm start
 ```
 
 Zeabur should build this repository with the checked-in `Dockerfile`, then run `npm start`.
-The server exposes `/health`; use it to confirm `ledgerExists`, `bscscanApiKeyConfigured`,
+The server exposes public `/healthz` for liveness. Private diagnostics live at `/health`
+and require `Authorization: Bearer $HEALTH_ADMIN_TOKEN`; use that to confirm `ledgerExists`, `bscscanApiKeyConfigured`,
 `refreshMinutes`, `ledger.totalFinalTickets`, `ledger.ageSeconds`, `lastRefresh.durationSeconds`,
 `refreshHistory`, `lastRestore`, and `restoreHistory`. A live API route returns JSON; if these routes return `index.html`, the
 service is still running the static frontend image.
@@ -188,6 +186,9 @@ AUTH_SESSION_SECRET=<at least 32 random characters>
 LOGIN_AUDIT_HASH_SECRET=<at least 32 random characters>
 AUTH_REQUIRE_SESSION_FOR_VOTES=1
 AUTH_COOKIE_SECURE=1
+HEALTH_ADMIN_TOKEN=<private health diagnostics token>
+HTTP_RATE_LIMIT_ENABLED=1
+AUTH_LEGACY_LOGIN_ENABLED=0
 AUTH_SUCCESS_REDIRECT_PATH=/?auth=success
 AUTH_ERROR_REDIRECT_PATH=/?auth=error
 PUBLIC_APP_ORIGIN=https://renaiss-worldcup.zeabur.app
@@ -196,9 +197,6 @@ RENAISS_CLIENT_ID=rpk_u2PA7GjyPDT1c-h81KhRhI2j
 RENAISS_CLIENT_SECRET=...
 RENAISS_REDIRECT_URI=
 RENAISS_SCOPE=openid profile email safe x
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/google/callback
 X_CLIENT_ID=...
 X_CLIENT_SECRET=...
 X_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/x/callback
@@ -210,16 +208,6 @@ FIREFLY_X_ACCOUNT_ELIGIBILITY_REQUIRED=1
 FIREFLY_RENAISS_API_KEY=...
 FIREFLY_X_ACCOUNT_ELIGIBILITY_TTL_SECONDS=86400
 FIREFLY_X_ACCOUNT_ELIGIBILITY_TIMEOUT_MS=8000
-DISCORD_CLIENT_ID=...
-DISCORD_CLIENT_SECRET=...
-DISCORD_REDIRECT_URI=https://renaiss-worldcup.zeabur.app/api/auth/discord/callback
-DISCORD_OAUTH_SCOPE=identify email
-SIWE_DOMAIN=renaiss-worldcup.zeabur.app
-SIWE_CHAIN_ID=56
-IDENTITY_RESOLVER_API_URL=...
-IDENTITY_RESOLVER_API_KEY=...
-RESEND_API_KEY=...
-EMAIL_FROM=Renaiss <login@renaiss.xyz>
 
 LUCKY_DRAW_REFRESH_MINUTES=5
 LUCKY_DRAW_REFRESH_HISTORY_LIMIT=24
@@ -240,11 +228,10 @@ SQLite is configured.
 
 Production vote submission uses the signed auth session wallet when `AUTH_REQUIRE_SESSION_FOR_VOTES=1`; the server
 does not trust a client-supplied `walletAddress` for `POST /api/votes`. Renaiss SSO verifies the OIDC `id_token`
-and resolves `safe_wallet_address` directly into the voting wallet when that claim is present. Google, X, Discord,
-and email logins create identity sessions first, then call `IDENTITY_RESOLVER_API_URL` to map that identity to a
-voting wallet. Wallet login verifies a signed message and can resolve directly to the signing address. If Renaiss
-returns `safe_wallet_address: null`, or if another provider cannot resolve a wallet, the user can be logged in but
-cannot submit votes.
+and resolves `safe_wallet_address` directly into the voting wallet when that claim is present. Google, Discord,
+email, and wallet login routes are disabled by default; set `AUTH_LEGACY_LOGIN_ENABLED=1` only for an intentional
+legacy test. X OAuth remains connect-only for follow verification after a Renaiss wallet session already exists.
+If Renaiss returns `safe_wallet_address: null`, the user can be logged in but cannot submit votes.
 
 Vote access is gated before the Vote room is rendered and again before `POST /api/votes` writes any allocation.
 The required production path is: Renaiss wallet session, wallet-bound Renaiss X identity, verified follow of
@@ -253,7 +240,7 @@ The required production path is: Renaiss wallet session, wallet-bound Renaiss X 
 client never supplies `x_account_id`. If the Firefly API is unconfigured or unavailable, production voting is blocked
 instead of falling back to a permissive state.
 
-Successful login flows enqueue a SQLite profile write and a `user_login_audits`
+Successful Renaiss and X-connect flows enqueue a SQLite profile write and a `user_login_audits`
 row in `SOCCER_PROFILE_DB_PATH`. The audit table stores the wallet, provider,
 Twitter username when supplied by the identity payload, hashed IP/User-Agent,
 public IP prefix, and deployment-provided geo headers such as Vercel or

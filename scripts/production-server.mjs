@@ -31,6 +31,14 @@ import { readMatchResultsSnapshot, summarizeMatchResults } from './soccer-match-
 import { readVotePreview, readVoteState, submitVote } from './soccer-vote-store.mjs'
 import { createSqliteVoteStore } from './soccer-vote-store-sqlite.mjs'
 import { loadLocalEnvFiles } from './env-loader.mjs'
+import {
+  appendVary,
+  corsHeadersForRequest,
+  isAllowedRequestOrigin,
+  requestHasBearerToken,
+} from './http-security.mjs'
+import { verifyCsrfRequest } from './auth/csrf.mjs'
+import { createMemoryRateLimiter } from './rate-limit.mjs'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 loadLocalEnvFiles(repoRoot)
@@ -86,6 +94,11 @@ const retries = process.env.LUCKY_DRAW_RETRIES || '8'
 const backoffMs = process.env.LUCKY_DRAW_BACKOFF_MS || '1000'
 const requestBodyLimitBytes = readIntegerEnv('HTTP_JSON_BODY_LIMIT_BYTES', 64 * 1024, 1024)
 const authRequiredForVotes = process.env.AUTH_REQUIRE_SESSION_FOR_VOTES !== '0'
+const healthAdminToken = String(process.env.HEALTH_ADMIN_TOKEN || process.env.ADMIN_HEALTH_TOKEN || '').trim()
+const rateLimitEnabled = process.env.HTTP_RATE_LIMIT_ENABLED !== '0'
+const rateLimiter = createMemoryRateLimiter({
+  maxBuckets: readIntegerEnv('HTTP_RATE_LIMIT_MAX_BUCKETS', 20000, 1000),
+})
 const fifaStandingsCacheSeconds = readIntegerEnv('FIFA_STANDINGS_CACHE_SECONDS', 45, 0)
 const fifaStandingsCacheMs = fifaStandingsCacheSeconds * 1000
 let fifaStandingsCache = null
@@ -211,16 +224,9 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
 
   applyDefaultEnv('PUBLIC_APP_ORIGIN', localOrigin, { replace: [serverOrigin] })
   applyDefaultEnv('AUTH_PUBLIC_ORIGIN', localOrigin, { replace: [serverOrigin] })
-  applyDefaultEnv('GOOGLE_REDIRECT_URI', `${localOrigin}/api/auth/google/callback`, {
-    replace: [`${serverOrigin}/api/auth/google/callback`],
-  })
-  applyDefaultEnv('DISCORD_REDIRECT_URI', `${localOrigin}/api/auth/discord/callback`, {
-    replace: [`${serverOrigin}/api/auth/discord/callback`],
-  })
   applyDefaultEnv('X_REDIRECT_URI', `${localOrigin}/api/auth/x/callback`, {
     replace: [`${serverOrigin}/api/auth/x/callback`],
   })
-  applyDefaultEnv('SIWE_DOMAIN', new URL(localOrigin).host, { replace: ['renaiss-worldcup.zeabur.app'] })
   applyDefaultEnv('AUTH_COOKIE_SECURE', '0', { replace: ['1'] })
   applyDefaultEnv('AUTH_REQUIRE_SESSION_FOR_VOTES', '0', { replace: ['1'] })
   applyDefaultEnv('X_FOLLOW_GATE_REQUIRED', '0', { replace: ['1'] })
@@ -290,6 +296,292 @@ function readIntegerEnv(name, fallback, min = 0) {
   const parsed = Number(raw)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.floor(parsed))
+}
+
+function clientIp(request) {
+  return String(
+    request.headers['cf-connecting-ip']
+      || request.headers['x-real-ip']
+      || String(request.headers['x-forwarded-for'] || '').split(',')[0]
+      || request.socket?.remoteAddress
+      || 'unknown',
+  ).trim() || 'unknown'
+}
+
+function minuteWindow(minutes = 1) {
+  return Math.max(1, minutes) * 60 * 1000
+}
+
+function hourWindow(hours = 1) {
+  return Math.max(1, hours) * 60 * 60 * 1000
+}
+
+function dayWindow(days = 1) {
+  return Math.max(1, days) * 24 * 60 * 60 * 1000
+}
+
+function sendSecurityError(request, response, status, payload, headers = {}) {
+  sendJson(
+    request,
+    response,
+    status,
+    {
+      ok: false,
+      ...payload,
+    },
+    {
+      'cache-control': 'no-store',
+      ...headers,
+    },
+  )
+}
+
+function enforceUnsafeRequestOrigin(request, response) {
+  if (isAllowedRequestOrigin(request, process.env, { allowMissing: true })) return true
+  sendSecurityError(request, response, 403, {
+    code: 'invalid_origin',
+    error: 'Request origin is not allowed.',
+  })
+  return false
+}
+
+function enforceSessionCsrf(request, response, session) {
+  if (!session) return true
+  if (verifyCsrfRequest(auth.sessionConfig, session, request)) return true
+  sendSecurityError(request, response, 403, {
+    code: 'csrf_required',
+    error: 'A valid CSRF token is required for this action.',
+  })
+  return false
+}
+
+function enforceRateLimit(request, response, rules) {
+  if (!rateLimitEnabled) return true
+  const result = rateLimiter.check(rules)
+  if (result.ok) return true
+
+  sendSecurityError(
+    request,
+    response,
+    429,
+    {
+      code: 'rate_limited',
+      error: 'Too many requests. Try again later.',
+      retryAfterSeconds: result.retryAfterSeconds,
+      policy: result.policy,
+    },
+    {
+      'retry-after': String(result.retryAfterSeconds),
+    },
+  )
+  return false
+}
+
+function authStartRateLimitRules(request, provider) {
+  const ip = clientIp(request)
+  const providerKey = `${provider}:${ip}`
+  return [
+    {
+      scope: 'auth_start_ip_minute',
+      key: providerKey,
+      limit: readIntegerEnv('AUTH_START_RATE_LIMIT_PER_MINUTE', 10, 1),
+      windowMs: minuteWindow(1),
+    },
+    {
+      scope: 'auth_start_ip_hour',
+      key: providerKey,
+      limit: readIntegerEnv('AUTH_START_RATE_LIMIT_PER_HOUR', 60, 1),
+      windowMs: hourWindow(1),
+    },
+  ]
+}
+
+function voteRateLimitRules(request, session) {
+  const ip = clientIp(request)
+  const wallet = session?.walletAddress || 'wallet-missing'
+  return [
+    {
+      scope: 'vote_submit_wallet_minute',
+      key: wallet,
+      limit: readIntegerEnv('VOTE_RATE_LIMIT_PER_WALLET_PER_MINUTE', 10, 1),
+      windowMs: minuteWindow(1),
+    },
+    {
+      scope: 'vote_submit_wallet_hour',
+      key: wallet,
+      limit: readIntegerEnv('VOTE_RATE_LIMIT_PER_WALLET_PER_HOUR', 120, 1),
+      windowMs: hourWindow(1),
+    },
+    {
+      scope: 'vote_submit_ip_minute',
+      key: ip,
+      limit: readIntegerEnv('VOTE_RATE_LIMIT_PER_IP_PER_MINUTE', 30, 1),
+      windowMs: minuteWindow(1),
+    },
+  ]
+}
+
+function xFollowVerifyRateLimitRules(request, session, status) {
+  const ip = clientIp(request)
+  const wallet = session?.walletAddress || status?.walletAddress || 'wallet-missing'
+  const subject = `${wallet}:x:${status?.xUserId || 'x-missing'}`
+  return [
+    {
+      scope: 'x_follow_verify_subject_10m',
+      key: subject,
+      limit: readIntegerEnv('X_FOLLOW_VERIFY_RATE_LIMIT_PER_SUBJECT_10M', 3, 1),
+      windowMs: minuteWindow(10),
+    },
+    {
+      scope: 'x_follow_verify_wallet_hour',
+      key: wallet,
+      limit: readIntegerEnv('X_FOLLOW_VERIFY_RATE_LIMIT_PER_WALLET_HOUR', 10, 1),
+      windowMs: hourWindow(1),
+    },
+    {
+      scope: 'x_follow_verify_ip_hour',
+      key: ip,
+      limit: readIntegerEnv('X_FOLLOW_VERIFY_RATE_LIMIT_PER_IP_HOUR', 30, 1),
+      windowMs: hourWindow(1),
+    },
+  ]
+}
+
+function xEligibilityRateLimitRules(request, session, status) {
+  const ip = clientIp(request)
+  const wallet = session?.walletAddress || status?.walletAddress || 'wallet-missing'
+  const subject = `${wallet}:x:${status?.xUserId || 'x-missing'}`
+  return [
+    {
+      scope: 'x_eligibility_verify_subject_10m',
+      key: subject,
+      limit: readIntegerEnv('X_ELIGIBILITY_VERIFY_RATE_LIMIT_PER_SUBJECT_10M', 3, 1),
+      windowMs: minuteWindow(10),
+    },
+    {
+      scope: 'x_eligibility_verify_subject_day',
+      key: subject,
+      limit: readIntegerEnv('X_ELIGIBILITY_VERIFY_RATE_LIMIT_PER_SUBJECT_DAY', 10, 1),
+      windowMs: dayWindow(1),
+    },
+    {
+      scope: 'x_eligibility_verify_global_minute',
+      key: 'global',
+      limit: readIntegerEnv('X_ELIGIBILITY_VERIFY_RATE_LIMIT_GLOBAL_PER_MINUTE', 60, 1),
+      windowMs: minuteWindow(1),
+    },
+    {
+      scope: 'x_eligibility_verify_ip_hour',
+      key: ip,
+      limit: readIntegerEnv('X_ELIGIBILITY_VERIFY_RATE_LIMIT_PER_IP_HOUR', 30, 1),
+      windowMs: hourWindow(1),
+    },
+  ]
+}
+
+function protectAuthRequest(request, response, url) {
+  const routePathname = url.pathname === '/auth/callback' ? '/api/auth/renaiss/callback' : url.pathname
+  const oauthStart = /^\/api\/auth\/([^/]+)\/start$/.exec(routePathname)
+  if (oauthStart && request.method === 'GET') {
+    if (!enforceRateLimit(request, response, authStartRateLimitRules(request, oauthStart[1]))) return false
+  }
+
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method || '')) return true
+  if (!routePathname.startsWith('/api/auth/')) return true
+  if (!enforceUnsafeRequestOrigin(request, response)) return false
+
+  const session = readAuthSession(auth, request)
+  if (!enforceSessionCsrf(request, response, session)) return false
+
+  if (routePathname === '/api/auth/x-follow/verify') {
+    const status = getXFollowStatus(auth, session, request)
+    return enforceRateLimit(request, response, xFollowVerifyRateLimitRules(request, session, status))
+  }
+
+  if (routePathname === '/api/auth/x-account-eligibility/verify') {
+    const xFollowStatus = getXFollowStatus(auth, session, request)
+    const status = getXAccountEligibilityStatus(auth, session, request, { xFollowStatus })
+    return enforceRateLimit(request, response, xEligibilityRateLimitRules(request, session, status))
+  }
+
+  return true
+}
+
+function publicHealthPayload() {
+  return {
+    ok: true,
+    runtimeTarget,
+    service: 'renaiss-worldcup',
+    checkedAt: new Date().toISOString(),
+  }
+}
+
+function privateHealthPayload() {
+  return {
+    ...publicHealthPayload(),
+    dataDir,
+    cacheDir,
+    ledgerPath,
+    ledgerExists: existsSync(ledgerPath),
+    ledger: readHealthLedgerSnapshot(),
+    snapshotDir,
+    snapshotKeep,
+    votesDir,
+    voteEventsPath,
+    voteStatePath,
+    votePreviewPath,
+    voteStoreMode,
+    voteDbPath: voteStoreMode === 'sqlite' ? voteDbPath : null,
+    voteStateExists: existsSync(voteStatePath),
+    voteStore: voteStore.health(),
+    votes: summarizeVoteState(voteStore.readState()),
+    profileDbPath,
+    userProfiles: userProfileStore.health(),
+    matchResultsPath,
+    matchResults: readHealthMatchResultsSnapshot(),
+    matchDrawLedgerPath,
+    matchDrawLedgerExists: existsSync(matchDrawLedgerPath),
+    drawWinnersPath,
+    drawWinnersExists: existsSync(drawWinnersPath),
+    winnerRevealVideoUrlConfigured: Boolean(winnerRevealVideoUrl),
+    authDir: auth.authDir,
+    auth: {
+      ...getAuthPublicStatus(auth),
+      requiredForVotes: authRequiredForVotes,
+    },
+    refreshEnabled,
+    refreshOnStartup,
+    refreshMinutes,
+    refreshRunning,
+    bscscanApiKeyConfigured: Boolean(process.env.BSCSCAN_API_KEY),
+    lastRefresh,
+    refreshHistory,
+    fifaResultSyncEnabled,
+    fifaResultSyncOnStartup,
+    fifaResultSyncMinutes,
+    fifaResultSyncRunning,
+    fifaSourceMapPath,
+    fifaSourceMapExists: existsSync(fifaSourceMapPath),
+    lastFifaResultSync,
+    fifaResultSyncHistory,
+    backupEnabled,
+    backupRepoUrlConfigured: Boolean(backupRepoUrl),
+    backupTokenConfigured: Boolean(process.env.DATA_BACKUP_GITHUB_TOKEN),
+    backupIntervalMinutes,
+    backupRunning,
+    lastBackup,
+    backupHistory,
+    restoreEnabled,
+    restoreOnStartup,
+    restoreRunning,
+    lastRestore,
+    restoreHistory,
+    security: {
+      healthAdminTokenConfigured: Boolean(healthAdminToken),
+      rateLimitEnabled,
+      rateLimitBucketCount: rateLimiter.size(),
+    },
+  }
 }
 
 function durationSeconds(startedAt, finishedAt) {
@@ -543,6 +835,7 @@ function summarizeVoteState(state) {
     voterCount: voters.size,
     submittedTickets,
     eventCount: readIntegerValue(state?.eventCount),
+    eventHashHead: state?.eventHashHead || null,
     ticketsByRound: Object.fromEntries([...ticketsByRound.entries()].sort(([left], [right]) => left.localeCompare(right))),
     ticketsByMatch: Object.fromEntries([...ticketsByMatch.entries()].sort(([left], [right]) => left.localeCompare(right))),
   }
@@ -639,11 +932,14 @@ function sendFile(request, response, path, headers = {}) {
 
 function sendJson(request, response, status, payload, headers = {}) {
   const compress = acceptsGzip(request)
+  const corsHeaders = corsHeadersForRequest(request, process.env)
+  const vary = appendVary(appendVary('Accept-Encoding', corsHeaders.vary), headers.vary)
+  delete corsHeaders.vary
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    vary: 'Accept-Encoding',
+    ...(vary ? { vary } : {}),
     ...(compress ? { 'content-encoding': 'gzip' } : {}),
-    'access-control-allow-origin': '*',
+    ...corsHeaders,
     ...headers,
   })
 
@@ -1174,11 +1470,20 @@ async function readJsonBody(request) {
   }
 }
 
-function sendOptions(response) {
+function sendOptions(request, response) {
+  if (!isAllowedRequestOrigin(request, process.env, { allowMissing: true })) {
+    sendSecurityError(request, response, 403, {
+      code: 'invalid_origin',
+      error: 'Request origin is not allowed.',
+    })
+    return
+  }
+
+  const corsHeaders = corsHeadersForRequest(request, process.env)
   response.writeHead(204, {
-    'access-control-allow-origin': '*',
+    ...corsHeaders,
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type, x-csrf-token',
     'access-control-max-age': '86400',
   })
   response.end()
@@ -1188,80 +1493,42 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`)
 
   if (request.method === 'OPTIONS') {
-    sendOptions(response)
+    sendOptions(request, response)
+    return
+  }
+
+  if (url.pathname === '/healthz') {
+    sendJson(request, response, 200, publicHealthPayload(), {
+      'cache-control': 'no-store',
+    })
     return
   }
 
   if (url.pathname === '/health') {
+    if (!healthAdminToken || !requestHasBearerToken(request, healthAdminToken)) {
+      sendJson(request, response, healthAdminToken ? 401 : 404, {
+        ok: false,
+        code: healthAdminToken ? 'health_token_required' : 'health_disabled',
+        error: healthAdminToken ? 'Health token is required.' : 'Health diagnostics are not enabled.',
+      }, {
+        'cache-control': 'no-store',
+      })
+      return
+    }
+
     sendJson(
       request,
       response,
       200,
-      {
-        ok: true,
-        runtimeTarget,
-        dataDir,
-        cacheDir,
-        ledgerPath,
-        ledgerExists: existsSync(ledgerPath),
-        ledger: readHealthLedgerSnapshot(),
-        snapshotDir,
-        snapshotKeep,
-        votesDir,
-        voteEventsPath,
-        voteStatePath,
-        votePreviewPath,
-        voteStoreMode,
-        voteDbPath: voteStoreMode === 'sqlite' ? voteDbPath : null,
-        voteStateExists: existsSync(voteStatePath),
-        voteStore: voteStore.health(),
-        votes: summarizeVoteState(voteStore.readState()),
-        profileDbPath,
-        userProfiles: userProfileStore.health(),
-        matchResultsPath,
-        matchResults: readHealthMatchResultsSnapshot(),
-        matchDrawLedgerPath,
-        matchDrawLedgerExists: existsSync(matchDrawLedgerPath),
-        drawWinnersPath,
-        drawWinnersExists: existsSync(drawWinnersPath),
-        winnerRevealVideoUrlConfigured: Boolean(winnerRevealVideoUrl),
-        authDir: auth.authDir,
-        auth: {
-          ...getAuthPublicStatus(auth),
-          requiredForVotes: authRequiredForVotes,
-        },
-        refreshEnabled,
-        refreshOnStartup,
-        refreshMinutes,
-        refreshRunning,
-        bscscanApiKeyConfigured: Boolean(process.env.BSCSCAN_API_KEY),
-        lastRefresh,
-        refreshHistory,
-        fifaResultSyncEnabled,
-        fifaResultSyncOnStartup,
-        fifaResultSyncMinutes,
-        fifaResultSyncRunning,
-        fifaSourceMapPath,
-        fifaSourceMapExists: existsSync(fifaSourceMapPath),
-        lastFifaResultSync,
-        fifaResultSyncHistory,
-        backupEnabled,
-        backupRepoUrlConfigured: Boolean(backupRepoUrl),
-        backupTokenConfigured: Boolean(process.env.DATA_BACKUP_GITHUB_TOKEN),
-        backupIntervalMinutes,
-        backupRunning,
-        lastBackup,
-        backupHistory,
-        restoreEnabled,
-        restoreOnStartup,
-        restoreRunning,
-        lastRestore,
-        restoreHistory,
-      },
+      privateHealthPayload(),
       {
         'cache-control': 'no-store',
       },
     )
+    return
+  }
+
+  if (!protectAuthRequest(request, response, url)) {
     return
   }
 
@@ -1464,8 +1731,12 @@ const server = createServer(async (request, response) => {
     }
 
     try {
-      const body = await readJsonBody(request)
       const session = readAuthSession(auth, request)
+      if (!enforceUnsafeRequestOrigin(request, response)) return
+      if (authRequiredForVotes && !enforceSessionCsrf(request, response, session)) return
+      if (!enforceRateLimit(request, response, voteRateLimitRules(request, session))) return
+
+      const body = await readJsonBody(request)
       voteLogDetails = getVoteSubmitLogDetails(body, session)
       writeVoteSubmitLog('log', 'received', voteLogDetails)
       if (authRequiredForVotes && !session) {

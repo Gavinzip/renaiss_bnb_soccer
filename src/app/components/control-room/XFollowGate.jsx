@@ -73,6 +73,11 @@ function eligibilityCheckState(value) {
   return "pending";
 }
 
+function csrfHeadersForSession(authSession) {
+  const token = String(authSession?.csrfToken || "").trim();
+  return token ? { "x-csrf-token": token } : {};
+}
+
 export function XFollowGate({
   authSession,
   authConfig,
@@ -192,7 +197,10 @@ export function XFollowGate({
       const { payload } = await fetchJsonWithTimeout("/api/auth/x-follow/verify", {
         method: "POST",
         credentials: "same-origin",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...csrfHeadersForSession(authSession),
+        },
         timeoutMs: 15000,
       });
       setLocalStatus(payload);
@@ -221,7 +229,10 @@ export function XFollowGate({
       const { payload } = await fetchJsonWithTimeout("/api/auth/x-account-eligibility/verify", {
         method: "POST",
         credentials: "same-origin",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...csrfHeadersForSession(authSession),
+        },
         timeoutMs: 15000,
       });
       setLocalEligibilityStatus(payload);
@@ -248,7 +259,10 @@ export function XFollowGate({
       const { payload } = await fetchJsonWithTimeout("/api/auth/x-follow/skip", {
         method: "POST",
         credentials: "same-origin",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...csrfHeadersForSession(authSession),
+        },
         timeoutMs: 15000,
       });
       setLocalStatus(payload);

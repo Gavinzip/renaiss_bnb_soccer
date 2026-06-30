@@ -118,6 +118,18 @@ function buildRenaissLoginUrl() {
   return url.origin === window.location.origin ? `${url.pathname}${url.search}` : url.toString();
 }
 
+function csrfHeadersForSession(authSession) {
+  const token = String(authSession?.csrfToken || "").trim();
+  return token ? { "x-csrf-token": token } : {};
+}
+
+function shouldRedirectForAuthError(error) {
+  const code = String(error?.code || error?.payload?.code || "");
+  if (["login_required", "wallet_required", "wallet_unlinked"].includes(code)) return true;
+  if (Number(error?.status || 0) === 401) return true;
+  return /Login is required|not linked to a voting wallet/i.test(error?.message || "");
+}
+
 function createEmptyLedgerEntry(walletAddress) {
   const userAddress = normalizeWalletAddress(walletAddress);
   return {
@@ -1076,7 +1088,10 @@ function AppContent() {
       try {
         const { payload } = await fetchJsonWithTimeout(voteSubmitUrl, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...csrfHeadersForSession(authSession),
+          },
           credentials: "same-origin",
           timeoutMs: VOTE_SUBMIT_TIMEOUT_MS,
           body: JSON.stringify({
@@ -1096,7 +1111,7 @@ function AppContent() {
         const issue = t("data.submitVoteIssue", { message: error.message });
         setPendingVoteIssue(issue);
         setPreviewVoteIssue(issue);
-        if (/login|required|linked/i.test(error.message)) redirectToRenaissLogin();
+        if (shouldRedirectForAuthError(error)) redirectToRenaissLogin();
         setVoteSubmitting(false);
         return;
       }

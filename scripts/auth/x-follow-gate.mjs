@@ -6,7 +6,7 @@ import { readJsonFile, writeJsonFileAtomic } from './json-store.mjs'
 import { readOAuthToken, saveOAuthToken } from './oauth-token-store.mjs'
 
 const DEFAULT_TARGET_HANDLE = 'thefireflyapp'
-const DEFAULT_RETRY_SECONDS = 10
+const DEFAULT_RETRY_SECONDS = 60
 const SKIP_COOKIE = 'renaiss_x_follow_skip'
 const SKIP_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const RETRY_GATED_STATUSES = new Set(['rate_limited', 'api_error', 'retry_later'])
@@ -540,13 +540,16 @@ export function createXFollowGateConfig({ authDir, env = process.env }) {
   const retrySeconds = Math.max(10, Math.floor(Number(env.X_FOLLOW_VERIFY_RETRY_SECONDS || DEFAULT_RETRY_SECONDS) || DEFAULT_RETRY_SECONDS))
   const skipRequested = envFlag(env.X_FOLLOW_SKIP_ENABLED || env.X_FOLLOW_GATE_SKIP_ENABLED)
   const skipAllowed = isLocalRuntime(env)
+  const requiredRequested = envEnabled(env.X_FOLLOW_GATE_REQUIRED ?? env.X_FOLLOW_REQUIRED, true)
+  const allowProductionDisable = envFlag(env.X_FOLLOW_GATE_ALLOW_PRODUCTION_DISABLE)
+  const required = skipAllowed || allowProductionDisable ? requiredRequested : true
 
   return {
     path: join(authDir, 'x-follow-verifications.json'),
     targetHandle,
     targetUrl: `https://x.com/${targetHandle}`,
     retrySeconds,
-    required: envEnabled(env.X_FOLLOW_GATE_REQUIRED ?? env.X_FOLLOW_REQUIRED, true),
+    required,
     skipEnabled: skipRequested && skipAllowed,
     skipCookieName: SKIP_COOKIE,
     sessionSecret: String(env.AUTH_SESSION_SECRET || env.SESSION_SECRET || ''),
