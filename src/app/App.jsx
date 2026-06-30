@@ -246,7 +246,7 @@ function voteAllocationMergeKey(allocation) {
   ].join(":");
 }
 
-function buildLiveVoteTotalsByMatchTeam(...sources) {
+function buildLiveVoteStats(...sources) {
   const allocationsByKey = new Map();
 
   sources.forEach((source) => {
@@ -257,13 +257,23 @@ function buildLiveVoteTotalsByMatchTeam(...sources) {
     });
   });
 
-  const totals = new Map();
+  const totalsByMatchTeam = new Map();
+  const walletsByMatch = new Map();
   allocationsByKey.forEach((allocation) => {
     const key = `${allocation.matchId}:${allocation.teamId}`;
-    totals.set(key, (totals.get(key) ?? 0) + allocation.tickets);
+    totalsByMatchTeam.set(key, (totalsByMatchTeam.get(key) ?? 0) + allocation.tickets);
+    const walletAddress = String(allocation.walletAddress || "").toLowerCase();
+    if (walletAddress) {
+      const wallets = walletsByMatch.get(allocation.matchId) ?? new Set();
+      wallets.add(walletAddress);
+      walletsByMatch.set(allocation.matchId, wallets);
+    }
   });
 
-  return totals;
+  return {
+    totalsByMatchTeam,
+    voterCountsByMatch: new Map([...walletsByMatch].map(([matchId, wallets]) => [matchId, wallets.size])),
+  };
 }
 
 function AppContent() {
@@ -727,8 +737,8 @@ function AppContent() {
   }, [liveRound32MatchesUrl, simulationMode, t]);
 
   const staticTeamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), []);
-  const liveVoteTotalsByMatchTeam = useMemo(
-    () => buildLiveVoteTotalsByMatchTeam(globalPreviewVoteData, previewVoteData),
+  const liveVoteStats = useMemo(
+    () => buildLiveVoteStats(globalPreviewVoteData, previewVoteData),
     [globalPreviewVoteData, previewVoteData],
   );
   const realtimeRound32Preview = useMemo(
@@ -737,9 +747,10 @@ function AppContent() {
       teams,
       snapshot: liveQualification,
       fixtures: liveRound32Matches,
-      voteTotalsByMatchTeam: liveVoteTotalsByMatchTeam,
+      voteTotalsByMatchTeam: liveVoteStats.totalsByMatchTeam,
+      voterCountsByMatch: liveVoteStats.voterCountsByMatch,
     }),
-    [liveQualification, liveRound32Matches, liveVoteTotalsByMatchTeam],
+    [liveQualification, liveRound32Matches, liveVoteStats],
   );
   const sourceMatches = simulationMode === "realtime" ? realtimeRound32Preview.matches : campaignMatches;
   const matches = useMemo(

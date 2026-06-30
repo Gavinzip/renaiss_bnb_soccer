@@ -518,6 +518,14 @@ function getVoteTotal(voteTotalsByMatchTeam, matchId, teamId) {
   return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
 }
 
+function getVoterCount(voterCountsByMatch, matchId) {
+  const value = typeof voterCountsByMatch?.get === "function"
+    ? voterCountsByMatch.get(matchId)
+    : voterCountsByMatch?.[matchId];
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+}
+
 function normalizeMatchCode(value) {
   return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 }
@@ -560,7 +568,7 @@ function findWinnerTeamId(fixture, homeTeamId, awayTeamId) {
   return null;
 }
 
-export function buildRealtimeRound32Preview({ matches, teams, snapshot, fixtures, voteTotalsByMatchTeam }) {
+export function buildRealtimeRound32Preview({ matches, teams, snapshot, fixtures, voteTotalsByMatchTeam, voterCountsByMatch }) {
   const sourceSnapshot = snapshot?.round32Slots?.length
     ? snapshot
     : createPendingFifaQualificationSnapshot();
@@ -654,6 +662,7 @@ export function buildRealtimeRound32Preview({ matches, teams, snapshot, fixtures
         advancingTeamId,
         awaitingOfficialResult: false,
         poolEntries: 0,
+        voterCount: getVoterCount(voterCountsByMatch, match.id),
         resultSnapshotId: advancingTeamId ? `fifa-r32-${fixture.matchCode.toLowerCase()}` : null,
         realtimePreview: true,
         source: "fifa-calendar-fixture",
@@ -678,6 +687,7 @@ export function buildRealtimeRound32Preview({ matches, teams, snapshot, fixtures
       advancingTeamId: null,
       awaitingOfficialResult: false,
       poolEntries: 0,
+      voterCount: getVoterCount(voterCountsByMatch, match.id),
       resultSnapshotId: null,
       realtimePreview: true,
       source: "fifa-calendar-pending",

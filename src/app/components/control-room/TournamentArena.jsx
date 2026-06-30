@@ -43,10 +43,10 @@ export function preloadTournamentArenaAssets() {
 }
 
 function displayPoolForMatch(match, teamsById) {
-  if (match?.realtimePreview) return 0;
-  if ((match?.poolEntries ?? 0) > 0) return match.poolEntries;
   const teams = match?.teams?.map((teamId) => teamsById.get(teamId)).filter(Boolean) ?? [];
   const voteSignal = teams.reduce((total, team) => total + (team.votes ?? 0), 0);
+  if (match?.realtimePreview) return voteSignal;
+  if ((match?.poolEntries ?? 0) > 0) return match.poolEntries;
   return Math.max(4200, Math.round(voteSignal * 0.082));
 }
 
@@ -666,9 +666,11 @@ function ArenaDetailPanel({
   const teamShare = totalVotes > 0 ? Math.round((teamVotes / totalVotes) * 100) : 0;
   const opponentShare = totalVotes > 0 ? 100 - teamShare : 0;
   const isRealtimePreview = Boolean(detailMatch.realtimePreview || detailTeam.liveQualification || opponentTeam.liveQualification);
-  const hasVoteShare = !isRealtimePreview && totalVotes > 0;
+  const hasVoteShare = totalVotes > 0;
   const sharePosition = hasVoteShare ? teamShare : 50;
-  const simulatedVoters = isRealtimePreview ? 0 : Math.max(4, Math.round(displayPool / 45));
+  const matchVoterCount = Math.max(0, Math.floor(Number(detailMatch.voterCount) || 0));
+  const displayedVoters = matchVoterCount || (isRealtimePreview ? 0 : Math.max(4, Math.round(displayPool / 45)));
+  const displayedTotalVotes = Math.max(displayPool, allocation?.tickets ?? 0, totalVotes);
   const detailTitle = t("schedule.teamVoteDetails");
   const detailStatus = detailMatch.awaitingOfficialResult
     ? t("vote.phasePendingResult")
@@ -701,11 +703,11 @@ function ArenaDetailPanel({
       <dl>
         <div>
           <dt>{t("schedule.totalVotes")}</dt>
-          <dd>{formatNumber(isRealtimePreview ? 0 : Math.max(displayPool, allocation?.tickets ?? 0))}</dd>
+          <dd>{formatNumber(displayedTotalVotes)}</dd>
         </div>
         <div>
           <dt>{t("schedule.independentVoters")}</dt>
-          <dd>{formatNumber(simulatedVoters)}</dd>
+          <dd>{formatNumber(displayedVoters)}</dd>
         </div>
       </dl>
       <section
