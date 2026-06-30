@@ -321,6 +321,9 @@ export function XFollowGate({
         onFinalStepCompleted={handleVerifyEligibility}
         backButtonText={stepLabels.back}
         nextButtonText={stepLabels.next}
+        footerContent={activeStep === 3 ? (
+          <p className="x-follow-gate__eligibility-note">{t("xFollowGate.eligibilityCheckPredictBetNote")}</p>
+        ) : null}
         disableStepIndicators
         stepContainerClassName="x-follow-gate__step-tabs"
         contentClassName="x-follow-gate__step-content"

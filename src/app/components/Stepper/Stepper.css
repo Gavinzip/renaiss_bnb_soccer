@@ -68,9 +68,15 @@
 
 .rb-stepper__footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 10px;
   padding-top: 2px;
+}
+
+.rb-stepper__footer-content {
+  min-width: 0;
+  margin-right: auto;
 }
 
 .rb-stepper__footer button {
@@ -130,6 +136,10 @@
   .rb-stepper__footer {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .rb-stepper__footer-content {
+    margin-right: 0;
   }
 
   .rb-stepper__footer button {

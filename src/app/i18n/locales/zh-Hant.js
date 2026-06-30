@@ -157,9 +157,10 @@ export const zhHantLocale = {
       "connectX": "連接 X",
       "continue": "繼續",
       "eyebrow": "投票資格",
-      "eligibilityBody": "系統會使用你上一步已驗證的 X 身份向 Firefly 查詢資格狀態。請先在 Firefly 完成以下兩項要求，再回來按「驗證資格」。",
+      "eligibilityBody": "使用你上一步已驗證的 X 身份向 Firefly 查詢資格狀態。請先在 Firefly 完成以下兩項要求，再回來按「驗證資格」。",
       "eligibilityCheckFireflyAccount": "Firefly 帳號連結",
       "eligibilityCheckPredictBet": "入金及完成一次 Prediction",
+      "eligibilityCheckPredictBetNote": "你需要將 EVM Wallet 的資金轉移到 Prediction Wallet 後，\n才可以進行 Prediction。",
       "eligibilityCheckState": {
         "fail": "未完成",
         "pass": "已完成",

@@ -15,6 +15,7 @@ export default function Stepper({
   stepContainerClassName = "",
   contentClassName = "",
   footerClassName = "",
+  footerContent = null,
   backButtonProps = {},
   nextButtonProps = {},
   backButtonText = "Back",
@@ -98,6 +99,7 @@ export default function Stepper({
       </div>
 
       <footer className={["rb-stepper__footer", footerClassName].filter(Boolean).join(" ")}>
+        {footerContent ? <div className="rb-stepper__footer-content">{footerContent}</div> : null}
         <button
           type="button"
           {...backButtonProps}

@@ -157,9 +157,10 @@ export const koLocale = {
       "connectX": "X 연결",
       "continue": "계속",
       "eyebrow": "투표 자격",
-      "eligibilityBody": "시스템은 이전 단계에서 인증된 X 신원으로 Firefly 자격 상태를 조회합니다. 먼저 Firefly에서 아래 두 가지 요구 사항을 완료한 뒤 돌아와 자격 인증을 누르세요.",
+      "eligibilityBody": "이전 단계에서 인증된 X 신원으로 Firefly 자격 상태를 조회합니다. 먼저 Firefly에서 아래 두 가지 요구 사항을 완료한 뒤 돌아와 자격 인증을 누르세요.",
       "eligibilityCheckFireflyAccount": "Firefly 계정 연결",
       "eligibilityCheckPredictBet": "입금 및 Prediction 1회 완료",
+      "eligibilityCheckPredictBetNote": "Prediction을 진행하려면 먼저 EVM Wallet의 자금을\nPrediction Wallet으로 옮겨야 합니다.",
       "eligibilityCheckState": {
         "fail": "미완료",
         "pass": "완료",

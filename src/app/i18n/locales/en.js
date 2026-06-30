@@ -157,9 +157,10 @@ export const enLocale = {
       "connectX": "Connect X",
       "continue": "Continue",
       "eyebrow": "Vote eligibility",
-      "eligibilityBody": "The system uses the X identity verified in the previous step to check Firefly eligibility. Complete the two Firefly requirements below, then return and press Verify eligibility.",
+      "eligibilityBody": "Use the X identity verified in the previous step to check Firefly eligibility. Complete the two Firefly requirements below, then return and press Verify eligibility.",
       "eligibilityCheckFireflyAccount": "Firefly account linked",
       "eligibilityCheckPredictBet": "Deposit and complete one Prediction",
+      "eligibilityCheckPredictBetNote": "Transfer funds from your EVM Wallet to your Prediction Wallet\nbefore making a Prediction.",
       "eligibilityCheckState": {
         "fail": "Missing",
         "pass": "Complete",
