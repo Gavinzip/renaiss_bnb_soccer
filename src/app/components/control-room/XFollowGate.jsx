@@ -10,7 +10,6 @@ const RETRY_GATED_STATUSES = new Set(["rate_limited", "api_error", "retry_later"
 const RENAISS_OFFICIAL_URL = "https://www.renaiss.xyz/";
 const FIREFLY_ELIGIBILITY_LINKS = {
   firefly: "https://firefly.social/signup?step=login_social_platform",
-  overall: "https://firefly.social/settings/wallets",
   predict: "https://firefly.social/prediction/category/fifwc",
 };
 
@@ -147,12 +146,6 @@ export function XFollowGate({
       label: t("xFollowGate.eligibilityCheckFireflyAccount"),
       href: FIREFLY_ELIGIBILITY_LINKS.firefly,
       state: eligibilityCheckState(eligibility.hasFireflyAccount),
-    },
-    {
-      id: "overall",
-      label: t("xFollowGate.eligibilityCheckOverall"),
-      href: FIREFLY_ELIGIBILITY_LINKS.overall,
-      state: eligibilityCheckState(eligibility.eligible),
     },
     {
       id: "predict",
