@@ -68,9 +68,10 @@ function eligibilityStatusMessageKey(status) {
 function initialStepForSession(authSession) {
   const xFollow = authSession?.xFollow || {};
   if (xFollow.bypassed && xFollow.gatePassed) return 3;
-  if (!authSession?.authenticated || !authSession?.walletAddress || !xFollow.xConnected) return 1;
-  if (!xFollow.gatePassed) return 2;
-  return 3;
+  if (!authSession?.authenticated || !authSession?.walletAddress) return 1;
+  if (xFollow.gatePassed) return 3;
+  if (!xFollow.xConnected) return 1;
+  return 2;
 }
 
 function eligibilityCheckState(value) {
@@ -110,6 +111,8 @@ export function XFollowGate({
   const targetHandle = target?.handle || gateConfig.targetHandle || "thefireflyapp";
   const targetUrl = target?.url || gateConfig.targetUrl || `https://x.com/${targetHandle}`;
   const xConnected = Boolean(gate.xConnected);
+  const xFollowPassed = Boolean(gate.gatePassed);
+  const xIdentityReady = xConnected || xFollowPassed;
   const needsRenaissSession = authEndpointReady && (!authSession?.authenticated || !authSession?.walletAddress);
   const identityBlockingStatus = ["wallet_required", "profile_store_missing", "renaiss_twitter_required"].includes(gate.status);
   const identityIssueStatus = ["wallet_required", "profile_store_missing", "renaiss_twitter_required", "twitter_identity_missing", "twitter_identity_mismatch"].includes(gate.status);
@@ -131,7 +134,7 @@ export function XFollowGate({
     return serverSeconds > 0 ? Date.now() + serverSeconds * 1000 : 0;
   }, [gate.lastCheckedAt, gate.retryAfterSeconds, gate.status, gateConfig.retrySeconds]);
   const retryAfterSeconds = retryUntilMs > nowMs ? Math.ceil((retryUntilMs - nowMs) / 1000) : 0;
-  const canContinueToFollow = authEndpointReady && xConnected && !identityIssueStatus && !needsRenaissSession;
+  const canContinueToFollow = authEndpointReady && xIdentityReady && !identityIssueStatus && !needsRenaissSession;
   const canVerify = authEndpointReady && xConnected && xProviderReady && !identityIssueStatus && !verifying && !skipping && retryAfterSeconds <= 0;
   const canContinueToEligibility = authEndpointReady && Boolean(gate.gatePassed);
   const canVerifyEligibility = authEndpointReady && Boolean(gate.gatePassed) && !eligibilityGatePassed && !verifyingEligibility && !verifying && !skipping;
@@ -286,7 +289,7 @@ export function XFollowGate({
   }
 
   function stepComplete(step) {
-    if (step === 1) return Boolean((gate.bypassed && gate.gatePassed) || (authSession?.walletAddress && xConnected && !identityIssueStatus));
+    if (step === 1) return Boolean((gate.bypassed && gate.gatePassed) || (authSession?.walletAddress && xIdentityReady && !identityIssueStatus));
     if (step === 2) return Boolean(gate.gatePassed);
     if (step === 3) return Boolean(eligibilityGatePassed);
     return false;
@@ -349,11 +352,11 @@ export function XFollowGate({
       >
         <Step>
           <section className="x-follow-gate__step">
-            <span className={xConnected && !needsRenaissSession ? "is-complete" : "is-locked"}>
-              {xConnected && !needsRenaissSession ? <CheckCircle2 size={18} /> : <X size={18} />}
+            <span className={xIdentityReady && !needsRenaissSession ? "is-complete" : "is-locked"}>
+              {xIdentityReady && !needsRenaissSession ? <CheckCircle2 size={18} /> : <X size={18} />}
               {needsRenaissSession
                 ? t("xFollowGate.renaissRequired")
-                : xConnected
+                : xIdentityReady
                   ? t("xFollowGate.xConnected", { username: gate.username ? `@${gate.username}` : "X" })
                   : t("xFollowGate.xRequired")}
             </span>

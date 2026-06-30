@@ -200,6 +200,15 @@ function xIdentityFromSession(session) {
   return identity?.provider === 'x' && identity?.providerUserId ? identity : null
 }
 
+function xIdentityFromVerifiedRecord(record) {
+  if (record?.status !== 'verified' || !record?.providerUserId) return null
+  return {
+    provider: 'x',
+    providerUserId: record.providerUserId,
+    username: record.username || null,
+  }
+}
+
 function getSessionXIdentity(auth, session) {
   const token = readOAuthToken(auth.oauthTokenConfig, session, 'x')
   const tokenIdentity = token?.identity || null
@@ -272,6 +281,8 @@ function statusForSession(auth, session, request) {
   const record = rawRecord?.status === 'skipped' && !config.skipEnabled ? null : rawRecord
   const verified = record?.status === 'verified'
   const bypassed = config.skipEnabled && record?.status === 'skipped'
+  const recordIdentity = xIdentityFromVerifiedRecord(record)
+  const effectiveXIdentity = xIdentity || recordIdentity
   const common = {
     target,
     authenticated: true,
@@ -290,7 +301,7 @@ function statusForSession(auth, session, request) {
   }
 
   const walletIdentityCheck = subject?.type === 'wallet'
-    ? checkWalletXIdentity(auth, session, null)
+    ? checkWalletXIdentity(auth, session, effectiveXIdentity)
     : { ok: false, code: 'wallet_required', expectedUsername: null, actualUsername: null }
 
   if (!walletIdentityCheck.ok) {
@@ -298,16 +309,16 @@ function statusForSession(auth, session, request) {
       ...common,
       verified: false,
       gatePassed: false,
-      xConnected: Boolean(xIdentity?.providerUserId),
-      xUserId: xIdentity?.providerUserId || null,
-      username: xIdentity?.username || null,
+      xConnected: Boolean(effectiveXIdentity?.providerUserId),
+      xUserId: effectiveXIdentity?.providerUserId || null,
+      username: effectiveXIdentity?.username || null,
       xIdentityMatch: false,
       expectedTwitterUsername: walletIdentityCheck.expectedUsername || null,
       status: walletIdentityCheck.code,
     }
   }
 
-  if (!xIdentity?.providerUserId) {
+  if (!effectiveXIdentity?.providerUserId) {
     return {
       ...common,
       xConnected: false,
@@ -317,28 +328,13 @@ function statusForSession(auth, session, request) {
     }
   }
 
-  const xIdentityCheck = checkWalletXIdentity(auth, session, xIdentity)
-  if (!xIdentityCheck.ok) {
-    return {
-      ...common,
-      verified: false,
-      gatePassed: false,
-      xConnected: true,
-      xUserId: xIdentity.providerUserId,
-      username: xIdentity.username || null,
-      xIdentityMatch: false,
-      expectedTwitterUsername: xIdentityCheck.expectedUsername || null,
-      status: xIdentityCheck.code,
-    }
-  }
-
   return {
     ...common,
     xConnected: true,
-    xUserId: xIdentity.providerUserId,
-    username: xIdentity.username || null,
+    xUserId: effectiveXIdentity.providerUserId,
+    username: effectiveXIdentity.username || null,
     xIdentityMatch: true,
-    expectedTwitterUsername: xIdentityCheck.expectedUsername || null,
+    expectedTwitterUsername: walletIdentityCheck.expectedUsername || null,
     status: common.status || 'unverified',
   }
 }
