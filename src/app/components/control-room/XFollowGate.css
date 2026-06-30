@@ -145,6 +145,19 @@
   line-height: 1.52;
 }
 
+.x-follow-gate__inline-link {
+  color: #f0d18b;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.x-follow-gate__inline-link:hover,
+.x-follow-gate__inline-link:focus-visible {
+  color: #fff2ca;
+}
+
 .x-follow-gate__step-tabs {
   margin-top: 0;
 }
@@ -426,12 +439,34 @@
   color: rgba(245, 246, 241, 0.72);
 }
 
-.x-follow-gate__eligibility-checks li > span:not(.x-follow-gate__eligibility-icon) {
+.x-follow-gate__eligibility-checks li > span:not(.x-follow-gate__eligibility-icon),
+.x-follow-gate__eligibility-link {
   min-width: 0;
   overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 760;
   line-height: 1.35;
+}
+
+.x-follow-gate__eligibility-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(245, 246, 241, 0.76);
+  text-decoration: none;
+}
+
+.x-follow-gate__eligibility-link svg {
+  flex: 0 0 auto;
+  color: rgba(240, 209, 139, 0.78);
+}
+
+.x-follow-gate__eligibility-link:hover,
+.x-follow-gate__eligibility-link:focus-visible {
+  color: #fff2ca;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .x-follow-gate__eligibility-checks strong {

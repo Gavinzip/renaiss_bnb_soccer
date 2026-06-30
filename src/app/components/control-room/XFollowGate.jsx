@@ -7,6 +7,12 @@ import { fetchJsonWithTimeout } from "../../utils/httpClient";
 import "./XFollowGate.css";
 
 const RETRY_GATED_STATUSES = new Set(["rate_limited", "api_error", "retry_later"]);
+const RENAISS_OFFICIAL_URL = "https://www.renaiss.xyz/";
+const FIREFLY_ELIGIBILITY_LINKS = {
+  firefly: "https://firefly.social/signup?step=login_social_platform",
+  overall: "https://firefly.social/settings/wallets",
+  predict: "https://firefly.social/prediction/category/fifwc",
+};
 
 function xLoginHref() {
   let returnTo = "/?view=vote&auth=success&xgate=1";
@@ -62,6 +68,7 @@ function eligibilityStatusMessageKey(status) {
 
 function initialStepForSession(authSession) {
   const xFollow = authSession?.xFollow || {};
+  if (xFollow.bypassed && xFollow.gatePassed) return 3;
   if (!authSession?.authenticated || !authSession?.walletAddress || !xFollow.xConnected) return 1;
   if (!xFollow.gatePassed) return 2;
   return 3;
@@ -136,24 +143,31 @@ export function XFollowGate({
     : t(eligibilityStatusMessageKey(eligibility.status));
   const eligibilityChecks = [
     {
-      id: "overall",
-      label: t("xFollowGate.eligibilityCheckOverall"),
-      state: eligibilityCheckState(eligibility.eligible),
-    },
-    {
       id: "firefly",
       label: t("xFollowGate.eligibilityCheckFireflyAccount"),
+      href: FIREFLY_ELIGIBILITY_LINKS.firefly,
       state: eligibilityCheckState(eligibility.hasFireflyAccount),
+    },
+    {
+      id: "overall",
+      label: t("xFollowGate.eligibilityCheckOverall"),
+      href: FIREFLY_ELIGIBILITY_LINKS.overall,
+      state: eligibilityCheckState(eligibility.eligible),
     },
     {
       id: "predict",
       label: t("xFollowGate.eligibilityCheckPredictBet"),
+      href: FIREFLY_ELIGIBILITY_LINKS.predict,
       state: eligibilityCheckState(eligibility.hasPlacedBet),
     },
   ];
 
   useEffect(() => {
-    setLocalStatus(authSession?.xFollow || null);
+    setLocalStatus((current) => (
+      current?.bypassed && current?.gatePassed
+        ? current
+        : authSession?.xFollow || null
+    ));
     setLocalEligibilityStatus(authSession?.xAccountEligibility || null);
     setActiveStep(initialStepForSession(authSession));
   }, [authSession?.authenticated, authSession?.walletAddress, authSession?.xFollow, authSession?.xAccountEligibility]);
@@ -267,6 +281,8 @@ export function XFollowGate({
       });
       setLocalStatus(payload);
       await onRefreshAuth?.();
+      setLocalStatus(payload);
+      if (payload?.gatePassed) setActiveStep(3);
     } catch (error) {
       if (error?.payload?.status) setLocalStatus(error.payload.status || localStatus);
       const key = statusMessageKey(error?.code);
@@ -277,7 +293,7 @@ export function XFollowGate({
   }
 
   function stepComplete(step) {
-    if (step === 1) return Boolean(authSession?.walletAddress && xConnected && !identityIssueStatus);
+    if (step === 1) return Boolean((gate.bypassed && gate.gatePassed) || (authSession?.walletAddress && xConnected && !identityIssueStatus));
     if (step === 2) return Boolean(gate.gatePassed);
     if (step === 3) return Boolean(eligibilityGatePassed);
     return false;
@@ -349,7 +365,22 @@ export function XFollowGate({
                   : t("xFollowGate.xRequired")}
             </span>
             <h2>{t("xFollowGate.connectTitle")}</h2>
-            <p>{needsRenaissSession ? t("xFollowGate.renaissBody") : t("xFollowGate.connectBody")}</p>
+            {needsRenaissSession ? (
+              <p>
+                {t("xFollowGate.renaissBodyPrefix")}
+                <a
+                  className="x-follow-gate__inline-link"
+                  href={RENAISS_OFFICIAL_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t("xFollowGate.renaissOfficialLink")}
+                </a>
+                {t("xFollowGate.renaissBodySuffix")}
+              </p>
+            ) : (
+              <p>{t("xFollowGate.connectBody")}</p>
+            )}
             {identityIssue ? <p className="x-follow-gate__issue">{identityIssue}</p> : null}
             {needsRenaissSession ? (
               <Magnet
@@ -425,7 +456,10 @@ export function XFollowGate({
                       <ShieldCheck size={16} strokeWidth={2.25} />
                     )}
                   </span>
-                  <span>{check.label}</span>
+                  <a className="x-follow-gate__eligibility-link" href={check.href} target="_blank" rel="noreferrer">
+                    <span>{check.label}</span>
+                    <ExternalLink size={13} strokeWidth={2.35} />
+                  </a>
                   <strong>{t(`xFollowGate.eligibilityCheckState.${check.state}`)}</strong>
                 </li>
               ))}

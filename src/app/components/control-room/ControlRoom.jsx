@@ -847,9 +847,10 @@ export function ControlRoom({
   const preVoteGateRequired = xFollowGateRequired || xAccountEligibilityRequired;
   const xFollowGatePassed = !xFollowGateRequired || Boolean(authSession?.xFollow?.gatePassed);
   const xAccountEligibilityPassed = !xAccountEligibilityRequired || Boolean(authSession?.xAccountEligibility?.gatePassed);
+  const xFollowVerifyComplete = Boolean(authSession?.xFollow?.gatePassed) && xAccountEligibilityPassed;
   const voteRequiresPreVoteGate = authEndpointReady && preVoteGateRequired && (!xFollowGatePassed || !xAccountEligibilityPassed);
   const voteActionBlockReason = voteRequiresPreVoteGate ? t("vote.voteEligibilityBlocked") : "";
-  const showXFollowVerifyButton = authEndpointReady && preVoteGateRequired && effectiveActiveViewId === "vote";
+  const showXFollowVerifyButton = authEndpointReady && (preVoteGateRequired || localToolsEnabled) && effectiveActiveViewId === "vote";
   const canDismissXFollowOverlay = true;
   const closeXFollowOverlay = useCallback(() => {
     setXFollowOverlayDismissed(true);
@@ -858,7 +859,8 @@ export function ControlRoom({
   const showXFollowOverlay = effectiveActiveViewId === "vote"
     && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
     && showXFollowVerifyButton
-    && xFollowPanelOpen;
+    && xFollowPanelOpen
+    && (voteRequiresPreVoteGate || localToolsEnabled);
 
   async function handleLogout() {
     if (typeof window === "undefined") return;
@@ -897,22 +899,22 @@ export function ControlRoom({
   }, [drawViewEnabled, effectiveActiveViewId, visibleCommandViews]);
 
   useEffect(() => {
-    if (effectiveActiveViewId !== "vote" || !voteRequiresPreVoteGate) {
+    if (effectiveActiveViewId !== "vote" || (!voteRequiresPreVoteGate && !localToolsEnabled)) {
       setXFollowPanelOpen(false);
       setXFollowOverlayDismissed(false);
     }
-  }, [effectiveActiveViewId, voteRequiresPreVoteGate]);
+  }, [effectiveActiveViewId, localToolsEnabled, voteRequiresPreVoteGate]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (effectiveActiveViewId !== "vote" || !showXFollowVerifyButton || !voteRequiresPreVoteGate) return;
+    if (effectiveActiveViewId !== "vote" || !showXFollowVerifyButton || (!voteRequiresPreVoteGate && !localToolsEnabled)) return;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("xgate") !== "1") return;
 
     setXFollowOverlayDismissed(false);
     setXFollowPanelOpen(true);
-  }, [effectiveActiveViewId, showXFollowVerifyButton, voteRequiresPreVoteGate]);
+  }, [effectiveActiveViewId, localToolsEnabled, showXFollowVerifyButton, voteRequiresPreVoteGate]);
 
   useEffect(() => {
     if (!showXFollowOverlay || !canDismissXFollowOverlay) return undefined;
@@ -963,7 +965,7 @@ export function ControlRoom({
         {showXFollowVerifyButton ? (
           <button
             type="button"
-            className={xFollowGatePassed && xAccountEligibilityPassed ? "header-x-verify is-complete" : "header-x-verify"}
+            className={xFollowVerifyComplete ? "header-x-verify is-complete" : "header-x-verify"}
             onClick={() => {
               setXFollowOverlayDismissed(false);
               setXFollowPanelOpen((current) => !current);
@@ -971,7 +973,7 @@ export function ControlRoom({
             aria-expanded={xFollowPanelOpen}
           >
             <ShieldCheck size={16} strokeWidth={2.25} />
-            <span>{xFollowGatePassed && xAccountEligibilityPassed ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>
+            <span>{xFollowVerifyComplete ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>
           </button>
         ) : null}
         <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
@@ -1038,7 +1040,7 @@ export function ControlRoom({
               />
             ) : null}
 
-            {effectiveActiveViewId === "schedule" ? (
+            {effectiveActiveViewId === "schedule" || (effectiveActiveViewId === "vote" && showSimulationControls) ? (
               <RoundSwitch
                 rounds={rounds}
                 activeRoundId={activeRoundId}

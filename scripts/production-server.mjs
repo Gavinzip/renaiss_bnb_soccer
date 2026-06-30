@@ -397,13 +397,12 @@ function authStartRateLimitRules(request, provider) {
 }
 
 function voteRateLimitRules(request, session) {
-  const ip = clientIp(request)
   const wallet = session?.walletAddress || 'wallet-missing'
   return [
     {
       scope: 'vote_submit_wallet_minute',
       key: wallet,
-      limit: readIntegerEnv('VOTE_RATE_LIMIT_PER_WALLET_PER_MINUTE', 10, 1),
+      limit: readIntegerEnv('VOTE_RATE_LIMIT_PER_WALLET_PER_MINUTE', 20, 1),
       windowMs: minuteWindow(1),
     },
     {
@@ -411,12 +410,6 @@ function voteRateLimitRules(request, session) {
       key: wallet,
       limit: readIntegerEnv('VOTE_RATE_LIMIT_PER_WALLET_PER_HOUR', 120, 1),
       windowMs: hourWindow(1),
-    },
-    {
-      scope: 'vote_submit_ip_minute',
-      key: ip,
-      limit: readIntegerEnv('VOTE_RATE_LIMIT_PER_IP_PER_MINUTE', 30, 1),
-      windowMs: minuteWindow(1),
     },
   ]
 }
