@@ -159,7 +159,7 @@ export const enLocale = {
       "eyebrow": "Vote eligibility",
       "eligibilityBody": "The system uses the X identity verified in the previous step to check Firefly eligibility. Complete the two Firefly requirements below, then return and press Verify eligibility.",
       "eligibilityCheckFireflyAccount": "Firefly account linked",
-      "eligibilityCheckPredictBet": "Complete Instant Prediction",
+      "eligibilityCheckPredictBet": "Deposit and complete one Prediction",
       "eligibilityCheckState": {
         "fail": "Missing",
         "pass": "Complete",
