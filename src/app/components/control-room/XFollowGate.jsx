@@ -10,6 +10,7 @@ const RETRY_GATED_STATUSES = new Set(["rate_limited", "api_error", "retry_later"
 const RENAISS_OFFICIAL_URL = "https://www.renaiss.xyz/";
 const FIREFLY_ELIGIBILITY_LINKS = {
   firefly: "https://firefly.social/signup?step=login_social_platform",
+  deposit: "https://firefly.social/settings/wallets",
   predict: "https://firefly.social/prediction/category/fifwc",
 };
 
@@ -149,6 +150,13 @@ export function XFollowGate({
       label: t("xFollowGate.eligibilityCheckFireflyAccount"),
       href: FIREFLY_ELIGIBILITY_LINKS.firefly,
       state: eligibilityCheckState(eligibility.hasFireflyAccount),
+    },
+    {
+      id: "deposit",
+      label: t("xFollowGate.eligibilityCheckPredictionWalletDeposit"),
+      href: FIREFLY_ELIGIBILITY_LINKS.deposit,
+      state: eligibility.hasPlacedBet === true ? "pass" : "link",
+      hideStateLabel: true,
     },
     {
       id: "predict",
@@ -451,6 +459,8 @@ export function XFollowGate({
                       <CheckCircle2 size={16} strokeWidth={2.4} />
                     ) : check.state === "fail" ? (
                       <X size={16} strokeWidth={2.4} />
+                    ) : check.state === "link" ? (
+                      <ExternalLink size={16} strokeWidth={2.25} />
                     ) : (
                       <ShieldCheck size={16} strokeWidth={2.25} />
                     )}
@@ -459,7 +469,7 @@ export function XFollowGate({
                     <span>{check.label}</span>
                     <ExternalLink size={13} strokeWidth={2.35} />
                   </a>
-                  <strong>{t(`xFollowGate.eligibilityCheckState.${check.state}`)}</strong>
+                  {check.hideStateLabel ? null : <strong>{t(`xFollowGate.eligibilityCheckState.${check.state}`)}</strong>}
                 </li>
               ))}
             </ul>
