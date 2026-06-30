@@ -859,8 +859,7 @@ export function ControlRoom({
   const showXFollowOverlay = effectiveActiveViewId === "vote"
     && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
     && showXFollowVerifyButton
-    && xFollowPanelOpen
-    && (voteRequiresPreVoteGate || localToolsEnabled);
+    && xFollowPanelOpen;
 
   async function handleLogout() {
     if (typeof window === "undefined") return;
@@ -899,22 +898,22 @@ export function ControlRoom({
   }, [drawViewEnabled, effectiveActiveViewId, visibleCommandViews]);
 
   useEffect(() => {
-    if (effectiveActiveViewId !== "vote" || (!voteRequiresPreVoteGate && !localToolsEnabled)) {
+    if (effectiveActiveViewId !== "vote" || !showXFollowVerifyButton) {
       setXFollowPanelOpen(false);
       setXFollowOverlayDismissed(false);
     }
-  }, [effectiveActiveViewId, localToolsEnabled, voteRequiresPreVoteGate]);
+  }, [effectiveActiveViewId, showXFollowVerifyButton]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (effectiveActiveViewId !== "vote" || !showXFollowVerifyButton || (!voteRequiresPreVoteGate && !localToolsEnabled)) return;
+    if (effectiveActiveViewId !== "vote" || !showXFollowVerifyButton) return;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("xgate") !== "1") return;
 
     setXFollowOverlayDismissed(false);
     setXFollowPanelOpen(true);
-  }, [effectiveActiveViewId, localToolsEnabled, showXFollowVerifyButton, voteRequiresPreVoteGate]);
+  }, [effectiveActiveViewId, showXFollowVerifyButton]);
 
   useEffect(() => {
     if (!showXFollowOverlay || !canDismissXFollowOverlay) return undefined;
