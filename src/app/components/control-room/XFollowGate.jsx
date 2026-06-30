@@ -469,7 +469,7 @@ export function XFollowGate({
                     <span>{check.label}</span>
                     <ExternalLink size={13} strokeWidth={2.35} />
                   </a>
-                  {check.hideStateLabel ? null : <strong>{t(`xFollowGate.eligibilityCheckState.${check.state}`)}</strong>}
+                  <strong>{check.hideStateLabel ? "--------" : t(`xFollowGate.eligibilityCheckState.${check.state}`)}</strong>
                 </li>
               ))}
             </ul>
