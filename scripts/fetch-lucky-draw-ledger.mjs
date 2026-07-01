@@ -15,6 +15,12 @@ import {
 import { fetchWalletMigrationMap } from './lucky-draw/wallet-migrations.mjs'
 import { resolveEventWallets } from './lucky-draw/wallet-resolve.mjs'
 import {
+  DEFAULT_CARRYOVER_DIVISOR,
+  DEFAULT_CARRYOVER_LEDGER_URL,
+  applyCarryoverTickets,
+  readCarryoverLedgerPayload,
+} from './lucky-draw/carryover-tickets.mjs'
+import {
   normalizeAddress,
   readEnvFile,
   readWalletMigrationMap,
@@ -32,6 +38,9 @@ function parseAddressCsv(value) {
 }
 
 function parseArgs(argv) {
+  const cliCarryoverLedgerUrl = argv.includes('--carryover-ledger-url')
+  const cliCarryoverLedgerPath = argv.includes('--carryover-ledger-path')
+  const cliCarryoverDivisor = argv.includes('--carryover-divisor')
   const args = {
     envFile: '',
     walletMigrationMapPath: '',
@@ -40,6 +49,10 @@ function parseArgs(argv) {
     insiderGrantAddressesRaw: process.env.SOCCER_INSIDER_TICKET_ADDRESSES || '',
     insiderPracticeTickets: toNumber(process.env.SOCCER_INSIDER_PRACTICE_TICKETS || 100),
     insiderGrantTickets: toNumber(process.env.SOCCER_INSIDER_GRANT_TICKETS || 100),
+    carryoverLedgerUrl: process.env.SOCCER_CARRYOVER_LEDGER_URL || DEFAULT_CARRYOVER_LEDGER_URL,
+    carryoverLedgerPath: process.env.SOCCER_CARRYOVER_LEDGER_PATH || '',
+    carryoverDivisor: toNumber(process.env.SOCCER_CARRYOVER_DIVISOR || DEFAULT_CARRYOVER_DIVISOR),
+    skipCarryoverLedger: process.env.SOCCER_CARRYOVER_LEDGER_DISABLED === '1',
     cacheDir: process.env.LUCKY_DRAW_CACHE_DIR || 'cache/lucky-draw',
     walletMigrationCacheTtlMinutes: 15,
     walletResolveCacheTtlMinutes: 24 * 60,
@@ -80,6 +93,9 @@ function parseArgs(argv) {
     else if (arg === '--insider-addresses') args.insiderGrantAddressesRaw = argv[++index] || ''
     else if (arg === '--insider-practice-tickets') args.insiderPracticeTickets = toNumber(argv[++index])
     else if (arg === '--insider-grant-tickets') args.insiderGrantTickets = toNumber(argv[++index])
+    else if (arg === '--carryover-ledger-url') args.carryoverLedgerUrl = argv[++index] || ''
+    else if (arg === '--carryover-ledger-path') args.carryoverLedgerPath = argv[++index] || ''
+    else if (arg === '--carryover-divisor') args.carryoverDivisor = toNumber(argv[++index])
     else if (arg === '--cache-dir') args.cacheDir = argv[++index] || args.cacheDir
     else if (arg === '--wallet-migration-cache-ttl-minutes') args.walletMigrationCacheTtlMinutes = toNumber(argv[++index])
     else if (arg === '--wallet-resolve-cache-ttl-minutes') args.walletResolveCacheTtlMinutes = toNumber(argv[++index])
@@ -105,6 +121,7 @@ function parseArgs(argv) {
     }
     else if (arg === '--skip-wallet-resolve') args.skipWalletResolve = true
     else if (arg === '--skip-wallet-migration-url') args.skipWalletMigrationUrl = true
+    else if (arg === '--skip-carryover-ledger') args.skipCarryoverLedger = true
     else if (arg === '--no-cache') args.noCache = true
     else if (arg === '--refresh-cache') args.refreshCache = true
     else if (arg === '--dry-run') args.dryRun = true
@@ -139,6 +156,16 @@ function parseArgs(argv) {
     if (envValues.SOCCER_INSIDER_GRANT_TICKETS) {
       args.insiderGrantTickets = toNumber(envValues.SOCCER_INSIDER_GRANT_TICKETS)
     }
+    if (!cliCarryoverLedgerUrl && envValues.SOCCER_CARRYOVER_LEDGER_URL) {
+      args.carryoverLedgerUrl = envValues.SOCCER_CARRYOVER_LEDGER_URL
+    }
+    if (!cliCarryoverLedgerPath && envValues.SOCCER_CARRYOVER_LEDGER_PATH) {
+      args.carryoverLedgerPath = envValues.SOCCER_CARRYOVER_LEDGER_PATH
+    }
+    if (!cliCarryoverDivisor && envValues.SOCCER_CARRYOVER_DIVISOR) {
+      args.carryoverDivisor = toNumber(envValues.SOCCER_CARRYOVER_DIVISOR)
+    }
+    if (envValues.SOCCER_CARRYOVER_LEDGER_DISABLED === '1') args.skipCarryoverLedger = true
     args.extraLegacyPacksRaw = args.extraLegacyPacksRaw || envValues[EXTRA_LEGACY_PACKS_ENV] || ''
   }
 
@@ -147,6 +174,7 @@ function parseArgs(argv) {
   args.resolveConcurrency = Math.max(1, args.resolveConcurrency)
   args.insiderPracticeTickets = Math.max(0, Math.floor(args.insiderPracticeTickets || 0))
   args.insiderGrantTickets = Math.max(0, Math.floor(args.insiderGrantTickets || 0))
+  args.carryoverDivisor = Math.max(1, Math.floor(args.carryoverDivisor || DEFAULT_CARRYOVER_DIVISOR))
   args.bscscanRequestTimeoutMs = Math.max(1, args.bscscanRequestTimeoutMs || 30_000)
   args.blockChunk = Math.max(100, args.blockChunk)
   args.pageSize = Math.max(1, Math.min(1000, args.pageSize))
@@ -179,6 +207,9 @@ Options:
   --insider-addresses <csv>     Optional comma-separated insider wallet addresses.
   --insider-practice-tickets <n> Practice tickets usable only in round32. Default 100.
   --insider-grant-tickets <n>   Shared reward tickets usable across round16-final. Default 100.
+  --carryover-ledger-url <url>  Previous campaign ledger URL. Default ${DEFAULT_CARRYOVER_LEDGER_URL}.
+  --carryover-ledger-path <path> Read previous campaign ledger from a local JSON file instead of URL.
+  --carryover-divisor <n>       Previous campaign finalTickets divisor. Default ${DEFAULT_CARRYOVER_DIVISOR}.
   --contracts <csv>             Limit on-chain scan to specific contract addresses.
   --from-block <n>              Debug scan start block.
   --to-block <n>                Debug scan end block.
@@ -188,6 +219,7 @@ Options:
   --out <path>                  Output JSON path. Default public/lucky-draw-ledger.json.
   --skip-wallet-resolve         Do not call wallet migration resolver.
   --skip-wallet-migration-url   Do not load the remote wallet migration list.
+  --skip-carryover-ledger       Explicitly disable previous-campaign carryover tickets.
   --no-cache                    Disable API cache reads/writes.
   --refresh-cache               Ignore fresh cache and refetch APIs.
   --dry-run                     Build and summarize without writing a file.
@@ -506,10 +538,25 @@ async function main() {
   const entriesByAddress = aggregateBaseTickets(allEvents, resolved.canonicalSources, packRules)
   const insiderGrantConfig = readInsiderTicketGrants(args)
   const insiderTicketGrantSource = applyInsiderTicketGrants(entriesByAddress, insiderGrantConfig, walletMigrationMap, packRules)
+  const carryoverLedger = await readCarryoverLedgerPayload(args)
+  const carryoverTicketSource = applyCarryoverTickets(
+    entriesByAddress,
+    carryoverLedger,
+    walletMigrationMap,
+    {
+      createEntry: (walletAddress, sourceAddresses) => emptyEntry(
+        walletAddress,
+        sourceAddresses,
+        packRules.map((rule) => rule.pack),
+      ),
+      divisor: args.carryoverDivisor,
+    },
+  )
   const allocation = allocateIntervals(entriesByAddress, allEvents)
   const entries = finalizeEntries(entriesByAddress)
   const totalRawTickets = entries.reduce((sum, entry) => sum + entry.rawTickets, 0)
   const totalBonusTickets = entries.reduce((sum, entry) => sum + entry.bonusTickets, 0)
+  const totalCarryoverTickets = entries.reduce((sum, entry) => sum + entry.carryoverTickets, 0)
   const totalInsiderPracticeTickets = entries.reduce((sum, entry) => sum + entry.insiderPracticeTickets, 0)
   const totalInsiderGrantTickets = entries.reduce((sum, entry) => sum + entry.insiderGrantTickets, 0)
   const totalFinalTickets = entries.reduce((sum, entry) => sum + entry.finalTickets, 0)
@@ -532,13 +579,17 @@ async function main() {
     bonusShuffleSeed: allocation.bonusShuffleSeed,
     totalRawTickets,
     totalBonusTickets,
+    totalCarryoverTickets,
     totalInsiderPracticeTickets,
     totalInsiderGrantTickets,
     totalFinalTickets,
     totalVotingTickets,
+    carryoverTicketSource,
     insiderTicketGrantSource,
     entries: entries.map((entry) => ({
       userAddress: entry.userAddress,
+      rawTickets: entry.rawTickets,
+      carryoverTickets: entry.carryoverTickets,
       finalTickets: entry.finalTickets,
       insiderPracticeTickets: entry.insiderPracticeTickets,
       insiderGrantTickets: entry.insiderGrantTickets,
@@ -556,6 +607,7 @@ async function main() {
     totalEntries: entries.length,
     totalRawTickets,
     totalBonusTickets,
+    totalCarryoverTickets,
     totalInsiderPracticeTickets,
     totalInsiderGrantTickets,
     totalFinalTickets,
@@ -569,6 +621,7 @@ async function main() {
     bonusShuffleLocked: false,
     bonusShuffleLockedAt: null,
     source: sourceResult.source,
+    carryoverTicketSource,
     insiderTicketGrantSource,
     packRules,
     entriesWithOldSourceAddresses,
@@ -588,11 +641,14 @@ async function main() {
       'The complete pack rule set used for this ledger is recorded in packRules and source.packEventSources.',
       'Packs not listed in packRules are not counted unless the official rules change.',
       'Base ticket intervals are ordered by block number, transaction index, log index, timestamp, tx hash, then event id.',
-      'This football campaign does not apply SBT ticket bonuses; final tickets equal raw buyback tickets.',
+      'This football campaign does not apply SBT ticket bonuses; final tickets equal raw buyback plus previous-campaign carryover tickets.',
+      carryoverTicketSource.enabled
+        ? `Applied ${carryoverTicketSource.totalCarryoverTickets} carryover ticket(s) from ${carryoverTicketSource.appliedWallets} wallet(s): floor(previous van Gogh finalTickets / ${carryoverTicketSource.divisor}).`
+        : 'Previous-campaign carryover tickets were explicitly disabled.',
       insiderTicketGrantSource.applied.length > 0
         ? `Applied ${insiderTicketGrantSource.applied.length} insider ticket grant address(es): ${insiderTicketGrantSource.defaultPracticeTickets} practice ticket(s) for round32 and ${insiderTicketGrantSource.defaultGrantTickets} shared reward ticket(s) across round16-final by default.`
         : 'No insider ticket grants were configured.',
-      'Leaderboard rank is sorted by raw buyback tickets, then first eligible event time.',
+      'Leaderboard rank is sorted by final tickets, then raw buyback tickets, then first eligible event time.',
       args.skipWalletResolve
         ? 'Wallet migration resolver was skipped.'
         : 'Wallet migration resolver was applied to merge old and canonical addresses.',
@@ -614,6 +670,7 @@ async function main() {
   console.log(
     `Ledger: ${entries.length} entries, ${allEvents.length} eligible events, ${totalFinalTickets} final tickets, ${totalVotingTickets} voting tickets`,
   )
+  console.log(`Carryover: ${totalCarryoverTickets} tickets from ${carryoverTicketSource.appliedWallets} wallet(s)`)
   console.log(`Ledger hash: ${ledgerHash}`)
   console.log(`Source: ${sourceResult.source.mode}, entries with old source addresses: ${entriesWithOldSourceAddresses}`)
 

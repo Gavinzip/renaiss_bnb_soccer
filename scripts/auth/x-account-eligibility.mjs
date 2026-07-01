@@ -8,6 +8,7 @@ const DEFAULT_PATH = '/v1/renaiss/x-account/eligibility'
 const DEFAULT_TIMEOUT_MS = 8000
 const DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60
 const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
+const FIREFLY_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
 
 function nowIso() {
   return new Date().toISOString()
@@ -37,6 +38,11 @@ function normalizeAddress(value) {
 function cleanXUserId(value) {
   const id = String(value ?? '').trim()
   return /^\d{1,32}$/.test(id) ? id : ''
+}
+
+function cleanFireflyUid(value) {
+  const id = String(value ?? '').trim()
+  return FIREFLY_UID_PATTERN.test(id) ? id : ''
 }
 
 function emptyEligibilityState() {
@@ -70,6 +76,18 @@ function statusKey(walletAddress, xUserId) {
   return walletAddress && xUserId ? `${walletAddress}:x:${xUserId}` : ''
 }
 
+function recordFireflyUid(record) {
+  return cleanFireflyUid(record?.fireflyUid ?? record?.ffAccountUid ?? record?.ff_account_uid)
+}
+
+function recordHasClaimedFireflyUid(record) {
+  return Boolean(recordFireflyUid(record))
+}
+
+function eligibleRecordCanPass(record) {
+  return Boolean(record?.eligible && recordHasClaimedFireflyUid(record))
+}
+
 function readRecord(config, walletAddress, xUserId) {
   const key = statusKey(walletAddress, xUserId)
   if (!key) return null
@@ -77,21 +95,16 @@ function readRecord(config, walletAddress, xUserId) {
 }
 
 function recordExpiresAt(record, config) {
+  if (eligibleRecordCanPass(record)) return null
   if (!record?.lastCheckedAt || !config.cacheTtlSeconds) return null
   const checkedAt = Date.parse(record.lastCheckedAt)
   if (!Number.isFinite(checkedAt)) return null
   return new Date(checkedAt + config.cacheTtlSeconds * 1000).toISOString()
 }
 
-function recordIsFresh(record, config) {
-  if (!record?.lastCheckedAt) return false
-  if (!config.cacheTtlSeconds) return true
-  const checkedAt = Date.parse(record.lastCheckedAt)
-  return Number.isFinite(checkedAt) && checkedAt + config.cacheTtlSeconds * 1000 > Date.now()
-}
-
 function responseCodeForRecord(record) {
   if (!record) return 'unverified'
+  if (record.eligible && !recordHasClaimedFireflyUid(record)) return 'firefly_uid_required'
   if (record.eligible) return 'eligible'
   if (
     record.lastErrorCode
@@ -125,6 +138,7 @@ function buildStatus({
     verified: Boolean(gatePassed),
     gatePassed: Boolean(gatePassed || !config.required),
     eligible: typeof record?.eligible === 'boolean' ? record.eligible : null,
+    fireflyUid: recordFireflyUid(record) || null,
     hasFireflyAccount: typeof record?.hasFireflyAccount === 'boolean' ? record.hasFireflyAccount : null,
     hasPlacedBet: typeof record?.hasPlacedBet === 'boolean' ? record.hasPlacedBet : null,
     status,
@@ -146,6 +160,9 @@ function eligibilityErrorMessage(code) {
   if (code === 'x_follow_required') return 'X follow verification is required before Firefly eligibility verification.'
   if (code === 'x_identity_required') return 'A verified X account id is required before Firefly eligibility verification.'
   if (code === 'service_unconfigured') return 'Firefly eligibility API is not configured.'
+  if (code === 'firefly_uid_required') return 'Firefly did not return an account UID. Verify again before voting.'
+  if (code === 'firefly_uid_claimed') return 'This Firefly account UID is already linked to another voting identity.'
+  if (code === 'wallet_uid_mismatch') return 'This wallet is already linked to another Firefly account UID.'
   if (code === 'missing_firefly_account') return 'This X account is not linked to an active Firefly account.'
   if (code === 'missing_predict_bet') return 'This X account has not placed a Predict bet yet.'
   if (code === 'eligibility_expired') return 'Firefly eligibility verification expired. Verify again before voting.'
@@ -168,9 +185,43 @@ function normalizeEligibilityPayload(payload) {
   const source = payload?.data && typeof payload.data === 'object' ? payload.data : payload
   return {
     eligible: Boolean(source?.eligible),
+    fireflyUid: cleanFireflyUid(source?.ff_account_uid ?? source?.ffAccountUid ?? source?.firefly_uid),
     hasFireflyAccount: Boolean(source?.has_ff_account),
     hasPlacedBet: Boolean(source?.has_placed_bet),
   }
+}
+
+function findFireflyUidConflict(state, { walletAddress, xUserId, fireflyUid, currentKey }) {
+  const uid = cleanFireflyUid(fireflyUid)
+  if (!uid) return null
+
+  for (const [key, record] of Object.entries(state.checks || {})) {
+    if (key === currentKey || !record || typeof record !== 'object') continue
+
+    const recordUid = recordFireflyUid(record)
+    if (!recordUid) continue
+
+    const recordWallet = normalizeAddress(record.walletAddress)
+    const recordXUserId = cleanXUserId(record.xUserId)
+    if (recordUid === uid && (recordWallet !== walletAddress || recordXUserId !== xUserId)) {
+      return {
+        code: 'firefly_uid_claimed',
+        fireflyUid: uid,
+        walletAddress: recordWallet || null,
+        xUserId: recordXUserId || null,
+      }
+    }
+    if (recordWallet === walletAddress && recordUid !== uid) {
+      return {
+        code: 'wallet_uid_mismatch',
+        fireflyUid: recordUid,
+        walletAddress,
+        xUserId: recordXUserId || null,
+      }
+    }
+  }
+
+  return null
 }
 
 async function fetchEligibility(config, xUserId) {
@@ -226,17 +277,34 @@ function saveEligibilityResult(config, walletAddress, xUserId, result) {
   const checkedAt = nowIso()
   const state = readState(config.path)
   const existing = state.checks[key] || {}
+  const fireflyUid = cleanFireflyUid(result.fireflyUid)
+  const conflict = findFireflyUidConflict(state, { walletAddress, xUserId, fireflyUid, currentKey: key })
+  if (conflict) {
+    throw Object.assign(new Error(eligibilityErrorMessage(conflict.code)), {
+      statusCode: 409,
+      code: conflict.code,
+      conflict,
+    })
+  }
+
   state.checks[key] = {
     ...existing,
     walletAddress,
     xUserId,
     eligible: Boolean(result.eligible),
+    fireflyUid: fireflyUid || null,
+    verificationMethod: 'x_account_id',
     hasFireflyAccount: Boolean(result.hasFireflyAccount),
     hasPlacedBet: Boolean(result.hasPlacedBet),
-    status: result.eligible ? 'eligible' : responseCodeForRecord(result),
+    status: result.eligible && !fireflyUid ? 'firefly_uid_required' : responseCodeForRecord({
+      ...result,
+      fireflyUid,
+    }),
+    fireflyUidClaimedAt: fireflyUid ? (existing.fireflyUidClaimedAt || checkedAt) : null,
     lastCheckedAt: checkedAt,
     updatedAt: checkedAt,
     lastError: null,
+    lastErrorCode: null,
   }
   writeState(config.path, state)
 }
@@ -309,11 +377,11 @@ export function getXAccountEligibilityStatus(auth, session, request, options = {
   if (!record) {
     return buildStatus({ config, session, xFollowStatus, walletAddress, xUserId, record, status: 'unverified' })
   }
-  if (record.eligible && recordIsFresh(record, config)) {
-    return buildStatus({ config, session, xFollowStatus, walletAddress, xUserId, record, status: 'eligible', gatePassed: true })
+  if (record.eligible && !recordHasClaimedFireflyUid(record)) {
+    return buildStatus({ config, session, xFollowStatus, walletAddress, xUserId, record, status: 'firefly_uid_required' })
   }
-  if (record.eligible && !recordIsFresh(record, config)) {
-    return buildStatus({ config, session, xFollowStatus, walletAddress, xUserId, record, status: 'eligibility_expired' })
+  if (record.eligible) {
+    return buildStatus({ config, session, xFollowStatus, walletAddress, xUserId, record, status: 'eligible', gatePassed: true })
   }
   return buildStatus({ config, session, xFollowStatus, walletAddress, xUserId, record, status: responseCodeForRecord(record) })
 }

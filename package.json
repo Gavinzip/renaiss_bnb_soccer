@@ -20,6 +20,7 @@
     "i18n:check": "node scripts/check-i18n.mjs",
     "preview": "vite preview",
     "fetch:ledger": "node scripts/fetch-lucky-draw-ledger.mjs",
+    "apply:carryover": "node scripts/apply-carryover-ledger.mjs",
     "backup:data": "node scripts/backup-soccer-data.mjs",
     "sync:fifa-results": "node scripts/sync-fifa-results.mjs",
     "sync:fifa-results:local": "node scripts/sync-fifa-results.mjs --env-file config/fifa-results.env.local",

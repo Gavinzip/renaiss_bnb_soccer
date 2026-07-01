@@ -51,6 +51,8 @@ function eligibilityStatusMessageKey(status) {
   const map = {
     api_error: "xFollowGate.statusEligibilityApiError",
     eligibility_expired: "xFollowGate.statusEligibilityExpired",
+    firefly_uid_claimed: "xFollowGate.statusFireflyUidClaimed",
+    firefly_uid_required: "xFollowGate.statusFireflyUidRequired",
     ineligible: "xFollowGate.statusEligibilityIneligible",
     login_required: "xFollowGate.statusEligibilityLoginRequired",
     missing_firefly_account: "xFollowGate.statusMissingFireflyAccount",
@@ -60,6 +62,7 @@ function eligibilityStatusMessageKey(status) {
     service_unconfigured: "xFollowGate.statusEligibilityUnconfigured",
     unverified: "xFollowGate.statusEligibilityIdle",
     wallet_required: "xFollowGate.statusWalletRequired",
+    wallet_uid_mismatch: "xFollowGate.statusWalletUidMismatch",
     x_follow_required: "xFollowGate.statusEligibilityFollowRequired",
     x_identity_required: "xFollowGate.statusEligibilityIdentityRequired",
   };

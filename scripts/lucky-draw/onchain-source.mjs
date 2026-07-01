@@ -392,13 +392,55 @@ function buybackSuccessSourcesFor(contracts) {
 }
 
 export async function scanOnchainTicketEvents(args) {
+  const { campaignStart, campaignEnd } = getCampaignWindow(args)
+  const nowTs = Math.floor(Date.now() / 1000)
+  const windowEndTs = Math.min(campaignEnd, nowTs)
+  const packEventSources = getPackEventSources(args.extraLegacyPacksRaw)
+  const contracts = packEventSources.filter(
+    (source) => !args.contracts.length || args.contracts.includes(source.contract),
+  )
+
+  if (!contracts.length) throw new Error('No eligible ticket event sources configured for scan.')
+
+  if (windowEndTs < campaignStart && !args.fromBlock && !args.toBlock) {
+    return {
+      events: [],
+      source: {
+        mode: 'contract-events-chain-only',
+        fromBlock: null,
+        toBlock: null,
+        campaignStart,
+        campaignEnd,
+        windowEnd: windowEndTs,
+        notStarted: true,
+        packEventSources: describePackEventSources(contracts),
+        buybackSuccessEventTopic: BUYBACK_SUCCESS_V3_EVENT_TOPIC,
+        successContracts: [],
+        contracts: contracts.map((contract) => ({
+          contract: contract.contract,
+          label: contract.label,
+          pack: contract.pack,
+          eventKind: contract.eventKind,
+          packId: contract.packId || contract.topic2 || null,
+          buybackContract: contract.buybackContract || null,
+          configSource: contract.configSource || 'built-in',
+          calls: 0,
+          events: 0,
+          cachedEvents: 0,
+          fetchedEvents: 0,
+          cacheToBlock: null,
+          splitWindows: 0,
+        })),
+      },
+    }
+  }
+
   if (!args.bscscanApiKey) {
     throw new Error(
       'BSCSCAN_API_KEY is required for complete contract log scans. Pass --env-file or set BSCSCAN_API_KEY.',
     )
   }
 
-  const { campaignStart, campaignEnd } = getCampaignWindow(args)
   const bscscanConfig = {
     apiUrl: args.bscscanApiUrl,
     apiKey: args.bscscanApiKey,
@@ -407,16 +449,8 @@ export async function scanOnchainTicketEvents(args) {
     backoffMs: args.backoffMs,
     requestTimeoutMs: args.bscscanRequestTimeoutMs,
   }
-  const nowTs = Math.floor(Date.now() / 1000)
-  const windowEndTs = Math.min(campaignEnd, nowTs)
   const fromBlock = args.fromBlock || (await blockByTimestamp(bscscanConfig, campaignStart, 'after'))
   const toBlock = args.toBlock || (await blockByTimestamp(bscscanConfig, windowEndTs, 'before'))
-  const packEventSources = getPackEventSources(args.extraLegacyPacksRaw)
-  const contracts = packEventSources.filter(
-    (source) => !args.contracts.length || args.contracts.includes(source.contract),
-  )
-
-  if (!contracts.length) throw new Error('No eligible ticket event sources configured for scan.')
 
   const eventCachePath = args.noCache ? '' : args.eventCachePath
   const eventCache = readJsonCache(eventCachePath, { version: 2, sources: {} }) || {
