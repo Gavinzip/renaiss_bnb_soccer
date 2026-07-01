@@ -182,6 +182,8 @@ export function normalizeMilestoneSummary(payload) {
     "metric_value",
     "currentValue",
     "current_value",
+    "totalRawTickets",
+    "total_raw_tickets",
     "totalFinalTickets",
     "total_final_tickets",
   ]);

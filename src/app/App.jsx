@@ -858,7 +858,7 @@ function AppContent() {
     )),
     [globalPreviewVoteData, previewAllocations, previewVoteData],
   );
-  const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalFinalTickets ?? 0);
+  const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalRawTickets ?? 0);
   const initialDataReady = ledgerReady && milestoneReady && previewVoteReady && globalPreviewVoteReady && winnerRevealReady && authReady;
   const initialCoverAssetsReady = initialDataReady && initialAssetsReady;
   const initialExperienceReady = initialCoverAssetsReady && initialCoverPaintReady;

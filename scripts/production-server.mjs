@@ -1032,7 +1032,7 @@ function distPathForUrl(url) {
 }
 
 function buildMilestoneSummary(ledger) {
-  const currentMetricValue = Number(ledger.totalFinalTickets || 0)
+  const currentMetricValue = Number(ledger.totalRawTickets || 0)
   return {
     milestones: milestones.map((milestone) => ({
       ...milestone,
