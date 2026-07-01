@@ -348,6 +348,7 @@ export const enLocale = {
       "closing_soon": "Closing soon",
       "locked": "Voting locked",
       "scheduled": "Not open yet",
+      "in_play": "In play",
       "official_final": "Official final",
       "allocated": "Voted"
     },
@@ -356,6 +357,7 @@ export const enLocale = {
       "closing_soon": "Closing",
       "locked": "Locked",
       "scheduled": "Pending",
+      "in_play": "Live",
       "official_final": "Final",
       "allocated": "Voted"
     },

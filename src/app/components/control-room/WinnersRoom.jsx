@@ -187,18 +187,18 @@ function WinnerRevealRow({ winner, index, visible, active, matchLabel, currentUs
 }
 
 export function WinnersRoom({
+  activeRoundId = "",
   winnerRevealData,
   winnerRevealIssue,
   rounds = [],
   matches = [],
-  drawStats = [],
   currentWalletAddress = "",
   currentUserWinnerCount = 0,
+  onRevealStateChange,
 }) {
   const { t, roundLabel } = useCampaignCopy();
   const videoRef = useRef(null);
   const listRef = useRef(null);
-  const [selectedRoundId, setSelectedRoundId] = useState("");
   const [videoFinished, setVideoFinished] = useState(false);
   const [visibleCount, setVisibleCount] = useState(0);
   const [mediaIssue, setMediaIssue] = useState("");
@@ -214,12 +214,11 @@ export function WinnersRoom({
     () => buildWinnerRoundOptions(winnerRoundGroups, rounds, t, roundLabel),
     [roundLabel, rounds, t, winnerRoundGroups],
   );
-  const drawStatByRoundId = useMemo(() => new Map(drawStats.map((draw) => [draw.id, draw])), [drawStats]);
   const latestRevealedRoundId = useMemo(() => {
     const revealedOptions = roundOptions.filter((option) => option.count > 0);
     return revealedOptions[revealedOptions.length - 1]?.id || roundOptions[0]?.id || "";
   }, [roundOptions]);
-  const selectedRound = roundOptions.find((option) => option.id === selectedRoundId)
+  const selectedRound = roundOptions.find((option) => option.id === activeRoundId)
     || roundOptions.find((option) => option.id === latestRevealedRoundId)
     || roundOptions[0]
     || null;
@@ -231,20 +230,18 @@ export function WinnersRoom({
   const selectedRevealComplete = selectedRoundHasWinners && visibleCount >= selectedRoundWinners.length;
 
   useEffect(() => {
-    if (!hasOfficialWinners) {
-      setSelectedRoundId("");
-      return;
-    }
-
-    setSelectedRoundId((currentRoundId) => currentRoundId || latestRevealedRoundId);
-  }, [hasOfficialWinners, latestRevealedRoundId]);
-
-  useEffect(() => {
     setVideoFinished(false);
     setVisibleCount(0);
     setMediaIssue("");
-    setSelectedRoundId("");
   }, [winnerRevealData.videoUrl, winnerRevealData.drawId, winnerRevealData.generatedAt]);
+
+  useEffect(() => {
+    onRevealStateChange?.(revealStarted);
+  }, [onRevealStateChange, revealStarted]);
+
+  useEffect(() => () => {
+    onRevealStateChange?.(false);
+  }, [onRevealStateChange]);
 
   useEffect(() => {
     if (!revealStarted || !selectedRoundHasWinners) {
@@ -270,7 +267,7 @@ export function WinnersRoom({
     }, 560);
 
     return () => window.clearInterval(intervalId);
-  }, [revealStarted, selectedRoundHasWinners, selectedRoundId, selectedRoundWinners.length]);
+  }, [revealStarted, selectedRoundHasWinners, selectedRound?.id, selectedRoundWinners.length]);
 
   function replayIntro() {
     const video = videoRef.current;
@@ -357,49 +354,6 @@ export function WinnersRoom({
           </button>
         )}
       </section>
-
-      {hasOfficialWinners ? (
-        <section className="round-simulator winner-round-simulator" aria-label={t("winnerReveal.roundSelectorAria")} aria-hidden={!revealStarted}>
-          <ol className="round-switch round-switch--read-only" aria-label={t("common.round")}>
-            {roundOptions.map((option) => {
-              const isActive = option.id === selectedRound?.id;
-              const hasRoundWinners = option.count > 0;
-
-              return (
-                <li
-                  className={[
-                    "round-switch__item",
-                    isActive ? "is-active" : "",
-                    hasRoundWinners ? "is-inspectable has-eligible" : "is-future-locked has-scheduled",
-                    option.id === "final" ? "is-final-round" : "",
-                  ].filter(Boolean).join(" ")}
-                  aria-current={isActive ? "step" : undefined}
-                  key={option.id}
-                >
-                  <button
-                    className="round-switch__stage"
-                    type="button"
-                    disabled={!hasRoundWinners}
-                    onClick={() => {
-                      if (hasRoundWinners) setSelectedRoundId(option.id);
-                    }}
-                  >
-                    <span className="round-switch__label">{option.label}</span>
-                    <strong className="round-switch__metric">
-                      <span>{formatNumber(drawStatByRoundId.get(option.id)?.matchCount ?? 0)}</span>
-                      <small>{t("roundRail.matchUnit")}</small>
-                    </strong>
-                    <span className="round-switch__detail">
-                      {hasRoundWinners ? t("winnerReveal.roundGroupCount", { count: formatNumber(option.count) }) : t("roundRail.futureLocked")}
-                    </span>
-                    <span className="round-switch__track" aria-hidden="true" />
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      ) : null}
 
       <section className="winner-stage-reveal" aria-live="polite" aria-hidden={!revealStarted}>
         <section className="winner-stage-board" aria-label={t("winnerReveal.listAria")}>

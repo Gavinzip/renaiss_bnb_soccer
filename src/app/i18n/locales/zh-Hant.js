@@ -348,6 +348,7 @@ export const zhHantLocale = {
       "closing_soon": "即將鎖定",
       "locked": "投票已鎖定",
       "scheduled": "尚未開放",
+      "in_play": "比賽進行中",
       "official_final": "官方完賽",
       "allocated": "已投票"
     },
@@ -356,6 +357,7 @@ export const zhHantLocale = {
       "closing_soon": "將鎖",
       "locked": "已鎖",
       "scheduled": "待開",
+      "in_play": "進行中",
       "official_final": "完賽",
       "allocated": "已投"
     },

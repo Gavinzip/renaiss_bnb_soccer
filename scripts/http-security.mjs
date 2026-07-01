@@ -28,8 +28,22 @@ export function allowedOriginsForRequest(request, env = process.env) {
     env.AUTH_PUBLIC_ORIGIN,
     requestOrigin(request),
   ]) {
-    const origin = normalizeOrigin(value)
-    if (origin) origins.add(origin)
+    String(value || '')
+      .split(',')
+      .map((entry) => normalizeOrigin(entry))
+      .filter(Boolean)
+      .forEach((origin) => origins.add(origin))
+  }
+
+  for (const value of [
+    env.PUBLIC_APP_ORIGINS,
+    env.AUTH_PUBLIC_ORIGINS,
+  ]) {
+    String(value || '')
+      .split(',')
+      .map((entry) => normalizeOrigin(entry))
+      .filter(Boolean)
+      .forEach((origin) => origins.add(origin))
   }
   return origins
 }

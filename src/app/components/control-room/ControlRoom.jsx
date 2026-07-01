@@ -441,6 +441,7 @@ function RoundSwitch({
   drawStats,
   remainingRoundTickets,
   showModeTools = false,
+  allowAllRounds = false,
   onSelectRound,
   onSelectSimulatedRound,
   onSelectSimulationMode,
@@ -492,7 +493,7 @@ function RoundSwitch({
         {rounds.map((round, index) => {
           const draw = drawById.get(round.id);
           const isActive = round.id === activeRoundId;
-          const canInspect = simulationMode === "realtime" ? round.id === "round32" : index <= simulatedIndex;
+          const canInspect = allowAllRounds || (simulationMode === "realtime" ? round.id === "round32" : index <= simulatedIndex);
           const detail = getRoundRailDetail(round, draw, isActive, remainingRoundTickets, roundStatus, t);
 
           return (
@@ -820,6 +821,7 @@ export function ControlRoom({
   const localToolsEnabled = isLocalTestOrigin();
   const drawViewEnabled = localToolsEnabled;
   const showSimulationControls = localToolsEnabled;
+  const [winnerRevealStarted, setWinnerRevealStarted] = useState(false);
   const visibleCommandViews = useMemo(
     () => (drawViewEnabled ? commandViews : commandViews.filter((view) => view.id !== "draw")),
     [drawViewEnabled],
@@ -831,6 +833,10 @@ export function ControlRoom({
   const matchStateCounts = countMatchStates(matches, activeRoundId);
   const compactWorkViews = new Set(["schedule", "vote", "draw", "winners"]);
   const showRoomMast = effectiveActiveViewId !== "home" && !compactWorkViews.has(effectiveActiveViewId);
+  const showRoundSwitch = effectiveActiveViewId === "schedule"
+    || effectiveActiveViewId === "vote"
+    || (effectiveActiveViewId === "winners" && winnerRevealStarted);
+  const roundSwitchAllowsAll = effectiveActiveViewId === "winners";
   const authWalletLinked = Boolean(authSession?.walletAddress);
   const showAuthState = Boolean(authEndpointReady);
   const authIdentityActionable = showAuthState && !authSession?.authenticated;
@@ -889,6 +895,10 @@ export function ControlRoom({
       onSelectView("home");
     }
   }, [activeViewId, drawViewEnabled, onSelectView]);
+
+  useEffect(() => {
+    if (effectiveActiveViewId !== "winners") setWinnerRevealStarted(false);
+  }, [effectiveActiveViewId]);
 
   useEffect(() => {
     let cancelPreloadJobs = () => {};
@@ -1041,7 +1051,7 @@ export function ControlRoom({
               />
             ) : null}
 
-            {effectiveActiveViewId === "schedule" || (effectiveActiveViewId === "vote" && showSimulationControls) ? (
+            {showRoundSwitch ? (
               <RoundSwitch
                 rounds={rounds}
                 activeRoundId={activeRoundId}
@@ -1050,7 +1060,8 @@ export function ControlRoom({
                 liveQualification={liveQualification}
                 drawStats={drawStats}
                 remainingRoundTickets={remainingRoundTickets}
-                showModeTools={showSimulationControls}
+                showModeTools={showSimulationControls && effectiveActiveViewId !== "winners"}
+                allowAllRounds={roundSwitchAllowsAll}
                 onSelectRound={onSelectRound}
                 onSelectSimulatedRound={onSelectSimulatedRound}
                 onSelectSimulationMode={onSelectSimulationMode}
@@ -1155,13 +1166,14 @@ export function ControlRoom({
 
           {effectiveActiveViewId === "winners" ? (
             <LazyWinnersRoom
+              activeRoundId={activeRoundId}
               rounds={rounds}
               matches={matches}
-              drawStats={drawStats}
               winnerRevealData={winnerRevealData}
               winnerRevealIssue={winnerRevealIssue}
               currentWalletAddress={currentWinnerWalletAddress}
               currentUserWinnerCount={currentUserWinnerCount}
+              onRevealStateChange={setWinnerRevealStarted}
             />
           ) : null}
         </Suspense>

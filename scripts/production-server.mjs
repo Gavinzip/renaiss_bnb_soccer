@@ -167,7 +167,9 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
   if (runtimeTarget !== 'local') return
 
   const localDataDir = resolveRuntimePath(repoRoot, process.env.SOCCER_LOCAL_DATA_DIR || '.local-data/soccer')
-  const localOrigin = process.env.SOCCER_LOCAL_APP_ORIGIN || `http://127.0.0.1:${port}`
+  const localOrigin = process.env.SOCCER_LOCAL_APP_ORIGIN || 'http://127.0.0.1:5173'
+  const localOrigins = process.env.SOCCER_LOCAL_APP_ORIGINS
+    || [localOrigin, 'http://127.0.0.1:5173', 'http://localhost:5173'].join(',')
   const serverDataDir = '/data/soccer'
   const serverOrigin = 'https://renaiss-worldcup.zeabur.app'
   const localDefaultDirs = [
@@ -224,6 +226,8 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
 
   applyDefaultEnv('PUBLIC_APP_ORIGIN', localOrigin, { replace: [serverOrigin] })
   applyDefaultEnv('AUTH_PUBLIC_ORIGIN', localOrigin, { replace: [serverOrigin] })
+  applyDefaultEnv('PUBLIC_APP_ORIGINS', localOrigins)
+  applyDefaultEnv('AUTH_PUBLIC_ORIGINS', localOrigins)
   applyDefaultEnv('X_REDIRECT_URI', `${localOrigin}/api/auth/x/callback`, {
     replace: [`${serverOrigin}/api/auth/x/callback`],
   })

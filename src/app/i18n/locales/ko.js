@@ -348,6 +348,7 @@ export const koLocale = {
       "closing_soon": "곧 마감",
       "locked": "투표 잠김",
       "scheduled": "아직 열리지 않음",
+      "in_play": "경기 진행 중",
       "official_final": "공식 종료",
       "allocated": "투표됨"
     },
@@ -356,6 +357,7 @@ export const koLocale = {
       "closing_soon": "마감 임박",
       "locked": "잠김",
       "scheduled": "대기",
+      "in_play": "진행 중",
       "official_final": "종료",
       "allocated": "투표됨"
     },
