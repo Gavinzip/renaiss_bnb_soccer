@@ -237,23 +237,23 @@ export function MatchPrizeList({
                                 {t("common.advancing")}
                               </b>
                             ) : null}
-                            {voteOutcome ? (
-                              <b className={[
-                                "match-prize-team__vote-result",
-                                `is-${voteOutcome.result}`,
-                              ].join(" ")}
-                              >
-                                <span>
-                                  <small>{t("vote.voteOutcomeTicketsLabel")}</small>
-                                  <strong>{formatNumber(voteOutcome.tickets)}</strong>
-                                </span>
-                                <span>
-                                  <small>{t("vote.voteOutcomeHitRateLabel")}</small>
-                                  <strong>{hitRate}</strong>
-                                </span>
-                              </b>
-                            ) : null}
                           </span>
+                          {voteOutcome ? (
+                            <b className={[
+                              "match-prize-team__vote-result",
+                              `is-${voteOutcome.result}`,
+                            ].join(" ")}
+                            >
+                              <span>
+                                <small>{t("vote.voteOutcomeTicketsLabel")}</small>
+                                <strong>{formatNumber(voteOutcome.tickets)}</strong>
+                              </span>
+                              <span>
+                                <small>{t("vote.voteOutcomeHitRateLabel")}</small>
+                                <strong>{hitRate}</strong>
+                              </span>
+                            </b>
+                          ) : null}
                           <small>{compactVotes(team.votes)}</small>
                         </span>
                       </button>

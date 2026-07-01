@@ -1,6 +1,6 @@
 {
   "description": "Renaiss World Cup insider ticket grants. Practice tickets are usable only in round32; grant tickets are a shared budget from round16 through final.",
-  "practiceTickets": 100,
+  "practiceTickets": 300,
   "grantTickets": 100,
   "grants": [
     "0x14f84ff15797fadb27a866c5f5afd831f3b43d8b",

@@ -29423,6 +29423,49 @@ body {
   font-weight: 900;
 }
 
+/* Keep the country/vote block in its original rhythm; outcome metrics are a small note below it. */
+.control-room[data-view="vote"] .match-prize-team__copy {
+  position: relative;
+  overflow: visible;
+}
+
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result {
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 0;
+  z-index: 2;
+  justify-self: auto;
+  max-width: min(100%, 176px);
+  margin-top: 0;
+  padding: 0 !important;
+  gap: 6px !important;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.control-room[data-view="vote"] .match-prize-team.is-right-team > .match-prize-team__copy > .match-prize-team__vote-result {
+  right: 0;
+  left: auto;
+  justify-self: auto;
+}
+
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result small {
+  font-size: 0.43rem;
+}
+
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result strong {
+  font-size: 0.54rem;
+}
+
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result::after {
+  content: none;
+  display: none;
+}
+
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result span + span::before {
+  background: rgba(245, 246, 241, 0.2);
+}
+
 @media (min-width: 821px) and (max-width: 1100px) {
   .control-room[data-view] .control-header {
     width: min(calc(100vw - 28px), 980px) !important;
