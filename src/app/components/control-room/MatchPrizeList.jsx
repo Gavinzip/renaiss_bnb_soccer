@@ -83,26 +83,6 @@ function getScrollInsetTop(element) {
   return Number.isFinite(inset) ? inset : 0;
 }
 
-function getMobileHeaderOffset() {
-  const header = document.querySelector(".control-header");
-  const headerRect = header?.getBoundingClientRect();
-  return headerRect ? Math.max(16, headerRect.bottom + 12) : 16;
-}
-
-function keepLaneVisibleInViewport(lane) {
-  const laneRect = lane.getBoundingClientRect();
-  const headerOffset = getMobileHeaderOffset();
-  const bottomInset = 24;
-  const visibleBottom = window.innerHeight - bottomInset;
-
-  if (laneRect.top >= headerOffset && laneRect.bottom <= visibleBottom) return;
-
-  window.scrollTo({
-    top: Math.max(0, window.scrollY + laneRect.top - headerOffset),
-    behavior: "smooth",
-  });
-}
-
 export function MatchPrizeList({
   activeRound,
   matches,
@@ -123,7 +103,6 @@ export function MatchPrizeList({
     const scrollContainer = selectedLane?.closest(".match-prize-list-view__matches");
     if (!selectedLane || !scrollContainer) return undefined;
 
-    let viewportScrollTimeoutId = 0;
     const animationFrameId = window.requestAnimationFrame(() => {
       const containerRect = scrollContainer.getBoundingClientRect();
       const laneRect = selectedLane.getBoundingClientRect();
@@ -132,15 +111,10 @@ export function MatchPrizeList({
         top: Math.max(0, scrollContainer.scrollTop + laneRect.top - containerRect.top - scrollInsetTop),
         behavior: "smooth",
       });
-
-      viewportScrollTimeoutId = window.setTimeout(() => {
-        keepLaneVisibleInViewport(selectedLane);
-      }, 260);
     });
 
     return () => {
       window.cancelAnimationFrame(animationFrameId);
-      if (viewportScrollTimeoutId) window.clearTimeout(viewportScrollTimeoutId);
     };
   }, [selectedMatchId]);
 
