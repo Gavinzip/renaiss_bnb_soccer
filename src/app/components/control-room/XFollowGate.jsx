@@ -107,7 +107,7 @@ export function XFollowGate({
   const [issue, setIssue] = useState("");
   const [eligibilityIssue, setEligibilityIssue] = useState("");
   const [fireflyUidInput, setFireflyUidInput] = useState(authSession?.xAccountEligibility?.fireflyUid || "");
-  const [uidLookupOpen, setUidLookupOpen] = useState(() => Boolean(authSession?.xAccountEligibility?.fireflyUid));
+  const [uidLookupOpen, setUidLookupOpen] = useState(false);
   const [localStatus, setLocalStatus] = useState(authSession?.xFollow || null);
   const [localEligibilityStatus, setLocalEligibilityStatus] = useState(authSession?.xAccountEligibility || null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -131,7 +131,7 @@ export function XFollowGate({
   const eligibilityGatePassed = !eligibilityRequired || Boolean(eligibility.gatePassed);
   const fireflyUidValue = fireflyUidInput.trim();
   const fireflyUidInvalid = Boolean(fireflyUidValue && !FIREFLY_UID_PATTERN.test(fireflyUidValue));
-  const uidLookupExpanded = uidLookupOpen || Boolean(fireflyUidValue);
+  const uidLookupExpanded = uidLookupOpen;
   const skipEnabled = Boolean(gate.skipEnabled || gateConfig.skipEnabled);
   const retryUntilMs = useMemo(() => {
     if (!RETRY_GATED_STATUSES.has(gate.status)) return 0;
@@ -178,7 +178,6 @@ export function XFollowGate({
     ));
     setLocalEligibilityStatus(authSession?.xAccountEligibility || null);
     setFireflyUidInput(authSession?.xAccountEligibility?.fireflyUid || "");
-    if (authSession?.xAccountEligibility?.fireflyUid) setUidLookupOpen(true);
     setActiveStep(initialStepForSession(authSession));
   }, [authSession?.authenticated, authSession?.walletAddress, authSession?.xFollow, authSession?.xAccountEligibility]);
 
@@ -269,6 +268,7 @@ export function XFollowGate({
         setEligibilityIssue(t(eligibilityStatusMessageKey(payload.status)));
         return;
       }
+      setUidLookupOpen(false);
       await onRefreshAuth?.();
     } catch (error) {
       if (error?.payload?.status) setLocalEligibilityStatus(error.payload.status || localEligibilityStatus);
