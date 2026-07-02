@@ -222,6 +222,7 @@ async function scanLogSource({
   fromBlock,
   toBlock,
   args,
+  eventCacheLookbackFromBlock = 0,
   eventCache,
   eventCachePath,
   campaignStart,
@@ -234,11 +235,15 @@ async function scanLogSource({
   const cachedFromBlock = toNumber(cachedSource?.fromBlock)
   const cachedToBlock = toNumber(cachedSource?.toBlock)
   const overlapBlocks = Math.max(0, toNumber(args.eventCacheOverlapBlocks) || 0)
+  const lookbackFromBlock = toNumber(eventCacheLookbackFromBlock)
   let scanStart = fromBlock
   let cachedEvents = []
 
   if (cachedSource && cachedFromBlock <= fromBlock && cachedToBlock >= fromBlock) {
-    scanStart = Math.max(fromBlock, Math.min(toBlock + 1, cachedToBlock - overlapBlocks + 1))
+    const overlapStart = Math.max(fromBlock, Math.min(toBlock + 1, cachedToBlock - overlapBlocks + 1))
+    scanStart = lookbackFromBlock
+      ? Math.max(fromBlock, Math.min(overlapStart, lookbackFromBlock))
+      : overlapStart
     cachedEvents = cachedEventsAll.filter((event) => {
       const block = toNumber(event.blockNumber)
       return block >= fromBlock && block < scanStart && block <= toBlock
@@ -310,6 +315,10 @@ async function scanLogSource({
       splitWindows,
       cachedEvents: cachedEvents.length,
       fetchedEvents: fetchedEvents.length,
+      scanStart,
+      cachedFromBlock: cachedFromBlock || null,
+      cachedToBlock: cachedToBlock || null,
+      eventCacheLookbackFromBlock: lookbackFromBlock || null,
       cacheToBlock: eventCache.sources[cacheKey]?.toBlock ?? null,
     },
   }
@@ -451,6 +460,14 @@ export async function scanOnchainTicketEvents(args) {
   }
   const fromBlock = args.fromBlock || (await blockByTimestamp(bscscanConfig, campaignStart, 'after'))
   const toBlock = args.toBlock || (await blockByTimestamp(bscscanConfig, windowEndTs, 'before'))
+  const eventCacheLookbackMinutes = Math.max(0, toNumber(args.eventCacheLookbackMinutes) || 0)
+  const eventCacheLookbackFromBlock = eventCacheLookbackMinutes
+    ? await blockByTimestamp(
+      bscscanConfig,
+      Math.max(campaignStart, windowEndTs - eventCacheLookbackMinutes * 60),
+      'after',
+    )
+    : 0
 
   const eventCachePath = args.noCache ? '' : args.eventCachePath
   const eventCache = readJsonCache(eventCachePath, { version: 2, sources: {} }) || {
@@ -470,6 +487,7 @@ export async function scanOnchainTicketEvents(args) {
       fromBlock,
       toBlock,
       args,
+      eventCacheLookbackFromBlock,
       eventCache,
       eventCachePath,
       campaignStart,
@@ -495,6 +513,7 @@ export async function scanOnchainTicketEvents(args) {
       fromBlock,
       toBlock,
       args,
+      eventCacheLookbackFromBlock,
       eventCache,
       eventCachePath,
       campaignStart,
@@ -526,6 +545,10 @@ export async function scanOnchainTicketEvents(args) {
       wrongUser: legacyMatch?.wrongUser,
       cachedEvents: result.stats.cachedEvents,
       fetchedEvents: result.stats.fetchedEvents,
+      scanStart: result.stats.scanStart,
+      cachedFromBlock: result.stats.cachedFromBlock,
+      cachedToBlock: result.stats.cachedToBlock,
+      eventCacheLookbackFromBlock: result.stats.eventCacheLookbackFromBlock,
       cacheToBlock: result.stats.cacheToBlock,
       splitWindows: result.stats.splitWindows,
     })
@@ -542,6 +565,8 @@ export async function scanOnchainTicketEvents(args) {
       toBlock,
       campaignStart,
       campaignEnd,
+      eventCacheLookbackMinutes,
+      eventCacheLookbackFromBlock: eventCacheLookbackFromBlock || null,
       packEventSources: describePackEventSources(contracts),
       buybackSuccessEventTopic: BUYBACK_SUCCESS_V3_EVENT_TOPIC,
       successContracts: successStats,

@@ -477,6 +477,46 @@ function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTi
   );
 }
 
+function HomeTicketFlow({ copy }) {
+  const { t } = copy;
+  const flowItems = [
+    {
+      id: "buyback",
+      title: t("home.ticketFlowBuybackTitle"),
+      body: t("home.ticketFlowBuybackBody"),
+    },
+    {
+      id: "carryover",
+      title: t("home.ticketFlowCarryoverTitle"),
+      body: t("home.ticketFlowCarryoverBody"),
+    },
+    {
+      id: "settlement",
+      title: t("home.ticketFlowSettlementTitle"),
+      body: t("home.ticketFlowSettlementBody"),
+    },
+  ];
+
+  return (
+    <section className="home-ticket-flow" aria-label={t("home.ticketFlowAria")}>
+      <header className="home-ticket-flow__head">
+        <h2>{t("home.ticketFlowTitle")}</h2>
+      </header>
+      <ol className="home-ticket-flow__steps">
+        {flowItems.map((item, index) => {
+          return (
+            <li className={`is-${item.id}`} key={item.id}>
+              <span className="home-ticket-flow__index">{String(index + 1).padStart(2, "0")}</span>
+              <strong>{item.title}</strong>
+              <p>{item.body}</p>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 export function HomeRoom({
   activeRound,
   matches,
@@ -583,6 +623,7 @@ export function HomeRoom({
           heroMilestoneDetail={heroMilestoneDetail}
           copy={copy}
         />
+        <HomeTicketFlow copy={copy} />
         <RulesRoom
           activeRound={activeRound}
           activeRoundMatches={activeRoundMatches}

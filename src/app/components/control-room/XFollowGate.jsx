@@ -1,5 +1,5 @@
-import { CheckCircle2, ExternalLink, Loader2, LockKeyhole, ShieldCheck, ShieldOff, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, CircleAlert, ExternalLink, Loader2, LockKeyhole, ShieldCheck, ShieldOff, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Stepper, { Step } from "../Stepper/Stepper";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
@@ -13,6 +13,7 @@ const FIREFLY_ELIGIBILITY_LINKS = {
   firefly: "https://firefly.social/signup?step=login_social_platform",
   predict: "https://firefly.social/prediction/category/fifwc",
 };
+const FIREFLY_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 function xLoginHref() {
   let returnTo = "/?view=vote&auth=success&xgate=1";
@@ -52,6 +53,7 @@ function eligibilityStatusMessageKey(status) {
     api_error: "xFollowGate.statusEligibilityApiError",
     eligibility_expired: "xFollowGate.statusEligibilityExpired",
     firefly_uid_claimed: "xFollowGate.statusFireflyUidClaimed",
+    firefly_uid_invalid: "xFollowGate.statusFireflyUidInvalid",
     firefly_uid_required: "xFollowGate.statusFireflyUidRequired",
     ineligible: "xFollowGate.statusEligibilityIneligible",
     login_required: "xFollowGate.statusEligibilityLoginRequired",
@@ -104,9 +106,12 @@ export function XFollowGate({
   const [skipping, setSkipping] = useState(false);
   const [issue, setIssue] = useState("");
   const [eligibilityIssue, setEligibilityIssue] = useState("");
+  const [fireflyUidInput, setFireflyUidInput] = useState(authSession?.xAccountEligibility?.fireflyUid || "");
+  const [uidLookupOpen, setUidLookupOpen] = useState(() => Boolean(authSession?.xAccountEligibility?.fireflyUid));
   const [localStatus, setLocalStatus] = useState(authSession?.xFollow || null);
   const [localEligibilityStatus, setLocalEligibilityStatus] = useState(authSession?.xAccountEligibility || null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const uidInputRef = useRef(null);
   const gate = localStatus || authSession?.xFollow || {};
   const eligibility = localEligibilityStatus || authSession?.xAccountEligibility || {};
   const gateConfig = authConfig?.xFollowGate || gate.target || {};
@@ -124,6 +129,9 @@ export function XFollowGate({
   const xProviderReady = Boolean(authConfig?.providers?.x) && !identityBlockingStatus && !needsRenaissSession;
   const eligibilityRequired = eligibility.required ?? eligibilityConfig.required ?? true;
   const eligibilityGatePassed = !eligibilityRequired || Boolean(eligibility.gatePassed);
+  const fireflyUidValue = fireflyUidInput.trim();
+  const fireflyUidInvalid = Boolean(fireflyUidValue && !FIREFLY_UID_PATTERN.test(fireflyUidValue));
+  const uidLookupExpanded = uidLookupOpen || Boolean(fireflyUidValue);
   const skipEnabled = Boolean(gate.skipEnabled || gateConfig.skipEnabled);
   const retryUntilMs = useMemo(() => {
     if (!RETRY_GATED_STATUSES.has(gate.status)) return 0;
@@ -169,6 +177,8 @@ export function XFollowGate({
         : authSession?.xFollow || null
     ));
     setLocalEligibilityStatus(authSession?.xAccountEligibility || null);
+    setFireflyUidInput(authSession?.xAccountEligibility?.fireflyUid || "");
+    if (authSession?.xAccountEligibility?.fireflyUid) setUidLookupOpen(true);
     setActiveStep(initialStepForSession(authSession));
   }, [authSession?.authenticated, authSession?.walletAddress, authSession?.xFollow, authSession?.xAccountEligibility]);
 
@@ -238,6 +248,10 @@ export function XFollowGate({
     if (!canVerifyEligibility) return;
 
     setEligibilityIssue("");
+    if (fireflyUidInvalid) {
+      setEligibilityIssue(t("xFollowGate.statusFireflyUidInvalid"));
+      return;
+    }
     setVerifyingEligibility(true);
     try {
       const { payload } = await fetchJsonWithTimeout("/api/auth/x-account-eligibility/verify", {
@@ -247,6 +261,7 @@ export function XFollowGate({
           "content-type": "application/json",
           ...csrfHeadersForSession(authSession),
         },
+        body: JSON.stringify(fireflyUidValue ? { ffAccountUid: fireflyUidValue } : {}),
         timeoutMs: 15000,
       });
       setLocalEligibilityStatus(payload);
@@ -292,6 +307,13 @@ export function XFollowGate({
     }
   }
 
+  function handleOpenUidLookup() {
+    setUidLookupOpen(true);
+    window.setTimeout(() => {
+      uidInputRef.current?.focus();
+    }, 180);
+  }
+
   function stepComplete(step) {
     if (step === 1) return Boolean((gate.bypassed && gate.gatePassed) || (authSession?.walletAddress && xIdentityReady && !identityIssueStatus));
     if (step === 2) return Boolean(gate.gatePassed);
@@ -326,7 +348,19 @@ export function XFollowGate({
         backButtonText={stepLabels.back}
         nextButtonText={stepLabels.next}
         footerContent={activeStep === 3 ? (
-          <p className="x-follow-gate__eligibility-note">{t("xFollowGate.eligibilityCheckPredictBetNote")}</p>
+          <a
+            href="#x-follow-gate-uid-lookup"
+            className="x-follow-gate__eligibility-note"
+            aria-controls="x-follow-gate-uid-lookup"
+            aria-expanded={uidLookupExpanded}
+            onClick={(event) => {
+              event.preventDefault();
+              handleOpenUidLookup();
+            }}
+          >
+            <CircleAlert size={13} strokeWidth={2.25} />
+            <span>{t("xFollowGate.eligibilityCheckPredictBetNote")}</span>
+          </a>
         ) : null}
         disableStepIndicators
         stepContainerClassName="x-follow-gate__step-tabs"
@@ -475,6 +509,30 @@ export function XFollowGate({
                 </li>
               ))}
             </ul>
+            <div
+              id="x-follow-gate-uid-lookup"
+              className={`x-follow-gate__uid-panel${uidLookupExpanded ? " is-open" : ""}`}
+              aria-hidden={!uidLookupExpanded}
+            >
+              <label className="x-follow-gate__uid-lookup">
+                <span>{t("xFollowGate.eligibilityUidLabel")}</span>
+                <input
+                  ref={uidInputRef}
+                  type="text"
+                  value={fireflyUidInput}
+                  inputMode="text"
+                  autoComplete="off"
+                  spellCheck="false"
+                  placeholder={t("xFollowGate.eligibilityUidPlaceholder")}
+                  aria-invalid={fireflyUidInvalid}
+                  disabled={!uidLookupExpanded || eligibilityGatePassed || verifyingEligibility}
+                  onChange={(event) => {
+                    setFireflyUidInput(event.target.value);
+                    if (eligibilityIssue) setEligibilityIssue("");
+                  }}
+                />
+              </label>
+            </div>
             {eligibilityIssue || eligibilityStatusIssue ? (
               <p className="x-follow-gate__issue">{eligibilityIssue || eligibilityStatusIssue}</p>
             ) : null}

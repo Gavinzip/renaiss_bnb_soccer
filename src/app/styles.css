@@ -19110,6 +19110,142 @@ body {
   grid-row: 5;
 }
 
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow {
+  width: 100%;
+  min-width: 0;
+  scroll-margin-top: clamp(96px, 12vh, 136px);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(245, 246, 241, 0.1);
+  border-radius: 28px;
+  padding: clamp(26px, 3.2vw, 40px) clamp(20px, 3.4vw, 38px);
+  background:
+    radial-gradient(circle at 17% 18%, rgba(51, 157, 220, 0.075), transparent 36%),
+    radial-gradient(circle at 72% 20%, rgba(240, 209, 139, 0.06), transparent 38%),
+    linear-gradient(90deg, rgba(3, 10, 13, 0.42), rgba(8, 20, 25, 0.32) 36%, rgba(45, 34, 17, 0.24) 70%, rgba(5, 7, 7, 0.38)),
+    rgba(5, 8, 8, 0.24);
+  box-shadow:
+    0 24px 78px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.075);
+  backdrop-filter: blur(18px) saturate(1.06);
+  -webkit-backdrop-filter: blur(18px) saturate(1.06);
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow::before {
+  content: none;
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 38%, rgba(51, 157, 220, 0.075), transparent 38%),
+    radial-gradient(circle at 72% 34%, rgba(240, 209, 139, 0.055), transparent 40%),
+    linear-gradient(180deg, rgba(245, 246, 241, 0.035), transparent 42%);
+  opacity: 0.2;
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow > * {
+  position: relative;
+  z-index: 1;
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__head {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  padding-bottom: clamp(18px, 2.2vw, 28px);
+  border-bottom: 1px solid rgba(245, 246, 241, 0.2);
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__head h2 {
+  width: fit-content;
+  max-width: 13em;
+  margin: 0;
+  color: transparent;
+  font-size: clamp(1.65rem, 3vw, 2.45rem);
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0;
+  text-shadow: 0 16px 38px rgba(0, 0, 0, 0.46);
+  text-wrap: balance;
+  -webkit-text-fill-color: transparent;
+  background: linear-gradient(105deg, #ffffff 0%, #fff7dd 34%, #d7b86b 56%, #d7e2df 82%, #ffffff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(14px, 1.4vw, 18px);
+  list-style: none;
+  margin: 0;
+  padding: clamp(24px, 3vw, 38px) 0 0;
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps li {
+  min-width: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-content: start;
+  gap: 11px 16px;
+  min-height: clamp(132px, 9.5vw, 152px);
+  padding: clamp(18px, 1.65vw, 22px) clamp(16px, 1.55vw, 20px);
+  border: 1px solid rgba(245, 246, 241, 0.105);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(245, 246, 241, 0.06), rgba(245, 246, 241, 0.014)),
+    linear-gradient(145deg, rgba(12, 20, 21, 0.52), rgba(3, 6, 6, 0.44));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    inset 0 -1px 0 rgba(240, 209, 139, 0.055),
+    0 18px 48px rgba(0, 0, 0, 0.18);
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps li + li {
+  border-left: 1px solid rgba(245, 246, 241, 0.105);
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps li::after {
+  content: none;
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__index {
+  grid-column: 1;
+  color: rgba(240, 209, 139, 0.74);
+  font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps strong {
+  grid-column: 2;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: clamp(1.12rem, 1.34vw, 1.34rem);
+  font-weight: 950;
+  line-height: 1.16;
+  text-wrap: balance;
+}
+
+.control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps p {
+  grid-column: 2;
+  margin: 0;
+  color: rgba(245, 246, 241, 0.58);
+  font-size: clamp(0.78rem, 0.88vw, 0.9rem);
+  font-weight: 760;
+  line-height: 1.46;
+}
+
 .control-room[data-view="home"] .home-scroll-sections .rules-room.home-rules-panel {
   width: 100% !important;
   max-width: none !important;
@@ -19162,8 +19298,25 @@ body {
 
   .home-scroll-sections,
   .control-room[data-view="home"] .home-scroll-sections .hero-milestone-command.home-milestone-panel,
+  .control-room[data-view="home"] .home-scroll-sections .home-ticket-flow,
   .control-room[data-view="home"] .home-scroll-sections .rules-hero {
     grid-template-columns: 1fr !important;
+  }
+
+  .control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__head {
+    border-bottom-color: rgba(245, 246, 241, 0.16);
+  }
+
+  .control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__head h2 {
+    max-width: 12em;
+  }
+
+  .control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps {
+    grid-template-columns: 1fr;
+  }
+
+  .control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps li + li {
+    border-left: 1px solid rgba(245, 246, 241, 0.105);
   }
 
   .control-room[data-view="home"] .home-scroll-sections .hero-milestone-levels {
@@ -19188,11 +19341,18 @@ body {
   }
 
   .control-room[data-view="home"] .home-scroll-sections .hero-milestone-command.home-milestone-panel,
+  .control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__head,
+  .control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps li,
   .control-room[data-view="home"] .home-scroll-sections .rules-hero,
   .control-room[data-view="home"] .home-scroll-sections .rules-flow,
   .control-room[data-view="home"] .home-scroll-sections .round-rulebook,
   .control-room[data-view="home"] .home-scroll-sections .boundary-ledger {
     padding: 16px !important;
+  }
+
+  .control-room[data-view="home"] .home-scroll-sections .home-ticket-flow__steps li {
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 10px 12px;
   }
 
   .control-room[data-view="home"] .home-scroll-sections .hero-milestone-command__focus {

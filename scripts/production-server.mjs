@@ -74,6 +74,11 @@ const refreshIntervalMs = refreshMinutes * 60 * 1000
 const refreshHistoryLimit = readIntegerEnv('LUCKY_DRAW_REFRESH_HISTORY_LIMIT', 24, 1)
 const refreshEnabled = process.env.LUCKY_DRAW_REFRESH_ENABLED !== '0'
 const refreshOnStartup = process.env.LUCKY_DRAW_REFRESH_ON_STARTUP !== '0'
+const eventCacheLookbackRounds = readIntegerEnv('LUCKY_DRAW_EVENT_CACHE_LOOKBACK_ROUNDS', 12, 0)
+const eventCacheLookbackMinutesOverride = readIntegerEnv('LUCKY_DRAW_EVENT_CACHE_LOOKBACK_MINUTES', 0, 0)
+const eventCacheLookbackMinutes = eventCacheLookbackMinutesOverride > 0
+  ? eventCacheLookbackMinutesOverride
+  : refreshMinutes * eventCacheLookbackRounds
 const fifaResultSyncMinutes = readIntegerEnv('FIFA_RESULT_SYNC_MINUTES', 10, 1)
 const fifaResultSyncIntervalMs = fifaResultSyncMinutes * 60 * 1000
 const fifaResultSyncHistoryLimit = readIntegerEnv('FIFA_RESULT_SYNC_HISTORY_LIMIT', 24, 1)
@@ -549,6 +554,8 @@ function privateHealthPayload() {
     refreshEnabled,
     refreshOnStartup,
     refreshMinutes,
+    eventCacheLookbackRounds,
+    eventCacheLookbackMinutes,
     refreshRunning,
     bscscanApiKeyConfigured: Boolean(process.env.BSCSCAN_API_KEY),
     lastRefresh,
@@ -1324,8 +1331,13 @@ function runLedgerRefresh(trigger) {
     '--backoff-ms',
     backoffMs,
   ]
+  if (eventCacheLookbackMinutes > 0) {
+    args.push('--event-cache-lookback-minutes', String(eventCacheLookbackMinutes))
+  }
 
-  console.log(`[ledger-refresh] start trigger=${trigger} data=${dataDir} cache=${cacheDir}`)
+  console.log(
+    `[ledger-refresh] start trigger=${trigger} data=${dataDir} cache=${cacheDir} lookback=${eventCacheLookbackMinutes}m`,
+  )
   const child = spawn(process.execPath, args, {
     cwd: repoRoot,
     env: process.env,

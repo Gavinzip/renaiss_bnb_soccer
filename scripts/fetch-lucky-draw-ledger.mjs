@@ -57,6 +57,7 @@ function parseArgs(argv) {
     walletMigrationCacheTtlMinutes: 15,
     walletResolveCacheTtlMinutes: 24 * 60,
     eventCacheOverlapBlocks: 200,
+    eventCacheLookbackMinutes: toNumber(process.env.LUCKY_DRAW_EVENT_CACHE_LOOKBACK_MINUTES || 0),
     campaignStart: toNumber(process.env.LUCKY_DRAW_CAMPAIGN_START || DEFAULT_CAMPAIGN_START),
     campaignEnd: toNumber(process.env.LUCKY_DRAW_CAMPAIGN_END || DEFAULT_CAMPAIGN_END),
     extraLegacyPacksRaw: process.env[EXTRA_LEGACY_PACKS_ENV] || '',
@@ -100,6 +101,7 @@ function parseArgs(argv) {
     else if (arg === '--wallet-migration-cache-ttl-minutes') args.walletMigrationCacheTtlMinutes = toNumber(argv[++index])
     else if (arg === '--wallet-resolve-cache-ttl-minutes') args.walletResolveCacheTtlMinutes = toNumber(argv[++index])
     else if (arg === '--event-cache-overlap-blocks') args.eventCacheOverlapBlocks = toNumber(argv[++index])
+    else if (arg === '--event-cache-lookback-minutes') args.eventCacheLookbackMinutes = toNumber(argv[++index])
     else if (arg === '--campaign-start') args.campaignStart = toNumber(argv[++index])
     else if (arg === '--campaign-end') args.campaignEnd = toNumber(argv[++index])
     else if (arg === '--extra-legacy-packs') args.extraLegacyPacksRaw = argv[++index] || ''
@@ -146,6 +148,9 @@ function parseArgs(argv) {
         envValues.BSCSCAN_REQUEST_TIMEOUT_MS || envValues.ONCHAIN_REQUEST_TIMEOUT_MS || 30_000,
       )
     }
+    if (envValues.LUCKY_DRAW_EVENT_CACHE_LOOKBACK_MINUTES) {
+      args.eventCacheLookbackMinutes = toNumber(envValues.LUCKY_DRAW_EVENT_CACHE_LOOKBACK_MINUTES)
+    }
     if (envValues.LUCKY_DRAW_CAMPAIGN_START) args.campaignStart = toNumber(envValues.LUCKY_DRAW_CAMPAIGN_START)
     if (envValues.LUCKY_DRAW_CAMPAIGN_END) args.campaignEnd = toNumber(envValues.LUCKY_DRAW_CAMPAIGN_END)
     args.insiderGrantPath = args.insiderGrantPath || envValues.SOCCER_INSIDER_TICKET_GRANT_PATH || ''
@@ -178,6 +183,7 @@ function parseArgs(argv) {
   args.bscscanRequestTimeoutMs = Math.max(1, args.bscscanRequestTimeoutMs || 30_000)
   args.blockChunk = Math.max(100, args.blockChunk)
   args.pageSize = Math.max(1, Math.min(1000, args.pageSize))
+  args.eventCacheLookbackMinutes = Math.max(0, toNumber(args.eventCacheLookbackMinutes) || 0)
   args.walletMigrationCacheTtlMs = Math.max(0, args.walletMigrationCacheTtlMinutes) * 60 * 1000
   args.walletResolveCacheTtlMs = Math.max(0, args.walletResolveCacheTtlMinutes) * 60 * 1000
   args.walletMigrationCachePath = join(args.cacheDir, 'wallet-migrations.json')
@@ -210,6 +216,7 @@ Options:
   --carryover-ledger-url <url>  Previous campaign ledger URL. Default ${DEFAULT_CARRYOVER_LEDGER_URL}.
   --carryover-ledger-path <path> Read previous campaign ledger from a local JSON file instead of URL.
   --carryover-divisor <n>       Previous campaign finalTickets divisor. Default ${DEFAULT_CARRYOVER_DIVISOR}.
+  --event-cache-lookback-minutes <n> Re-scan at least this many minutes before the current scan end.
   --contracts <csv>             Limit on-chain scan to specific contract addresses.
   --from-block <n>              Debug scan start block.
   --to-block <n>                Debug scan end block.

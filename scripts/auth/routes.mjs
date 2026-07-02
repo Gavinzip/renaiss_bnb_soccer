@@ -600,9 +600,11 @@ export async function handleAuthRoute({
     const session = readAuthSession(auth, request)
     const xFollow = getXFollowStatus(auth, session, request)
     try {
+      const body = await readJsonBody(request)
       const status = await verifyXAccountEligibility(auth, session, request, {
         xFollowStatus: xFollow,
         force: true,
+        fireflyUid: body?.ffAccountUid ?? body?.ff_account_uid ?? body?.fireflyUid,
       })
       sendJsonResponse(sendJson, request, response, 200, { ok: true, ...status })
     } catch (error) {

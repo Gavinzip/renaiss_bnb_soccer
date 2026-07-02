@@ -45,6 +45,14 @@ function cleanFireflyUid(value) {
   return FIREFLY_UID_PATTERN.test(id) ? id : ''
 }
 
+function readFireflyUidOption(options = {}) {
+  const raw = String(options.fireflyUid ?? options.ffAccountUid ?? options.ff_account_uid ?? '').trim()
+  return {
+    raw,
+    fireflyUid: cleanFireflyUid(raw),
+  }
+}
+
 function emptyEligibilityState() {
   return {
     version: 1,
@@ -139,6 +147,7 @@ function buildStatus({
     gatePassed: Boolean(gatePassed || !config.required),
     eligible: typeof record?.eligible === 'boolean' ? record.eligible : null,
     fireflyUid: recordFireflyUid(record) || null,
+    verificationMethod: record?.verificationMethod || null,
     hasFireflyAccount: typeof record?.hasFireflyAccount === 'boolean' ? record.hasFireflyAccount : null,
     hasPlacedBet: typeof record?.hasPlacedBet === 'boolean' ? record.hasPlacedBet : null,
     status,
@@ -160,6 +169,7 @@ function eligibilityErrorMessage(code) {
   if (code === 'x_follow_required') return 'X follow verification is required before Firefly eligibility verification.'
   if (code === 'x_identity_required') return 'A verified X account id is required before Firefly eligibility verification.'
   if (code === 'service_unconfigured') return 'Firefly eligibility API is not configured.'
+  if (code === 'firefly_uid_invalid') return 'The Firefly account UID format is invalid.'
   if (code === 'firefly_uid_required') return 'Firefly did not return an account UID. Verify again before voting.'
   if (code === 'firefly_uid_claimed') return 'This Firefly account UID is already linked to another voting identity.'
   if (code === 'wallet_uid_mismatch') return 'This wallet is already linked to another Firefly account UID.'
@@ -224,11 +234,18 @@ function findFireflyUidConflict(state, { walletAddress, xUserId, fireflyUid, cur
   return null
 }
 
-async function fetchEligibility(config, xUserId) {
+async function fetchEligibility(config, { xUserId, fireflyUid }) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
   const url = new URL(config.path, `${config.apiBaseUrl}/`)
-  url.searchParams.set('x_account_id', xUserId)
+  const lookupFireflyUid = cleanFireflyUid(fireflyUid)
+  const lookupXUserId = cleanXUserId(xUserId)
+  const verificationMethod = lookupFireflyUid ? 'ff_account_uid' : 'x_account_id'
+  if (lookupFireflyUid) {
+    url.searchParams.set('ff_account_uid', lookupFireflyUid)
+  } else {
+    url.searchParams.set('x_account_id', lookupXUserId)
+  }
 
   try {
     const response = await fetch(url, {
@@ -256,6 +273,9 @@ async function fetchEligibility(config, xUserId) {
     const eligibility = normalizeEligibilityPayload(payload)
     return {
       ...eligibility,
+      fireflyUid: eligibility.fireflyUid || lookupFireflyUid || null,
+      requestedFireflyUid: lookupFireflyUid || null,
+      verificationMethod,
       rawStatus: response.status,
     }
   } catch (error) {
@@ -293,7 +313,8 @@ function saveEligibilityResult(config, walletAddress, xUserId, result) {
     xUserId,
     eligible: Boolean(result.eligible),
     fireflyUid: fireflyUid || null,
-    verificationMethod: 'x_account_id',
+    verificationMethod: result.verificationMethod === 'ff_account_uid' ? 'ff_account_uid' : 'x_account_id',
+    requestedFireflyUid: cleanFireflyUid(result.requestedFireflyUid) || null,
     hasFireflyAccount: Boolean(result.hasFireflyAccount),
     hasPlacedBet: Boolean(result.hasPlacedBet),
     status: result.eligible && !fireflyUid ? 'firefly_uid_required' : responseCodeForRecord({
@@ -390,6 +411,7 @@ export async function verifyXAccountEligibility(auth, session, request, options 
   const config = auth.xAccountEligibilityConfig
   const subject = readSubject(auth, session, request, options)
   const status = getXAccountEligibilityStatus(auth, session, request, subject)
+  const fireflyUidOption = readFireflyUidOption(options)
 
   if (!config.required) return status
   if (!session) throwEligibilityError('login_required', status, 401)
@@ -397,13 +419,17 @@ export async function verifyXAccountEligibility(auth, session, request, options 
   if (!subject.xFollowStatus?.gatePassed) throwEligibilityError('x_follow_required', status, 403)
   if (!subject.xUserId) throwEligibilityError('x_identity_required', status, 403)
   if (!config.apiKey) throwEligibilityError('service_unconfigured', status, 503)
+  if (fireflyUidOption.raw && !fireflyUidOption.fireflyUid) throwEligibilityError('firefly_uid_invalid', status, 400)
   if (status.gatePassed && !options.force) return status
 
   try {
     const result = await fetchEligibility({
       ...config,
       path: config.apiPath || DEFAULT_PATH,
-    }, subject.xUserId)
+    }, {
+      xUserId: subject.xUserId,
+      fireflyUid: fireflyUidOption.fireflyUid,
+    })
     saveEligibilityResult(config, subject.walletAddress, subject.xUserId, result)
   } catch (error) {
     saveEligibilityFailure(config, subject.walletAddress, subject.xUserId, error)

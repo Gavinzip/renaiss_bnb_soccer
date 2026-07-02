@@ -211,6 +211,9 @@ FIREFLY_X_ACCOUNT_ELIGIBILITY_TIMEOUT_MS=8000
 
 LUCKY_DRAW_REFRESH_MINUTES=5
 LUCKY_DRAW_REFRESH_HISTORY_LIMIT=24
+LUCKY_DRAW_EVENT_CACHE_LOOKBACK_ROUNDS=12
+# Optional explicit override. Empty means refresh minutes * lookback rounds.
+LUCKY_DRAW_EVENT_CACHE_LOOKBACK_MINUTES=
 LUCKY_DRAW_CAMPAIGN_START=1781422200
 LUCKY_DRAW_CAMPAIGN_END=1784469600
 BSCSCAN_API_KEY=...
@@ -218,7 +221,13 @@ BSCSCAN_API_KEY=...
 
 `DATA_BACKUP_GITHUB_TOKEN` is the PAT token variable name. Startup restore only copies missing files by default;
 set `DATA_BACKUP_RESTORE_FORCE=1` only when you intentionally want the data repo to overwrite `/data/soccer`.
-`BSCSCAN_API_KEY` is required for live ticket refresh. Do not commit either token.
+`BSCSCAN_API_KEY` is required for live ticket refresh. `LUCKY_DRAW_EVENT_CACHE_LOOKBACK_ROUNDS=12` with a
+5-minute refresh makes every ledger refresh re-scan the latest 60 minutes of on-chain event cache before writing
+the ticket ledger. Do not commit either token.
+
+When testing a fresh buyback ledger on the server, isolate only the ticket ledger/cache paths. Do not remove
+`votes/`, `profiles/`, `auth/`, `match-results.json`, or `match-draw-ledger.json`; those are separate runtime
+sources and are not required for rebuilding raw buyback tickets.
 
 Set `SOCCER_VOTE_STORE=sqlite` for production voting. The server then uses
 `vote-store.sqlite` transactions for vote submission, balance checks, and
