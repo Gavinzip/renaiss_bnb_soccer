@@ -89,6 +89,20 @@ function getMobileHeaderOffset() {
   return headerRect ? Math.max(16, headerRect.bottom + 12) : 16;
 }
 
+function keepLaneVisibleInViewport(lane) {
+  const laneRect = lane.getBoundingClientRect();
+  const headerOffset = getMobileHeaderOffset();
+  const bottomInset = 24;
+  const visibleBottom = window.innerHeight - bottomInset;
+
+  if (laneRect.top >= headerOffset && laneRect.bottom <= visibleBottom) return;
+
+  window.scrollTo({
+    top: Math.max(0, window.scrollY + laneRect.top - headerOffset),
+    behavior: "smooth",
+  });
+}
+
 export function MatchPrizeList({
   activeRound,
   matches,
@@ -103,19 +117,13 @@ export function MatchPrizeList({
 }) {
   const { compactVotes, matchStatusCompact, roundLabel, t, teamName } = copy;
   const selectedLaneRef = useRef(null);
-  const hasSyncedSelectedLaneRef = useRef(false);
 
   useEffect(() => {
     const selectedLane = selectedLaneRef.current;
     const scrollContainer = selectedLane?.closest(".match-prize-list-view__matches");
     if (!selectedLane || !scrollContainer) return undefined;
 
-    if (!hasSyncedSelectedLaneRef.current) {
-      hasSyncedSelectedLaneRef.current = true;
-      return undefined;
-    }
-
-    let mobileScrollTimeoutId = 0;
+    let viewportScrollTimeoutId = 0;
     const animationFrameId = window.requestAnimationFrame(() => {
       const containerRect = scrollContainer.getBoundingClientRect();
       const laneRect = selectedLane.getBoundingClientRect();
@@ -125,23 +133,14 @@ export function MatchPrizeList({
         behavior: "smooth",
       });
 
-      if (window.matchMedia("(max-width: 760px)").matches) {
-        mobileScrollTimeoutId = window.setTimeout(() => {
-          const nextLaneRect = selectedLane.getBoundingClientRect();
-          const headerOffset = getMobileHeaderOffset();
-          if (nextLaneRect.top < headerOffset || nextLaneRect.bottom > window.innerHeight) {
-            window.scrollTo({
-              top: Math.max(0, window.scrollY + nextLaneRect.top - headerOffset),
-              behavior: "smooth",
-            });
-          }
-        }, 260);
-      }
+      viewportScrollTimeoutId = window.setTimeout(() => {
+        keepLaneVisibleInViewport(selectedLane);
+      }, 260);
     });
 
     return () => {
       window.cancelAnimationFrame(animationFrameId);
-      if (mobileScrollTimeoutId) window.clearTimeout(mobileScrollTimeoutId);
+      if (viewportScrollTimeoutId) window.clearTimeout(viewportScrollTimeoutId);
     };
   }, [selectedMatchId]);
 
@@ -238,24 +237,24 @@ export function MatchPrizeList({
                               </b>
                             ) : null}
                           </span>
-                          {voteOutcome ? (
-                            <b className={[
-                              "match-prize-team__vote-result",
-                              `is-${voteOutcome.result}`,
-                            ].join(" ")}
-                            >
-                              <span>
-                                <small>{t("vote.voteOutcomeTicketsLabel")}</small>
-                                <strong>{formatNumber(voteOutcome.tickets)}</strong>
-                              </span>
-                              <span>
-                                <small>{t("vote.voteOutcomeHitRateLabel")}</small>
-                                <strong>{hitRate}</strong>
-                              </span>
-                            </b>
-                          ) : null}
                           <small>{compactVotes(team.votes)}</small>
                         </span>
+                        {voteOutcome ? (
+                          <b className={[
+                            "match-prize-team__vote-result",
+                            `is-${voteOutcome.result}`,
+                          ].join(" ")}
+                          >
+                            <span>
+                              <small>{t("vote.voteOutcomeTicketsLabel")}</small>
+                              <strong>{formatNumber(voteOutcome.tickets)}</strong>
+                            </span>
+                            <span>
+                              <small>{t("vote.voteOutcomeHitRateLabel")}</small>
+                              <strong>{hitRate}</strong>
+                            </span>
+                          </b>
+                        ) : null}
                       </button>
                       {teamIndex === 0 ? (
                         <span className="match-prize-versus" aria-hidden="true" key={`${match.id}-versus`}>

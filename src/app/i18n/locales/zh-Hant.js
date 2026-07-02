@@ -160,7 +160,7 @@ export const zhHantLocale = {
       "eligibilityBody": "預設使用你上一步已驗證的 X 身份向 Firefly 查詢資格；如果 X 查詢沒有通過，也可以填 Firefly UID 再驗證一次。",
       "eligibilityCheckFireflyAccount": "Firefly 帳號連結",
       "eligibilityCheckPredictBet": "完成一次 Prediction",
-      "eligibilityCheckPredictBetNote": "如果你的 X 無法註冊 Firefly，就用任一個帳戶，並且在此輸入 UID，然後再按一次檢查，它就會用那個 UID 檢查。",
+      "eligibilityCheckPredictBetNote": "無法以 X 註冊 Firefly？請改以其他方式註冊（如電郵），並在此輸入 UID 後點擊「驗證資格」即可",
       "eligibilityCheckState": {
         "fail": "未完成",
         "pass": "已完成",
