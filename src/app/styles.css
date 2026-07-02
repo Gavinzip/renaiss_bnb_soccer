@@ -29417,68 +29417,61 @@ body {
   overflow: visible;
 }
 
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  position: static;
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result {
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 0;
   z-index: 2;
-  width: 100%;
-  max-width: 100%;
-  display: grid !important;
-  grid-template-columns: minmax(0, max-content) auto minmax(0, max-content);
+  width: max-content;
+  max-width: none;
+  display: inline-flex !important;
   align-items: baseline !important;
-  justify-content: center;
-  column-gap: clamp(8px, 1.2vw, 14px) !important;
-  margin-top: 2px;
-  padding: 0 2px !important;
+  justify-content: flex-start;
+  gap: 7px !important;
+  margin-top: 0;
+  padding: 0 !important;
   opacity: 0.92;
   overflow: visible !important;
   text-overflow: clip !important;
   pointer-events: none;
 }
 
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result::before {
-  content: "";
-  width: 1px;
-  height: 1.4em;
-  grid-column: 2;
-  justify-self: center;
-  background: linear-gradient(180deg, rgba(244, 218, 144, 0.72), rgba(245, 111, 174, 0.3), rgba(87, 112, 255, 0.42));
-  opacity: 0.74;
+.control-room[data-view="vote"] .match-prize-team.is-right-team > .match-prize-team__copy > .match-prize-team__vote-result {
+  right: 0;
+  left: auto;
+  justify-content: flex-end;
 }
 
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result span {
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result span {
   display: inline-flex !important;
   grid-column: auto !important;
   grid-row: auto !important;
   align-items: baseline;
-  justify-content: center;
-  gap: 5px;
+  justify-content: flex-start;
+  gap: 4px;
   flex: 0 0 auto;
   min-width: max-content;
   max-width: none;
   overflow: visible;
-  text-align: center;
+  text-align: left;
 }
 
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result span:first-child {
-  grid-column: 1 !important;
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result span + span {
+  position: relative;
+  padding-left: 8px;
 }
 
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result span:last-child {
-  grid-column: 3 !important;
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result span + span::before {
+  content: "";
+  position: absolute;
+  top: 0.05em;
+  bottom: 0.05em;
+  left: 0;
+  width: 1px;
+  background: rgba(245, 246, 241, 0.2);
 }
 
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result span + span {
-  padding-left: 0;
-}
-
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result span + span::before {
-  content: none;
-  display: none;
-}
-
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result small {
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result small {
   flex: 0 0 auto;
   max-width: none;
   overflow: visible !important;
@@ -29487,7 +29480,7 @@ body {
   white-space: nowrap;
 }
 
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result strong {
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result strong {
   flex: 0 0 auto;
   max-width: none;
   overflow: visible !important;
@@ -29496,15 +29489,9 @@ body {
   white-space: nowrap;
 }
 
-.control-room[data-view="vote"] .match-prize-team > .match-prize-team__vote-result::after {
+.control-room[data-view="vote"] .match-prize-team > .match-prize-team__copy > .match-prize-team__vote-result::after {
   content: none;
   display: none;
-}
-
-.control-room[data-view="vote"] .match-prize-team.is-right-team > .match-prize-team__vote-result,
-.control-room[data-view="vote"] .match-prize-team.is-right-team > .match-prize-team__vote-result span {
-  grid-row: auto;
-  text-align: center !important;
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {

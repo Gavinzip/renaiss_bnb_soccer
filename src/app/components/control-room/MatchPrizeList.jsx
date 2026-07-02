@@ -211,24 +211,24 @@ export function MatchPrizeList({
                               </b>
                             ) : null}
                           </span>
+                          {voteOutcome ? (
+                            <b className={[
+                              "match-prize-team__vote-result",
+                              `is-${voteOutcome.result}`,
+                            ].join(" ")}
+                            >
+                              <span>
+                                <small>{t("vote.voteOutcomeTicketsLabel")}</small>
+                                <strong>{formatNumber(voteOutcome.tickets)}</strong>
+                              </span>
+                              <span>
+                                <small>{t("vote.voteOutcomeHitRateLabel")}</small>
+                                <strong>{hitRate}</strong>
+                              </span>
+                            </b>
+                          ) : null}
                           <small>{compactVotes(team.votes)}</small>
                         </span>
-                        {voteOutcome ? (
-                          <b className={[
-                            "match-prize-team__vote-result",
-                            `is-${voteOutcome.result}`,
-                          ].join(" ")}
-                          >
-                            <span>
-                              <small>{t("vote.voteOutcomeTicketsLabel")}</small>
-                              <strong>{formatNumber(voteOutcome.tickets)}</strong>
-                            </span>
-                            <span>
-                              <small>{t("vote.voteOutcomeHitRateLabel")}</small>
-                              <strong>{hitRate}</strong>
-                            </span>
-                          </b>
-                        ) : null}
                       </button>
                       {teamIndex === 0 ? (
                         <span className="match-prize-versus" aria-hidden="true" key={`${match.id}-versus`}>
