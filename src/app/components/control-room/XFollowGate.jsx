@@ -9,6 +9,7 @@ import "./XFollowGate.css";
 
 const RETRY_GATED_STATUSES = new Set(["rate_limited", "api_error", "retry_later"]);
 const RENAISS_OFFICIAL_URL = "https://www.renaiss.xyz/";
+const RENAISS_SIGN_IN_URL = "https://www.renaiss.xyz";
 const FIREFLY_ELIGIBILITY_LINKS = {
   firefly: "https://firefly.social/signup?step=login_social_platform",
   predict: "https://firefly.social/prediction/category/fifwc",
@@ -71,6 +72,18 @@ function eligibilityStatusMessageKey(status) {
   return map[status] || "xFollowGate.statusEligibilityIdle";
 }
 
+function RenaissBoundAccountIssue({ t }) {
+  return (
+    <>
+      {t("xFollowGate.statusRenaissTwitterRequiredPrefix")}
+      <a className="x-follow-gate__inline-link" href={RENAISS_SIGN_IN_URL} target="_blank" rel="noreferrer">
+        {t("xFollowGate.statusRenaissTwitterRequiredLink")}
+      </a>
+      {t("xFollowGate.statusRenaissTwitterRequiredSuffix")}
+    </>
+  );
+}
+
 function initialStepForSession(authSession) {
   const xFollow = authSession?.xFollow || {};
   if (xFollow.bypassed && xFollow.gatePassed) return 3;
@@ -126,6 +139,9 @@ export function XFollowGate({
   const identityBlockingStatus = ["wallet_required", "profile_store_missing", "renaiss_twitter_required"].includes(gate.status);
   const identityIssueStatus = ["wallet_required", "profile_store_missing", "renaiss_twitter_required", "twitter_identity_missing", "twitter_identity_mismatch"].includes(gate.status);
   const identityIssue = identityIssueStatus ? t(statusMessageKey(gate.status)) : "";
+  const identityIssueContent = gate.status === "renaiss_twitter_required"
+    ? <RenaissBoundAccountIssue t={t} />
+    : identityIssue;
   const xProviderReady = Boolean(authConfig?.providers?.x) && !identityBlockingStatus && !needsRenaissSession;
   const eligibilityRequired = eligibility.required ?? eligibilityConfig.required ?? true;
   const eligibilityGatePassed = !eligibilityRequired || Boolean(eligibility.gatePassed);
@@ -418,7 +434,7 @@ export function XFollowGate({
             ) : (
               <p>{t("xFollowGate.connectBody")}</p>
             )}
-            {identityIssue ? <p className="x-follow-gate__issue">{identityIssue}</p> : null}
+            {identityIssueContent ? <p className="x-follow-gate__issue">{identityIssueContent}</p> : null}
             {needsRenaissSession ? (
               <Magnet
                 as="button"
