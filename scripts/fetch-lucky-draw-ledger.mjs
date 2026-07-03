@@ -10,6 +10,7 @@ import {
   DEFAULT_CAMPAIGN_START,
   EXTRA_LEGACY_PACKS_ENV,
   WALLET_MIGRATIONS_URL,
+  WORLD_CUP_PACK_START_ENV,
   getCampaignWindow,
 } from './lucky-draw/rules.mjs'
 import { fetchWalletMigrationMap } from './lucky-draw/wallet-migrations.mjs'
@@ -60,6 +61,7 @@ function parseArgs(argv) {
     eventCacheLookbackMinutes: toNumber(process.env.LUCKY_DRAW_EVENT_CACHE_LOOKBACK_MINUTES || 0),
     campaignStart: toNumber(process.env.LUCKY_DRAW_CAMPAIGN_START || DEFAULT_CAMPAIGN_START),
     campaignEnd: toNumber(process.env.LUCKY_DRAW_CAMPAIGN_END || DEFAULT_CAMPAIGN_END),
+    worldCupPackStart: toNumber(process.env[WORLD_CUP_PACK_START_ENV] || 0),
     extraLegacyPacksRaw: process.env[EXTRA_LEGACY_PACKS_ENV] || '',
     out: 'public/lucky-draw-ledger.json',
     contracts: [],
@@ -104,6 +106,7 @@ function parseArgs(argv) {
     else if (arg === '--event-cache-lookback-minutes') args.eventCacheLookbackMinutes = toNumber(argv[++index])
     else if (arg === '--campaign-start') args.campaignStart = toNumber(argv[++index])
     else if (arg === '--campaign-end') args.campaignEnd = toNumber(argv[++index])
+    else if (arg === '--world-cup-pack-start') args.worldCupPackStart = toNumber(argv[++index])
     else if (arg === '--extra-legacy-packs') args.extraLegacyPacksRaw = argv[++index] || ''
     else if (arg === '--out') args.out = argv[++index] || args.out
     else if (arg === '--contracts') args.contracts = parseAddressCsv(argv[++index])
@@ -153,6 +156,9 @@ function parseArgs(argv) {
     }
     if (envValues.LUCKY_DRAW_CAMPAIGN_START) args.campaignStart = toNumber(envValues.LUCKY_DRAW_CAMPAIGN_START)
     if (envValues.LUCKY_DRAW_CAMPAIGN_END) args.campaignEnd = toNumber(envValues.LUCKY_DRAW_CAMPAIGN_END)
+    if (envValues[WORLD_CUP_PACK_START_ENV]) {
+      args.worldCupPackStart = toNumber(envValues[WORLD_CUP_PACK_START_ENV])
+    }
     args.insiderGrantPath = args.insiderGrantPath || envValues.SOCCER_INSIDER_TICKET_GRANT_PATH || ''
     args.insiderGrantAddressesRaw = args.insiderGrantAddressesRaw || envValues.SOCCER_INSIDER_TICKET_ADDRESSES || ''
     if (envValues.SOCCER_INSIDER_PRACTICE_TICKETS) {
@@ -207,6 +213,8 @@ Options:
   --cache-dir <path>            Persistent API cache dir. Default cache/lucky-draw.
   --campaign-start <unix>       Campaign start timestamp. Default ${DEFAULT_CAMPAIGN_START}.
   --campaign-end <unix>         Campaign end timestamp. Default ${DEFAULT_CAMPAIGN_END}.
+  --world-cup-pack-start <unix> Count World Cup Pack opens only from this timestamp.
+                                Env: ${WORLD_CUP_PACK_START_ENV}. Unset means disabled.
   --extra-legacy-packs <json>   Same JSON value as ${EXTRA_LEGACY_PACKS_ENV}.
   --insider-grant-path <path>   Optional JSON/CSV file of insider wallet grants.
                                 Default ${DEFAULT_INSIDER_TICKET_GRANT_PATH}.
