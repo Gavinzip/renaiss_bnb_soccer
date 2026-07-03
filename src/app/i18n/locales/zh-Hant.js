@@ -259,16 +259,16 @@ export const zhHantLocale = {
       "connecting": "正在讀取 FIFA 積分表",
       "pendingReason": "等待積分表",
       "refreshing": "正在更新 FIFA 積分表",
-      "sourceLive": "FIFA 即時積分表 · {confirmed} 個已確認 · {provisional} 個積分預覽 · {unrevealed} 個尚未揭示 · {time}",
+      "sourceLive": "FIFA 即時積分表 · {confirmed} 個已確認 · {provisional} 個積分預覽 · {unrevealed} 個尚未確認 · {time}",
       "sourcePending": "FIFA 積分表等待中 · {message}",
-      "sourceStale": "FIFA 過期快照 · {confirmed} 個已確認 · {provisional} 個積分預覽 · {unrevealed} 個尚未揭示 · {message}",
-      "unrevealed": "尚未揭示",
+      "sourceStale": "FIFA 過期快照 · {confirmed} 個已確認 · {provisional} 個積分預覽 · {unrevealed} 個尚未確認 · {message}",
+      "unrevealed": "尚未確認",
       "slotNumber": "席位 {slot}",
       "pointsShort": "{points} 分 · 淨勝 {gd}",
       "slotStatus": {
         "confirmed": "FIFA 已確認 · {route}",
         "provisional": "即時積分表 · {route}",
-        "unrevealed": "尚未揭示 · {route}"
+        "unrevealed": "尚未確認 · {route}"
       }
     },
     "views": {

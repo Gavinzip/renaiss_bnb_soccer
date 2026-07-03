@@ -555,7 +555,11 @@ function RoundSwitch({
   const drawById = new Map(drawStats.map((draw) => [draw.id, draw]));
   const { dateTime, roundLabel, roundStatus, t } = copy;
   const simulatedIndex = Math.max(0, rounds.findIndex((round) => round.id === simulatedRoundId));
-  const realtimeInspectableRoundId = rounds.some((round) => round.id === "round32") ? "round32" : rounds[0]?.id;
+  const realtimeInspectableRoundIds = new Set(
+    rounds
+      .filter((round) => round.id === "round32" || round.id === "round16")
+      .map((round) => round.id),
+  );
   const liveCounts = liveQualification?.counts ?? { confirmed: 0, provisional: 0, unrevealed: 32 };
   const liveSourceTone = liveQualification?.sourceStatus ?? "pending";
   const liveSourceLine = liveSourceTone === "live"
@@ -599,7 +603,7 @@ function RoundSwitch({
         {rounds.map((round, index) => {
           const draw = drawById.get(round.id);
           const isActive = round.id === activeRoundId;
-          const canInspect = allowAllRounds || (simulationMode === "realtime" ? round.id === realtimeInspectableRoundId : index <= simulatedIndex);
+          const canInspect = allowAllRounds || (simulationMode === "realtime" ? realtimeInspectableRoundIds.has(round.id) : index <= simulatedIndex);
           const detail = getRoundRailDetail(round, draw, isActive, remainingRoundTickets, roundStatus, t);
 
           return (

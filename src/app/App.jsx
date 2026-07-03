@@ -7,8 +7,10 @@ import { InitialPageLoader } from "./components/InitialPageLoader";
 import {
   buildRealtimeRound32Preview,
   createPendingFifaQualificationSnapshot,
+  createPendingFifaRound16MatchesSnapshot,
   createPendingFifaRound32MatchesSnapshot,
   fetchFifaQualificationSnapshot,
+  fetchFifaRound16MatchesSnapshot,
   fetchFifaRound32MatchesSnapshot,
 } from "./data/fifaRealtime";
 import { verifiedLedgerSnapshot } from "./data/ticketLedgerSnapshot";
@@ -311,6 +313,12 @@ function AppContent() {
       : localApiOrigin
         ? `${localApiOrigin}/api/live-round32-matches`
         : "");
+  const liveRound16MatchesUrl = import.meta.env.VITE_LIVE_ROUND16_MATCHES_URL
+    || (import.meta.env.PROD || !localTestOrigin
+      ? "/api/live-round16-matches"
+      : localApiOrigin
+        ? `${localApiOrigin}/api/live-round16-matches`
+        : "");
   const winnerRevealVideoUrl = import.meta.env.VITE_WINNER_REVEAL_VIDEO_URL || DEFAULT_WINNER_REVEAL_VIDEO_URL;
   const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL
     || (import.meta.env.PROD ? "/api/draw-winners" : "/mock-api/draw-winners.json");
@@ -339,6 +347,7 @@ function AppContent() {
   const simulationMode = localTestOrigin ? localSimulationMode : "realtime";
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
   const [liveRound32Matches, setLiveRound32Matches] = useState(() => createPendingFifaRound32MatchesSnapshot());
+  const [liveRound16Matches, setLiveRound16Matches] = useState(() => createPendingFifaRound16MatchesSnapshot());
   const [simulatedRoundId, setSimulatedRoundId] = useState(initialRoundId);
   const [activeRoundId, setActiveRoundId] = useState(initialRoundId);
   const [selectedMatchId, setSelectedMatchId] = useState(initialMatchId);
@@ -760,6 +769,46 @@ function AppContent() {
     };
   }, [liveRound32MatchesUrl, simulationMode, t]);
 
+  useEffect(() => {
+    if (simulationMode !== "realtime") return undefined;
+
+    let cancelled = false;
+    let intervalId = 0;
+
+    async function syncFifaRound16Matches() {
+      setLiveRound16Matches((current) => (
+        current.fetchedAt
+          ? { ...current, sourceStatus: "stale", issue: t("liveQualification.refreshing") }
+          : createPendingFifaRound16MatchesSnapshot(t("liveQualification.connecting"))
+      ));
+
+      try {
+        const snapshot = liveRound16MatchesUrl
+          ? (await fetchJsonWithTimeout(liveRound16MatchesUrl, {
+            cache: "no-store",
+            timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+          })).payload
+          : await fetchFifaRound16MatchesSnapshot();
+        if (!cancelled) setLiveRound16Matches(snapshot);
+      } catch (error) {
+        if (cancelled) return;
+        setLiveRound16Matches((current) => (
+          current.fetchedAt
+            ? { ...current, sourceStatus: "stale", issue: error.message }
+            : createPendingFifaRound16MatchesSnapshot(error.message)
+        ));
+      }
+    }
+
+    syncFifaRound16Matches();
+    intervalId = window.setInterval(syncFifaRound16Matches, 60000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [liveRound16MatchesUrl, simulationMode, t]);
+
   const staticTeamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), []);
   const liveVoteStats = useMemo(
     () => buildLiveVoteStats(globalPreviewVoteData, previewVoteData),
@@ -771,10 +820,11 @@ function AppContent() {
       teams,
       snapshot: liveQualification,
       fixtures: liveRound32Matches,
+      round16Fixtures: liveRound16Matches,
       voteTotalsByMatchTeam: liveVoteStats.totalsByMatchTeam,
       voterCountsByMatch: liveVoteStats.voterCountsByMatch,
     }),
-    [liveQualification, liveRound32Matches, liveVoteStats],
+    [liveQualification, liveRound16Matches, liveRound32Matches, liveVoteStats],
   );
   const sourceMatches = simulationMode === "realtime" ? realtimeRound32Preview.matches : campaignMatches;
   const matches = useMemo(

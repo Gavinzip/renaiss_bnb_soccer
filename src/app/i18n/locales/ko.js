@@ -259,16 +259,16 @@ export const koLocale = {
       "connecting": "FIFA 순위표 연결 중",
       "pendingReason": "순위표 대기 중",
       "refreshing": "FIFA 순위표 새로고침 중",
-      "sourceLive": "FIFA 실시간 표 · 확정 {confirmed} · 실시간 표 {provisional} · 미공개 {unrevealed} · {time}",
+      "sourceLive": "FIFA 실시간 표 · 확정 {confirmed} · 실시간 표 {provisional} · 미확정 {unrevealed} · {time}",
       "sourcePending": "FIFA 순위표 대기 중 · {message}",
-      "sourceStale": "FIFA 오래된 스냅샷 · 확정 {confirmed} · 실시간 표 {provisional} · 미공개 {unrevealed} · {message}",
-      "unrevealed": "미공개",
+      "sourceStale": "FIFA 오래된 스냅샷 · 확정 {confirmed} · 실시간 표 {provisional} · 미확정 {unrevealed} · {message}",
+      "unrevealed": "미확정",
       "slotNumber": "슬롯 {slot}",
       "pointsShort": "{points}점 · GD {gd}",
       "slotStatus": {
         "confirmed": "FIFA 확정 · {route}",
         "provisional": "실시간 표 · {route}",
-        "unrevealed": "미공개 · {route}"
+        "unrevealed": "미확정 · {route}"
       }
     },
     "views": {

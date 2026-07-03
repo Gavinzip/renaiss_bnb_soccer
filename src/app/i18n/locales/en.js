@@ -259,16 +259,16 @@ export const enLocale = {
       "connecting": "Connecting to FIFA standings",
       "pendingReason": "Waiting for standings",
       "refreshing": "Refreshing FIFA standings",
-      "sourceLive": "FIFA live table · {confirmed} confirmed · {provisional} live table · {unrevealed} unrevealed · {time}",
+      "sourceLive": "FIFA live table · {confirmed} confirmed · {provisional} live table · {unrevealed} unconfirmed · {time}",
       "sourcePending": "FIFA standings pending · {message}",
-      "sourceStale": "FIFA stale snapshot · {confirmed} confirmed · {provisional} live table · {unrevealed} unrevealed · {message}",
-      "unrevealed": "Unrevealed",
+      "sourceStale": "FIFA stale snapshot · {confirmed} confirmed · {provisional} live table · {unrevealed} unconfirmed · {message}",
+      "unrevealed": "Unconfirmed",
       "slotNumber": "Slot {slot}",
       "pointsShort": "{points} pts · GD {gd}",
       "slotStatus": {
         "confirmed": "FIFA confirmed · {route}",
         "provisional": "Live table · {route}",
-        "unrevealed": "Unrevealed · {route}"
+        "unrevealed": "Unconfirmed · {route}"
       }
     },
     "views": {

@@ -10,7 +10,11 @@ import { createGzip } from 'node:zlib'
 import { verifyMessage } from 'ethers'
 
 import { milestones, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
-import { fetchFifaQualificationSnapshot, fetchFifaRound32MatchesSnapshot } from '../src/app/data/fifaRealtime.js'
+import {
+  fetchFifaQualificationSnapshot,
+  fetchFifaRound16MatchesSnapshot,
+  fetchFifaRound32MatchesSnapshot,
+} from '../src/app/data/fifaRealtime.js'
 import {
   createAuthContext,
   getAuthPublicStatus,
@@ -131,6 +135,9 @@ let fifaStandingsCache = null
 const fifaRound32MatchesCacheSeconds = readIntegerEnv('FIFA_ROUND32_MATCHES_CACHE_SECONDS', 45, 0)
 const fifaRound32MatchesCacheMs = fifaRound32MatchesCacheSeconds * 1000
 let fifaRound32MatchesCache = null
+const fifaRound16MatchesCacheSeconds = readIntegerEnv('FIFA_ROUND16_MATCHES_CACHE_SECONDS', 45, 0)
+const fifaRound16MatchesCacheMs = fifaRound16MatchesCacheSeconds * 1000
+let fifaRound16MatchesCache = null
 
 function cleanLogValue(value) {
   return String(value ?? 'none').replace(/\s+/g, ' ').slice(0, 160) || 'none'
@@ -1428,6 +1435,39 @@ async function readLiveRound32MatchesSnapshot() {
   }
 }
 
+async function readLiveRound16MatchesSnapshot() {
+  const now = Date.now()
+  const cached = fifaRound16MatchesCache
+  if (cached?.snapshot && now - cached.fetchedAtMs <= fifaRound16MatchesCacheMs) {
+    return {
+      ...cached.snapshot,
+      cacheStatus: 'hit',
+      cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
+    }
+  }
+
+  try {
+    const snapshot = await fetchFifaRound16MatchesSnapshot(fetch)
+    fifaRound16MatchesCache = { snapshot, fetchedAtMs: now }
+    return {
+      ...snapshot,
+      cacheStatus: 'fresh',
+      cacheAgeSeconds: 0,
+    }
+  } catch (error) {
+    if (cached?.snapshot) {
+      return {
+        ...cached.snapshot,
+        sourceStatus: 'stale',
+        issue: error instanceof Error ? error.message : 'Could not fetch FIFA round16 matches.',
+        cacheStatus: 'stale',
+        cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
+      }
+    }
+    throw error
+  }
+}
+
 function distPathForUrl(url) {
   const rawPath = decodeURIComponent(new URL(url, 'http://localhost').pathname)
   const safePath = normalize(rawPath).replace(/^(\.\.[/\\])+/, '')
@@ -2093,6 +2133,27 @@ const server = createServer(async (request, response) => {
         503,
         {
           error: error instanceof Error ? error.message : 'Could not read FIFA round32 matches.',
+        },
+        {
+          'cache-control': 'no-store',
+        },
+      )
+    }
+    return
+  }
+
+  if (url.pathname === '/api/live-round16-matches') {
+    try {
+      sendJson(request, response, 200, await readLiveRound16MatchesSnapshot(), {
+        'cache-control': 'no-store',
+      })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        503,
+        {
+          error: error instanceof Error ? error.message : 'Could not read FIFA round16 matches.',
         },
         {
           'cache-control': 'no-store',
