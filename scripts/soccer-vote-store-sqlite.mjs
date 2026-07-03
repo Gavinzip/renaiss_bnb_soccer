@@ -257,7 +257,7 @@ function readVoteStateFromDatabase(db) {
   }
 }
 
-function writeJsonSnapshots({ statePath, previewPath, state, matchResults }) {
+function writeJsonSnapshots({ statePath, previewPath, state, matchResults, matches }) {
   const snapshot = { stateWritten: false, previewWritten: false, error: null }
   try {
     if (statePath) {
@@ -265,7 +265,7 @@ function writeJsonSnapshots({ statePath, previewPath, state, matchResults }) {
       snapshot.stateWritten = true
     }
     if (previewPath) {
-      writeVotePreview(previewPath, state, { matchResults })
+      writeVotePreview(previewPath, state, { matchResults, matches })
       snapshot.previewWritten = true
     }
   } catch (error) {
@@ -291,9 +291,9 @@ function runImmediateTransaction(db, callback) {
   }
 }
 
-function submitVoteInDatabase({ db, ledger, input, matchResults }) {
+function submitVoteInDatabase({ db, ledger, input, matchResults, matches }) {
   const resultIndex = buildMatchResultIndex(matchResults)
-  const normalizedInput = assertVoteInput(input, { resultIndex })
+  const normalizedInput = assertVoteInput(input, { resultIndex, matches })
   const { walletAddress, roundId, matchId, teamId, tickets } = normalizedInput
   const requestId = normalizeId(input?.requestId) || null
   const ledgerTickets = findRoundLedgerTickets(ledger, walletAddress, roundId)
@@ -591,21 +591,23 @@ export function createSqliteVoteStore({ dbPath, statePath = '', previewPath = ''
     statePath,
     previewPath,
     readState,
-    readPreview({ walletAddress = '', matchResults = null } = {}) {
+    readPreview({ walletAddress = '', matchResults = null, matches = null } = {}) {
       return buildVotePreview(readState(), {
         walletAddress: normalizeAddress(walletAddress),
         matchResults,
+        matches,
       })
     },
-    submitVote({ ledger, input, matchResults = null }) {
-      const transactionResult = submitVoteInDatabase({ db, ledger, input, matchResults })
+    submitVote({ ledger, input, matchResults = null, matches = null }) {
+      const transactionResult = submitVoteInDatabase({ db, ledger, input, matchResults, matches })
       const state = readState()
       const allocation = state.allocations.find((row) => row.id === transactionResult.allocationId) || null
       const preview = buildVotePreview(state, {
         walletAddress: transactionResult.event.walletAddress,
         matchResults,
+        matches,
       })
-      const snapshot = writeJsonSnapshots({ statePath, previewPath, state, matchResults })
+      const snapshot = writeJsonSnapshots({ statePath, previewPath, state, matchResults, matches })
 
       return {
         event: transactionResult.event,

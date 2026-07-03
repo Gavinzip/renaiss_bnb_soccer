@@ -13,7 +13,7 @@ import { findLedgerEntryByAddress } from './soccer-ledger-api.mjs'
 
 export const STATE_VERSION = 1
 
-const matchesById = new Map(campaignMatches.map((match) => [match.id, match]))
+const defaultMatchesById = new Map(campaignMatches.map((match) => [match.id, match]))
 const roundsById = new Map(roundDefinitions.map((round) => [round.id, round]))
 
 export function nowIso() {
@@ -41,6 +41,11 @@ export function normalizeId(value) {
 function getMatchCutoffTime(match) {
   const cutoffTime = Date.parse(match?.cutoffAt || '')
   return Number.isFinite(cutoffTime) ? cutoffTime : null
+}
+
+function matchesByIdFrom(matches) {
+  if (!Array.isArray(matches) || matches.length === 0) return defaultMatchesById
+  return new Map(matches.map((match) => [match.id, match]))
 }
 
 function ensureParent(path) {
@@ -141,6 +146,7 @@ export function assertVoteInput(input, options = {}) {
   const teamId = normalizeId(input?.teamId)
   const tickets = toPositiveInteger(input?.tickets)
   const resultIndex = options.resultIndex || buildMatchResultIndex(options.matchResults)
+  const matchesById = matchesByIdFrom(options.matches)
 
   if (!walletAddress) throw Object.assign(new Error('walletAddress must be a valid 0x address.'), { statusCode: 400 })
   if (!roundId || !roundsById.has(roundId)) throw Object.assign(new Error('roundId is invalid.'), { statusCode: 400 })
@@ -160,6 +166,11 @@ export function assertVoteInput(input, options = {}) {
   }
 
   const cutoffTime = getMatchCutoffTime(match)
+  if (match.realtimePreview && cutoffTime === null) {
+    throw Object.assign(new Error('This match is not open because FIFA has not confirmed both teams yet.'), {
+      statusCode: 409,
+    })
+  }
   if (cutoffTime !== null && Date.now() >= cutoffTime) {
     throw Object.assign(new Error('This match closed one hour before kickoff and is not accepting votes.'), { statusCode: 409 })
   }
@@ -198,9 +209,9 @@ export function findRoundLedgerTickets(ledger, walletAddress, roundId) {
   }
 }
 
-export function submitVote({ statePath, eventsPath, previewPath, ledger, input, matchResults = null }) {
+export function submitVote({ statePath, eventsPath, previewPath, ledger, input, matchResults = null, matches = null }) {
   const resultIndex = buildMatchResultIndex(matchResults)
-  const normalizedInput = assertVoteInput(input, { resultIndex })
+  const normalizedInput = assertVoteInput(input, { resultIndex, matches })
   const { walletAddress, roundId, matchId, teamId, tickets } = normalizedInput
   const state = readVoteState(statePath)
   const allocations = normalizeStateAllocations(state)
@@ -310,7 +321,7 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input, 
     allocations,
     eventCount: toPositiveInteger(state.eventCount) + 1,
   })
-  const preview = writeVotePreview(previewPath, nextState, { matchResults })
+  const preview = writeVotePreview(previewPath, nextState, { matchResults, matches })
 
   return {
     event,
@@ -348,10 +359,10 @@ function buildOutcomes(allocations, resultIndex) {
   })
 }
 
-function buildRoundSummaries(outcomes, resultIndex) {
+function buildRoundSummaries(outcomes, resultIndex, matches = campaignMatches) {
   const summaries = new Map()
   for (const round of roundDefinitions) {
-    const roundMatches = campaignMatches.filter((match) => match.roundId === round.id)
+    const roundMatches = matches.filter((match) => match.roundId === round.id)
     summaries.set(round.id, {
       roundId: round.id,
       matchCount: roundMatches.length,
@@ -389,6 +400,7 @@ function buildRoundSummaries(outcomes, resultIndex) {
 export function buildVotePreview(state, options = {}) {
   const allocations = normalizeStateAllocations(state)
   const resultIndex = options.resultIndex || buildMatchResultIndex(options.matchResults)
+  const matches = Array.isArray(options.matches) && options.matches.length > 0 ? options.matches : campaignMatches
   const filteredAllocations = options.walletAddress
     ? allocations.filter((allocation) => allocation.walletAddress === normalizeAddress(options.walletAddress))
     : allocations
@@ -401,7 +413,7 @@ export function buildVotePreview(state, options = {}) {
     eventCount: toPositiveInteger(state.eventCount),
     allocations: filteredAllocations,
     outcomes,
-    roundSummaries: buildRoundSummaries(outcomes, resultIndex),
+    roundSummaries: buildRoundSummaries(outcomes, resultIndex, matches),
     matchResults: {
       sourceLabel: options.matchResults?.sourceLabel || null,
       sourceStatus: options.matchResults?.sourceStatus || 'missing',
@@ -411,6 +423,6 @@ export function buildVotePreview(state, options = {}) {
   }
 }
 
-export function readVotePreview({ statePath, walletAddress = '', matchResults = null }) {
-  return buildVotePreview(readVoteState(statePath), { walletAddress, matchResults })
+export function readVotePreview({ statePath, walletAddress = '', matchResults = null, matches = null }) {
+  return buildVotePreview(readVoteState(statePath), { walletAddress, matchResults, matches })
 }

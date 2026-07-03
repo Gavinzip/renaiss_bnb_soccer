@@ -9,8 +9,9 @@ import { fileURLToPath } from 'node:url'
 import { createGzip } from 'node:zlib'
 import { verifyMessage } from 'ethers'
 
-import { milestones, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
+import { campaignMatches, milestones, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
 import {
+  buildRealtimeRound32Preview,
   fetchFifaQualificationSnapshot,
   fetchFifaRound16MatchesSnapshot,
   fetchFifaRound32MatchesSnapshot,
@@ -1468,6 +1469,19 @@ async function readLiveRound16MatchesSnapshot() {
   }
 }
 
+async function readRealtimeVoteMatches() {
+  const [round32Fixtures, round16Fixtures] = await Promise.all([
+    readLiveRound32MatchesSnapshot(),
+    readLiveRound16MatchesSnapshot(),
+  ])
+  return buildRealtimeRound32Preview({
+    matches: campaignMatches,
+    teams: [],
+    fixtures: round32Fixtures,
+    round16Fixtures,
+  }).matches
+}
+
 function distPathForUrl(url) {
   const rawPath = decodeURIComponent(new URL(url, 'http://localhost').pathname)
   const safePath = normalize(rawPath).replace(/^(\.\.[/\\])+/, '')
@@ -1500,20 +1514,22 @@ function createJsonVoteStore() {
     readState() {
       return readVoteState(voteStatePath)
     },
-    readPreview({ walletAddress = '', matchResults = null } = {}) {
+    readPreview({ walletAddress = '', matchResults = null, matches = null } = {}) {
       return readVotePreview({
         statePath: voteStatePath,
         walletAddress,
         matchResults,
+        matches,
       })
     },
-    submitVote({ ledger, input, matchResults = null }) {
+    submitVote({ ledger, input, matchResults = null, matches = null }) {
       return submitVote({
         statePath: voteStatePath,
         eventsPath: voteEventsPath,
         previewPath: votePreviewPath,
         ledger,
         matchResults,
+        matches,
         input,
       })
     },
@@ -2254,6 +2270,7 @@ const server = createServer(async (request, response) => {
     try {
       const session = readAuthSession(auth, request)
       const matchResults = readMatchResultsSnapshot(matchResultsPath)
+      const matches = await readRealtimeVoteMatches()
       const scope = String(url.searchParams.get('scope') || '').trim().toLowerCase()
       const includeAllWallets = ['all', 'global', 'pool'].includes(scope)
       sendJson(
@@ -2263,6 +2280,7 @@ const server = createServer(async (request, response) => {
         voteStore.readPreview({
           walletAddress: includeAllWallets ? '' : url.searchParams.get('wallet') || session?.walletAddress || '',
           matchResults,
+          matches,
         }),
         { 'cache-control': 'no-store' },
       )
@@ -2344,9 +2362,11 @@ const server = createServer(async (request, response) => {
       }
       const ledger = readLedgerPayload(ledgerPath)
       const matchResults = readMatchResultsSnapshot(matchResultsPath)
+      const matches = await readRealtimeVoteMatches()
       const result = voteStore.submitVote({
         ledger,
         matchResults,
+        matches,
         input: {
           ...body,
           ...(session?.walletAddress ? { walletAddress: session.walletAddress } : {}),
@@ -2417,18 +2437,29 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === '/vote-preview.json') {
-    if (existsSync(votePreviewPath)) {
-      sendFile(request, response, votePreviewPath, {
+    try {
+      if (existsSync(votePreviewPath)) {
+        sendFile(request, response, votePreviewPath, {
+          'cache-control': 'no-store',
+          'access-control-allow-origin': '*',
+        })
+        return
+      }
+      sendJson(request, response, 200, voteStore.readPreview({
+        matchResults: readMatchResultsSnapshot(matchResultsPath),
+        matches: await readRealtimeVoteMatches(),
+      }), {
         'cache-control': 'no-store',
-        'access-control-allow-origin': '*',
       })
-      return
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        503,
+        { error: error instanceof Error ? error.message : 'Could not read vote preview.' },
+        { 'cache-control': 'no-store' },
+      )
     }
-    sendJson(request, response, 200, voteStore.readPreview({
-      matchResults: readMatchResultsSnapshot(matchResultsPath),
-    }), {
-      'cache-control': 'no-store',
-    })
     return
   }
 

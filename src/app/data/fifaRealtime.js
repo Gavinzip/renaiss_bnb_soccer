@@ -540,9 +540,9 @@ function createTeamLookup(teams) {
 
 function resolveLocalTeamId(slot, teamsById, teamsByName) {
   const byCode = FIFA_CODE_TO_LOCAL_TEAM_ID[slot.abbreviation];
-  if (byCode && teamsById.has(byCode)) return byCode;
+  if (byCode) return byCode;
   const byName = teamsByName.get(normalizeLookup(slot.teamName));
-  return byName && teamsById.has(byName) ? byName : "";
+  return byName || "";
 }
 
 function createTeamForSlot(slot, teamsById, teamsByName) {
@@ -560,7 +560,7 @@ function createTeamForSlot(slot, teamsById, teamsByName) {
 
   const localTeamId = resolveLocalTeamId(slot, teamsById, teamsByName);
   const baseTeam = teamsById.get(localTeamId);
-  const teamId = baseTeam?.id ?? `fifa-${slugify(slot.abbreviation || slot.teamName)}`;
+  const teamId = baseTeam?.id ?? (localTeamId || `fifa-${slugify(slot.abbreviation || slot.teamName)}`);
   slot.teamId = teamId;
 
   return {
@@ -624,7 +624,7 @@ function createTeamForFixtureTeam(fixtureTeam, side, teamsById, teamsByName, vot
     teamName: fixtureTeam.name,
   }, teamsById, teamsByName);
   const baseTeam = teamsById.get(localTeamId);
-  const teamId = baseTeam?.id ?? `fifa-${slugify(fixtureTeam.abbreviation || fixtureTeam.name)}`;
+  const teamId = baseTeam?.id ?? (localTeamId || `fifa-${slugify(fixtureTeam.abbreviation || fixtureTeam.name)}`);
 
   return {
     ...(baseTeam ?? {
