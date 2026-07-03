@@ -216,6 +216,26 @@ async function fetchLogsWindowAdaptive(bscscanConfig, contract, fromBlock, toBlo
   return { rows, calls, splitWindows }
 }
 
+async function resolveBlockByTimestampWithLag(bscscanConfig, timestamp, closest, lags = [0]) {
+  let lastError = null
+
+  for (const lagSeconds of lags) {
+    const adjustedTimestamp = Math.max(0, timestamp - lagSeconds)
+    try {
+      const block = await blockByTimestamp(bscscanConfig, adjustedTimestamp, closest)
+      return {
+        block,
+        timestamp: adjustedTimestamp,
+        lagSeconds: timestamp - adjustedTimestamp,
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError || new Error(`Could not resolve block for timestamp ${timestamp}`)
+}
+
 async function scanLogSource({
   bscscanConfig,
   source,
@@ -459,12 +479,24 @@ export async function scanOnchainTicketEvents(args) {
     requestTimeoutMs: args.bscscanRequestTimeoutMs,
   }
   const fromBlock = args.fromBlock || (await blockByTimestamp(bscscanConfig, campaignStart, 'after'))
-  const toBlock = args.toBlock || (await blockByTimestamp(bscscanConfig, windowEndTs, 'before'))
+  const toBlockResolution = args.toBlock
+    ? { block: args.toBlock, timestamp: windowEndTs, lagSeconds: 0 }
+    : await resolveBlockByTimestampWithLag(
+      bscscanConfig,
+      windowEndTs,
+      'before',
+      [0, 15, 30, 60, 120, 300, 600],
+    )
+  const toBlock = toBlockResolution.block
   const eventCacheLookbackMinutes = Math.max(0, toNumber(args.eventCacheLookbackMinutes) || 0)
+  const eventCacheLookbackTimestamp = Math.max(
+    campaignStart,
+    toBlockResolution.timestamp - eventCacheLookbackMinutes * 60,
+  )
   const eventCacheLookbackFromBlock = eventCacheLookbackMinutes
     ? await blockByTimestamp(
       bscscanConfig,
-      Math.max(campaignStart, windowEndTs - eventCacheLookbackMinutes * 60),
+      eventCacheLookbackTimestamp,
       'after',
     )
     : 0
@@ -565,7 +597,11 @@ export async function scanOnchainTicketEvents(args) {
       toBlock,
       campaignStart,
       campaignEnd,
+      windowEnd: windowEndTs,
+      toBlockTimestamp: toBlockResolution.timestamp,
+      toBlockTimestampLagSeconds: toBlockResolution.lagSeconds,
       eventCacheLookbackMinutes,
+      eventCacheLookbackTimestamp: eventCacheLookbackMinutes ? eventCacheLookbackTimestamp : null,
       eventCacheLookbackFromBlock: eventCacheLookbackFromBlock || null,
       packEventSources: describePackEventSources(contracts),
       buybackSuccessEventTopic: BUYBACK_SUCCESS_V3_EVENT_TOPIC,
