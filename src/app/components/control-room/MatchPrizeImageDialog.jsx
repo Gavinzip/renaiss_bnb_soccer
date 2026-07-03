@@ -4,18 +4,25 @@ import { Maximize2, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 const HOVER_OPEN_DELAY_MS = 300;
+const PRIZE_IMAGE_ASPECT_RATIO = 593 / 989;
 
 function getDialogTargetSize() {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-  const mobileMaxHeightRatio = viewportWidth <= 520 ? 0.82 : 0.88;
-
-  return Math.min(
-    viewportWidth * 0.88,
-    viewportHeight * mobileMaxHeightRatio,
-    760,
-    840,
+  const isMobile = viewportWidth <= 520;
+  const maxHeight = Math.min(
+    viewportHeight * (isMobile ? 0.78 : 0.74),
+    isMobile ? 620 : 700,
   );
+  const maxWidth = Math.min(
+    viewportWidth - (isMobile ? 28 : 84),
+    viewportWidth * (isMobile ? 0.86 : 0.48),
+    isMobile ? 420 : 520,
+  );
+  const width = Math.min(maxWidth, maxHeight * PRIZE_IMAGE_ASPECT_RATIO);
+  const height = width / PRIZE_IMAGE_ASPECT_RATIO;
+
+  return { width, height };
 }
 
 function getOriginFrame(geometry) {
@@ -62,9 +69,10 @@ export function MatchPrizeImageDialog({ copy, matchId, prizeImage }) {
         height: triggerRect.height,
       },
       target: {
-        left: Math.max(0, (viewportWidth - targetSize) / 2),
-        top: Math.max(0, (viewportHeight - targetSize) / 2),
-        size: targetSize,
+        left: Math.max(0, (viewportWidth - targetSize.width) / 2),
+        top: Math.max(0, (viewportHeight - targetSize.height) / 2),
+        width: targetSize.width,
+        height: targetSize.height,
       },
       viewportWidth,
       viewportHeight,
@@ -98,8 +106,8 @@ export function MatchPrizeImageDialog({ copy, matchId, prizeImage }) {
       opacity: 1,
       left: dialogGeometry.target.left,
       top: dialogGeometry.target.top,
-      width: dialogGeometry.target.size,
-      height: dialogGeometry.target.size,
+      width: dialogGeometry.target.width,
+      height: dialogGeometry.target.height,
       borderRadius: 18,
     },
     exit: {
@@ -132,7 +140,8 @@ export function MatchPrizeImageDialog({ copy, matchId, prizeImage }) {
             style={dialogGeometry ? {
               "--match-prize-dialog-left": `${dialogGeometry.target.left}px`,
               "--match-prize-dialog-top": `${dialogGeometry.target.top}px`,
-              "--match-prize-dialog-size": `${dialogGeometry.target.size}px`,
+              "--match-prize-dialog-width": `${dialogGeometry.target.width}px`,
+              "--match-prize-dialog-height": `${dialogGeometry.target.height}px`,
             } : undefined}
           >
             <motion.button
@@ -147,7 +156,8 @@ export function MatchPrizeImageDialog({ copy, matchId, prizeImage }) {
               style={dialogGeometry ? {
                 "--match-prize-dialog-left": `${dialogGeometry.target.left}px`,
                 "--match-prize-dialog-top": `${dialogGeometry.target.top}px`,
-                "--match-prize-dialog-size": `${dialogGeometry.target.size}px`,
+                "--match-prize-dialog-width": `${dialogGeometry.target.width}px`,
+                "--match-prize-dialog-height": `${dialogGeometry.target.height}px`,
               } : undefined}
             >
               <img

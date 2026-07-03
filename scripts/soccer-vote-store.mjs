@@ -48,6 +48,18 @@ function matchesByIdFrom(matches) {
   return new Map(matches.map((match) => [match.id, match]))
 }
 
+function allocationBelongsToMatch(allocation, matchesById) {
+  const match = matchesById.get(allocation.matchId)
+  if (!match) return false
+  if (match.roundId !== allocation.roundId) return false
+  return Array.isArray(match.teams) && match.teams.includes(allocation.teamId)
+}
+
+export function filterAllocationsForMatches(allocations, matches) {
+  const matchesById = matchesByIdFrom(matches)
+  return allocations.filter((allocation) => allocationBelongsToMatch(allocation, matchesById))
+}
+
 function ensureParent(path) {
   mkdirSync(dirname(path), { recursive: true })
 }
@@ -215,6 +227,7 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input, 
   const { walletAddress, roundId, matchId, teamId, tickets } = normalizedInput
   const state = readVoteState(statePath)
   const allocations = normalizeStateAllocations(state)
+  const activeAllocations = filterAllocationsForMatches(allocations, matches)
   const key = allocationKey({ walletAddress, roundId, matchId, teamId })
   const existingIndex = allocations.findIndex((allocation) => allocationKey(allocation) === key)
   const ledgerTickets = findRoundLedgerTickets(ledger, walletAddress, roundId)
@@ -223,7 +236,7 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input, 
     throw Object.assign(new Error('Wallet is not in the ticket ledger.'), { statusCode: 403 })
   }
 
-  const usedOutsideCurrentTeam = roundTicketsUsedByWallet(allocations, walletAddress, roundId, key)
+  const usedOutsideCurrentTeam = roundTicketsUsedByWallet(activeAllocations, walletAddress, roundId, key)
   const currentTeamTickets = existingIndex >= 0 ? allocations[existingIndex].tickets : 0
   const nextTeamTickets = currentTeamTickets + tickets
   const nextRoundTickets = usedOutsideCurrentTeam + nextTeamTickets
@@ -240,14 +253,14 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input, 
   }
 
   const sharedInsiderGrantTicketsUsed = roundAllowsSharedInsiderGrantTickets(roundId)
-    ? getSharedInsiderGrantTicketsUsed(allocations, walletAddress, ledgerTickets.entry, {
+    ? getSharedInsiderGrantTicketsUsed(activeAllocations, walletAddress, ledgerTickets.entry, {
       overrideRoundId: roundId,
       overrideRoundTickets: nextRoundTickets,
     })
     : 0
 
   if (sharedInsiderGrantTicketsUsed > ledgerTickets.insiderGrantTickets) {
-    const usedOutsideThisRound = getSharedInsiderGrantTicketsUsed(allocations, walletAddress, ledgerTickets.entry, {
+    const usedOutsideThisRound = getSharedInsiderGrantTicketsUsed(activeAllocations, walletAddress, ledgerTickets.entry, {
       excludeRoundId: roundId,
     })
     throw Object.assign(new Error('Vote amount exceeds shared insider reward tickets.'), {
@@ -401,9 +414,10 @@ export function buildVotePreview(state, options = {}) {
   const allocations = normalizeStateAllocations(state)
   const resultIndex = options.resultIndex || buildMatchResultIndex(options.matchResults)
   const matches = Array.isArray(options.matches) && options.matches.length > 0 ? options.matches : campaignMatches
+  const activeAllocations = filterAllocationsForMatches(allocations, matches)
   const filteredAllocations = options.walletAddress
-    ? allocations.filter((allocation) => allocation.walletAddress === normalizeAddress(options.walletAddress))
-    : allocations
+    ? activeAllocations.filter((allocation) => allocation.walletAddress === normalizeAddress(options.walletAddress))
+    : activeAllocations
   const outcomes = buildOutcomes(filteredAllocations, resultIndex)
 
   return {

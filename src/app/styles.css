@@ -29504,10 +29504,10 @@ body {
   position: fixed;
   top: var(--match-prize-dialog-top, 50%);
   left: var(--match-prize-dialog-left, 50%);
-  width: var(--match-prize-dialog-size, min(88vw, 760px));
-  height: var(--match-prize-dialog-size, min(88vw, 760px));
+  width: var(--match-prize-dialog-width, min(48vw, 520px));
+  height: var(--match-prize-dialog-height, min(74vh, 700px));
   max-width: none;
-  aspect-ratio: 1;
+  aspect-ratio: 593 / 989;
   max-height: none;
   display: grid;
   place-items: center;
@@ -29541,7 +29541,7 @@ body {
 .match-prize-dialog__close {
   position: fixed;
   top: calc(var(--match-prize-dialog-top, 42px) + 12px);
-  left: calc(var(--match-prize-dialog-left, 42px) + var(--match-prize-dialog-size, min(88vw, 760px)) - 54px);
+  left: calc(var(--match-prize-dialog-left, 42px) + var(--match-prize-dialog-width, min(48vw, 520px)) - 54px);
   width: 42px;
   height: 42px;
   display: grid;
@@ -30017,7 +30017,7 @@ body {
   .match-prize-dialog__close {
     top: calc(var(--match-prize-dialog-top, 14px) + 8px);
     right: auto;
-    left: calc(var(--match-prize-dialog-left, 14px) + var(--match-prize-dialog-size, calc(100vw - 28px)) - 46px);
+    left: calc(var(--match-prize-dialog-left, 14px) + var(--match-prize-dialog-width, calc(100vw - 28px)) - 46px);
     width: 38px;
     height: 38px;
   }

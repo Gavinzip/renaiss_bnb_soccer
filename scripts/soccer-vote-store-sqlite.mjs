@@ -16,6 +16,7 @@ import {
   allocationId,
   assertVoteInput,
   buildVotePreview,
+  filterAllocationsForMatches,
   findRoundLedgerTickets,
   normalizeAllocation,
   normalizeAddress,
@@ -316,13 +317,17 @@ function submitVoteInDatabase({ db, ledger, input, matchResults, matches }) {
       WHERE wallet_address = ? AND round_id = ? AND match_id = ? AND team_id = ?
     `).get(walletAddress, roundId, matchId, teamId)
 
-    const usedOutsideCurrentTeam = toPositiveInteger(db.prepare(`
-      SELECT COALESCE(SUM(tickets), 0) AS tickets
+    const walletAllocations = db.prepare(`
+      SELECT id, wallet_address, round_id, match_id, team_id, tickets, source, official, created_at, updated_at
       FROM vote_allocations
       WHERE wallet_address = ?
-        AND round_id = ?
-        AND NOT (match_id = ? AND team_id = ?)
-    `).get(walletAddress, roundId, matchId, teamId)?.tickets)
+    `).all(walletAddress).map(rowToAllocation)
+    const activeWalletAllocations = filterAllocationsForMatches(walletAllocations, matches)
+    const usedOutsideCurrentTeam = activeWalletAllocations.reduce((total, allocation) => {
+      if (allocation.roundId !== roundId) return total
+      if (allocation.matchId === matchId && allocation.teamId === teamId) return total
+      return total + toPositiveInteger(allocation.tickets)
+    }, 0)
 
     const currentTeamTickets = toPositiveInteger(existing?.tickets)
     const nextTeamTickets = currentTeamTickets + tickets
@@ -339,22 +344,19 @@ function submitVoteInDatabase({ db, ledger, input, matchResults, matches }) {
       })
     }
 
-    const sharedRoundRows = roundAllowsSharedInsiderGrantTickets(roundId)
-      ? db.prepare(`
-        SELECT round_id, SUM(tickets) AS tickets
-        FROM vote_allocations
-        WHERE wallet_address = ?
-          AND round_id IN (${SHARED_INSIDER_GRANT_ROUND_IDS.map(() => '?').join(', ')})
-        GROUP BY round_id
-      `).all(walletAddress, ...SHARED_INSIDER_GRANT_ROUND_IDS)
+    const sharedRoundAllocations = roundAllowsSharedInsiderGrantTickets(roundId)
+      ? Array.from(activeWalletAllocations.reduce((totals, allocation) => {
+        if (!SHARED_INSIDER_GRANT_ROUND_IDS.includes(allocation.roundId)) return totals
+        totals.set(allocation.roundId, (totals.get(allocation.roundId) || 0) + toPositiveInteger(allocation.tickets))
+        return totals
+      }, new Map()).entries()).map(([sharedRoundId, sharedTickets]) => ({
+        walletAddress,
+        roundId: sharedRoundId,
+        matchId: '',
+        teamId: '',
+        tickets: sharedTickets,
+      }))
       : []
-    const sharedRoundAllocations = sharedRoundRows.map((row) => ({
-      walletAddress,
-      roundId: String(row.round_id || ''),
-      matchId: '',
-      teamId: '',
-      tickets: toPositiveInteger(row.tickets),
-    }))
     const sharedInsiderGrantTicketsUsed = roundAllowsSharedInsiderGrantTickets(roundId)
       ? getSharedInsiderGrantTicketsUsed(sharedRoundAllocations, walletAddress, ledgerTickets.entry, {
         overrideRoundId: roundId,
