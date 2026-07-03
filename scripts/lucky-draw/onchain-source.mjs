@@ -25,7 +25,6 @@ function sourceCacheKey(source, campaignStart, campaignEnd) {
     source.pack || '',
     source.ticketWeight || '',
     source.buybackContract || '',
-    source.startsAt || '',
     campaignStart,
     campaignEnd,
   ].join('|')
@@ -257,7 +256,6 @@ async function scanLogSource({
   const cachedToBlock = toNumber(cachedSource?.toBlock)
   const overlapBlocks = Math.max(0, toNumber(args.eventCacheOverlapBlocks) || 0)
   const lookbackFromBlock = toNumber(eventCacheLookbackFromBlock)
-  const sourceStartsAt = toNumber(source.startsAt)
   let scanStart = fromBlock
   let cachedEvents = []
 
@@ -296,7 +294,6 @@ async function scanLogSource({
       const event = decoder(row, source)
       if (!event) continue
       if (event.timestamp < campaignStart || event.timestamp > campaignEnd) continue
-      if (sourceStartsAt && event.timestamp < sourceStartsAt) continue
       fetchedEvents.push(event)
     }
 
@@ -323,7 +320,6 @@ async function scanLogSource({
       label: source.label,
       pack: source.pack || null,
       eventKind: source.eventKind || source.cacheKind || null,
-      startsAt: sourceStartsAt || null,
       fromBlock: cachedFromBlock && !args.refreshCache ? Math.min(cachedFromBlock, fromBlock) : fromBlock,
       toBlock: cachedToBlock && !args.refreshCache ? Math.max(cachedToBlock, toBlock) : toBlock,
       updatedAt: Date.now(),
@@ -343,7 +339,6 @@ async function scanLogSource({
       cachedFromBlock: cachedFromBlock || null,
       cachedToBlock: cachedToBlock || null,
       eventCacheLookbackFromBlock: lookbackFromBlock || null,
-      startsAt: sourceStartsAt || null,
       cacheToBlock: eventCache.sources[cacheKey]?.toBlock ?? null,
     },
   }
@@ -429,9 +424,7 @@ export async function scanOnchainTicketEvents(args) {
   const { campaignStart, campaignEnd } = getCampaignWindow(args)
   const nowTs = Math.floor(Date.now() / 1000)
   const windowEndTs = Math.min(campaignEnd, nowTs)
-  const packEventSources = getPackEventSources(args.extraLegacyPacksRaw, {
-    worldCupPackStart: args.worldCupPackStart,
-  })
+  const packEventSources = getPackEventSources(args.extraLegacyPacksRaw)
   const contracts = packEventSources.filter(
     (source) => !args.contracts.length || args.contracts.includes(source.contract),
   )
@@ -459,8 +452,6 @@ export async function scanOnchainTicketEvents(args) {
           eventKind: contract.eventKind,
           packId: contract.packId || contract.topic2 || null,
           buybackContract: contract.buybackContract || null,
-          startsAt: contract.startsAt || null,
-          startsAtSource: contract.startsAtSource || null,
           configSource: contract.configSource || 'built-in',
           calls: 0,
           events: 0,
@@ -590,7 +581,6 @@ export async function scanOnchainTicketEvents(args) {
       cachedFromBlock: result.stats.cachedFromBlock,
       cachedToBlock: result.stats.cachedToBlock,
       eventCacheLookbackFromBlock: result.stats.eventCacheLookbackFromBlock,
-      startsAt: result.stats.startsAt,
       cacheToBlock: result.stats.cacheToBlock,
       splitWindows: result.stats.splitWindows,
     })

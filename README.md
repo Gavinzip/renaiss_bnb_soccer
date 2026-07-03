@@ -216,8 +216,6 @@ LUCKY_DRAW_EVENT_CACHE_LOOKBACK_ROUNDS=12
 LUCKY_DRAW_EVENT_CACHE_LOOKBACK_MINUTES=
 LUCKY_DRAW_CAMPAIGN_START=1781422200
 LUCKY_DRAW_CAMPAIGN_END=1784469600
-# Empty means World Cup Pack is visible in rules but not counted yet.
-LUCKY_DRAW_WORLD_CUP_PACK_START=
 BSCSCAN_API_KEY=...
 ```
 
@@ -225,8 +223,7 @@ BSCSCAN_API_KEY=...
 set `DATA_BACKUP_RESTORE_FORCE=1` only when you intentionally want the data repo to overwrite `/data/soccer`.
 `BSCSCAN_API_KEY` is required for live ticket refresh. `LUCKY_DRAW_EVENT_CACHE_LOOKBACK_ROUNDS=12` with a
 5-minute refresh makes every ledger refresh re-scan the latest 60 minutes of on-chain event cache before writing
-the ticket ledger. `LUCKY_DRAW_WORLD_CUP_PACK_START` is a Unix timestamp gate for World Cup Pack counting; leave it
-empty until that pack should officially start. Do not commit either token.
+the ticket ledger. Do not commit either token.
 
 When testing a fresh buyback ledger on the server, isolate only the ticket ledger/cache paths. Do not remove
 `votes/`, `profiles/`, `auth/`, `match-results.json`, or `match-draw-ledger.json`; those are separate runtime

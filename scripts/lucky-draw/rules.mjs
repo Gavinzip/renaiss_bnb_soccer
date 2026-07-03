@@ -5,8 +5,6 @@ export const WALLET_MIGRATIONS_URL = 'https://tcgpro.zeabur.app/api/wallet-migra
 
 export const DEFAULT_CAMPAIGN_START = 1781422200
 export const DEFAULT_CAMPAIGN_END = 1784469600
-export const WORLD_CUP_PACK_START_ENV = 'LUCKY_DRAW_WORLD_CUP_PACK_START'
-export const DEFAULT_WORLD_CUP_PACK_START = DEFAULT_CAMPAIGN_END + 1
 
 export const BUYBACK_EVENT_TOPIC =
   '0xca4650c272ed248c5917e9ad8c3cca3b69d42f25071c9e6c85a2abc7427030cf'
@@ -35,19 +33,6 @@ export const PACK_WEIGHTS = {
   'starry-pack': 2,
   'plasma-pack': 2,
   'world-cup-pack': 2,
-}
-
-function worldCupPackStartTimestamp(value = process.env[WORLD_CUP_PACK_START_ENV] || '') {
-  return toNumber(value) || DEFAULT_WORLD_CUP_PACK_START
-}
-
-function withWorldCupPackStart(source, options = {}) {
-  if (source.pack !== 'world-cup-pack') return source
-  return {
-    ...source,
-    startsAt: worldCupPackStartTimestamp(options.worldCupPackStart),
-    startsAtSource: options.worldCupPackStart ? WORLD_CUP_PACK_START_ENV : 'default-disabled',
-  }
 }
 
 export const BUILTIN_PACK_EVENT_SOURCES = [
@@ -128,8 +113,6 @@ export const BUILTIN_PACK_EVENT_SOURCES = [
     packId: WORLD_CUP_PACK_ID,
     eventKind: 'legacy-pack-open',
     configSource: 'built-in',
-    startsAt: DEFAULT_WORLD_CUP_PACK_START,
-    startsAtSource: 'default-disabled',
   },
 ]
 
@@ -228,9 +211,8 @@ export function getCampaignWindow(args = {}) {
   return { campaignStart, campaignEnd }
 }
 
-export function getPackEventSources(extraLegacyPacksRaw = process.env[EXTRA_LEGACY_PACKS_ENV] || '', options = {}) {
-  const builtInSources = BUILTIN_PACK_EVENT_SOURCES.map((source) => withWorldCupPackStart(source, options))
-  const sources = [...builtInSources, ...parseExtraLegacyPackSources(extraLegacyPacksRaw)]
+export function getPackEventSources(extraLegacyPacksRaw = process.env[EXTRA_LEGACY_PACKS_ENV] || '') {
+  const sources = [...BUILTIN_PACK_EVENT_SOURCES, ...parseExtraLegacyPackSources(extraLegacyPacksRaw)]
   assertUniquePackSources(sources)
   return sources
 }
@@ -253,8 +235,6 @@ export function describePackEventSources(sources = getPackEventSources()) {
     topic2: source.topic2 || null,
     topic3: source.topic3 || null,
     packId: source.packId || source.topic2 || null,
-    startsAt: source.startsAt || null,
-    startsAtSource: source.startsAtSource || null,
     configSource: source.configSource || 'built-in',
   }))
 }
