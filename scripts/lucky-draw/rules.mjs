@@ -3,7 +3,7 @@ import { normalizeAddress, normalizeHash, toNumber } from './utils.mjs'
 export const WALLET_RESOLVE_URL = 'https://open-monitor-rmrm.pages.dev/api/wallet-migration/resolve'
 export const WALLET_MIGRATIONS_URL = 'https://tcgpro.zeabur.app/api/wallet-migrations.json'
 
-export const DEFAULT_CAMPAIGN_START = 1781422200
+export const DEFAULT_CAMPAIGN_START = 1783058400
 export const DEFAULT_CAMPAIGN_END = 1784469600
 
 export const BUYBACK_EVENT_TOPIC =

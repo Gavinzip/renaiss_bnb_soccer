@@ -1,6 +1,7 @@
 import {
   CalendarClock,
   ChevronDown,
+  CircleAlert,
   Clock3,
   Database,
   Medal,
@@ -46,6 +47,7 @@ const LazyVoteRoom = lazyNamed(roomLoaders.vote, "VoteRoom");
 const LazyDrawRoom = lazyNamed(roomLoaders.draw, "DrawRoom");
 const LazyWinnersRoom = lazyNamed(roomLoaders.winners, "WinnersRoom");
 const roomPreloadCache = new Map();
+const ADMIN_ONLY_ROUND_IDS = new Set(["round32"]);
 
 function preloadRoom(viewId) {
   const loader = roomLoaders[viewId];
@@ -114,7 +116,6 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
   const carryoverTickets = toLedgerInteger(entry?.carryoverTickets);
   const insiderPracticeTickets = toLedgerInteger(entry?.insiderPracticeTickets);
   const insiderGrantTickets = toLedgerInteger(entry?.insiderGrantTickets);
-  const taskRewardTickets = toLedgerInteger(entry?.taskRewardTickets);
   const finalTickets = toLedgerInteger(entry?.finalTickets);
   const totalVotingTickets = Math.max(
     toLedgerInteger(entry?.totalVotingTickets),
@@ -145,6 +146,7 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
     .filter((row) => row.count > 0)
     .sort((left, right) => right.count - left.count || left.pack.localeCompare(right.pack)),
   [entry?.packs, packRuleMap]);
+  const [carryoverInfoOpen, setCarryoverInfoOpen] = useState(false);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -198,12 +200,10 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
             {t("ticketSource.carryoverRule", { count: number(carryoverTickets) })}
           </p>
         ) : null}
-        {insiderPracticeTickets > 0 || insiderGrantTickets > 0 ? (
+        {insiderGrantTickets > 0 ? (
           <p className="ticket-source-panel__note is-carryover-note">
             {t("ticketSource.insiderRule", {
-              practice: number(insiderPracticeTickets),
               grant: number(insiderGrantTickets),
-              task: number(taskRewardTickets),
             })}
           </p>
         ) : null}
@@ -218,12 +218,22 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
             <dd>{number(rawTickets)}</dd>
           </div>
           <div>
-            <dt>{t("ticketSource.carryoverTickets")}</dt>
+            <dt className="ticket-source-stat-label">
+              <span>{t("ticketSource.carryoverTickets")}</span>
+              <button
+                type="button"
+                className="ticket-source-info-button"
+                aria-label={t("ticketSource.carryoverInfoAria")}
+                aria-expanded={carryoverInfoOpen}
+                onClick={() => setCarryoverInfoOpen((current) => !current)}
+              >
+                <CircleAlert size={14} strokeWidth={2.35} />
+              </button>
+            </dt>
             <dd>{number(carryoverTickets)}</dd>
-          </div>
-          <div>
-            <dt>{t("ticketSource.insiderPracticeTickets")}</dt>
-            <dd>{number(insiderPracticeTickets)}</dd>
+            {carryoverInfoOpen ? (
+              <p className="ticket-source-stat-note">{t("ticketSource.carryoverInfo")}</p>
+            ) : null}
           </div>
           <div>
             <dt>{t("ticketSource.insiderGrantTickets")}</dt>
@@ -352,6 +362,77 @@ function canViewDrawRoom(localToolsEnabled, authSession) {
   return allowedWallets.includes(walletAddress);
 }
 
+function isAdminOnlyRound(roundId) {
+  return ADMIN_ONLY_ROUND_IDS.has(String(roundId || ""));
+}
+
+function visibleRoundsForAccess(rounds, canViewAdminOnlyRounds) {
+  if (canViewAdminOnlyRounds) return rounds;
+  return rounds.filter((round) => !isAdminOnlyRound(round.id));
+}
+
+function normalizeWinnerWalletAddress(value) {
+  const address = String(value || "").trim().toLowerCase();
+  return /^0x[a-f0-9]{40}$/.test(address) ? address : "";
+}
+
+function winnerWalletAddress(row) {
+  return normalizeWinnerWalletAddress(row?.walletAddress || row?.userAddress || row?.profile?.walletAddress);
+}
+
+function filterWinnerRowsByRounds(rows, visibleRoundIds) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.filter((row) => visibleRoundIds.has(String(row?.roundId || "")));
+}
+
+function filterWinnerDrawsByRounds(draws, visibleRoundIds) {
+  if (!Array.isArray(draws)) return draws;
+  return draws
+    .map((draw) => ({
+      ...draw,
+      winners: filterWinnerRowsByRounds(draw.winners, visibleRoundIds),
+      alternates: filterWinnerRowsByRounds(draw.alternates, visibleRoundIds),
+      prizeSlots: Array.isArray(draw.prizeSlots)
+        ? draw.prizeSlots
+          .map((slot) => {
+            const winnerRoundId = String(slot?.winner?.roundId || draw?.roundId || "");
+            return {
+              ...slot,
+              winner: !slot?.winner || visibleRoundIds.has(winnerRoundId) ? slot.winner : null,
+              alternates: filterWinnerRowsByRounds(slot?.alternates, visibleRoundIds),
+            };
+          })
+          .filter((slot) => slot.winner || (Array.isArray(slot.alternates) && slot.alternates.length > 0))
+        : draw.prizeSlots,
+    }))
+    .filter((draw) => visibleRoundIds.has(String(draw?.roundId || ""))
+      || (Array.isArray(draw.winners) && draw.winners.length > 0)
+      || (Array.isArray(draw.prizeSlots) && draw.prizeSlots.length > 0));
+}
+
+function filterWinnerRevealDataByRounds(winnerRevealData, visibleRoundIds) {
+  const winners = filterWinnerRowsByRounds(winnerRevealData?.winners, visibleRoundIds);
+  const winnersBySlot = filterWinnerRowsByRounds(winnerRevealData?.winnersBySlot, visibleRoundIds);
+  const alternates = filterWinnerRowsByRounds(winnerRevealData?.alternates, visibleRoundIds);
+  return {
+    ...winnerRevealData,
+    winners,
+    winnersBySlot,
+    alternates,
+    draws: filterWinnerDrawsByRounds(winnerRevealData?.draws, visibleRoundIds),
+    winnerCount: Array.isArray(winners) ? winners.length : winnerRevealData?.winnerCount,
+    alternateCount: Array.isArray(alternates) ? alternates.length : winnerRevealData?.alternateCount,
+  };
+}
+
+function countVisibleWinnersForWallet(winnerRevealData, walletAddress, visibleRoundIds) {
+  const wallet = normalizeWinnerWalletAddress(walletAddress);
+  if (!wallet || winnerRevealData?.sourceStatus !== "revealed") return 0;
+  return (Array.isArray(winnerRevealData?.winners) ? winnerRevealData.winners : [])
+    .filter((winner) => visibleRoundIds.has(String(winner?.roundId || "")) && winnerWalletAddress(winner) === wallet)
+    .length;
+}
+
 function RoomLoadingShell({ t }) {
   return (
     <section className="room-loading-shell" aria-live="polite" aria-label={t("common.loading")}>
@@ -474,6 +555,7 @@ function RoundSwitch({
   const drawById = new Map(drawStats.map((draw) => [draw.id, draw]));
   const { dateTime, roundLabel, roundStatus, t } = copy;
   const simulatedIndex = Math.max(0, rounds.findIndex((round) => round.id === simulatedRoundId));
+  const realtimeInspectableRoundId = rounds.some((round) => round.id === "round32") ? "round32" : rounds[0]?.id;
   const liveCounts = liveQualification?.counts ?? { confirmed: 0, provisional: 0, unrevealed: 32 };
   const liveSourceTone = liveQualification?.sourceStatus ?? "pending";
   const liveSourceLine = liveSourceTone === "live"
@@ -517,7 +599,7 @@ function RoundSwitch({
         {rounds.map((round, index) => {
           const draw = drawById.get(round.id);
           const isActive = round.id === activeRoundId;
-          const canInspect = allowAllRounds || (simulationMode === "realtime" ? round.id === "round32" : index <= simulatedIndex);
+          const canInspect = allowAllRounds || (simulationMode === "realtime" ? round.id === realtimeInspectableRoundId : index <= simulatedIndex);
           const detail = getRoundRailDetail(round, draw, isActive, remainingRoundTickets, roundStatus, t);
 
           return (
@@ -844,17 +926,54 @@ export function ControlRoom({
   const { roundLabel, t } = copy;
   const localToolsEnabled = isLocalTestOrigin();
   const drawViewEnabled = canViewDrawRoom(localToolsEnabled, authSession);
+  const canViewAdminOnlyRounds = canViewDrawRoom(false, authSession);
   const showSimulationControls = localToolsEnabled;
   const [winnerRevealStarted, setWinnerRevealStarted] = useState(false);
+  const visibleRounds = useMemo(
+    () => visibleRoundsForAccess(rounds, canViewAdminOnlyRounds),
+    [canViewAdminOnlyRounds, rounds],
+  );
+  const visibleRoundIds = useMemo(
+    () => new Set(visibleRounds.map((round) => round.id)),
+    [visibleRounds],
+  );
+  const visibleDrawStats = useMemo(
+    () => drawStats.filter((round) => visibleRoundIds.has(round.id)),
+    [drawStats, visibleRoundIds],
+  );
+  const visibleActiveRound = visibleRounds.find((round) => round.id === activeRoundId)
+    ?? visibleRounds[0]
+    ?? activeRound;
+  const visibleActiveRoundId = visibleActiveRound?.id ?? activeRoundId;
+  const activeRoundIsVisible = visibleRoundIds.has(activeRoundId);
+  const displayedRoundAllocations = activeRoundIsVisible ? roundAllocations : [];
+  const displayedRoundVoteOutcomes = activeRoundIsVisible ? roundVoteOutcomes : [];
+  const displayedRoundOutcomeSummary = activeRoundIsVisible
+    ? roundOutcomeSummary
+    : { lostTickets: 0, winnerTickets: 0, pendingTickets: 0 };
+  const displayedRemainingRoundTickets = activeRoundIsVisible ? remainingRoundTickets : 0;
+  const displayedUsedRoundTickets = activeRoundIsVisible ? usedRoundTickets : 0;
+  const displayedRoundTicketBreakdown = activeRoundIsVisible
+    ? roundTicketBreakdown
+    : { usableTickets: 0, remainingTickets: 0, usedTickets: 0, allocations: [] };
+  const visibleWinnerRevealData = useMemo(
+    () => (canViewAdminOnlyRounds
+      ? winnerRevealData
+      : filterWinnerRevealDataByRounds(winnerRevealData, visibleRoundIds)),
+    [canViewAdminOnlyRounds, visibleRoundIds, winnerRevealData],
+  );
+  const visibleCurrentUserWinnerCount = canViewAdminOnlyRounds
+    ? currentUserWinnerCount
+    : countVisibleWinnersForWallet(winnerRevealData, currentWinnerWalletAddress, visibleRoundIds);
   const visibleCommandViews = useMemo(
     () => (drawViewEnabled ? commandViews : commandViews.filter((view) => view.id !== "draw")),
     [drawViewEnabled],
   );
   const effectiveActiveViewId = !drawViewEnabled && activeViewId === "draw" ? "home" : activeViewId;
   const activeView = visibleCommandViews.find((view) => view.id === effectiveActiveViewId) ?? visibleCommandViews[0] ?? commandViews[0];
-  const activeDraw = drawStats.find((round) => round.id === activeRound.id) ?? drawStats[0];
+  const activeDraw = visibleDrawStats.find((round) => round.id === visibleActiveRound.id) ?? visibleDrawStats[0] ?? drawStats[0];
   const accumulatedDrawEntries = (activeDraw?.eligibleEntries ?? 0) + (activeDraw?.pendingEntries ?? 0);
-  const matchStateCounts = countMatchStates(matches, activeRoundId);
+  const matchStateCounts = countMatchStates(matches, visibleActiveRoundId);
   const compactWorkViews = new Set(["schedule", "vote", "draw", "winners"]);
   const showRoomMast = effectiveActiveViewId !== "home" && !compactWorkViews.has(effectiveActiveViewId);
   const showRoundSwitch = effectiveActiveViewId === "schedule"
@@ -914,11 +1033,27 @@ export function ControlRoom({
     if (ticketSourceActionable) setTicketSourceOpen(true);
   }
 
+  function handleSelectVisibleRound(roundId) {
+    if (!canViewAdminOnlyRounds && isAdminOnlyRound(roundId)) {
+      const fallbackRoundId = visibleRounds[0]?.id;
+      if (fallbackRoundId) onSelectRound(fallbackRoundId);
+      return;
+    }
+    onSelectRound(roundId);
+  }
+
   useEffect(() => {
     if (!drawViewEnabled && activeViewId === "draw") {
       onSelectView("home");
     }
   }, [activeViewId, drawViewEnabled, onSelectView]);
+
+  useEffect(() => {
+    if (canViewAdminOnlyRounds) return;
+    if (!isAdminOnlyRound(activeRoundId)) return;
+    const fallbackRoundId = visibleRounds[0]?.id;
+    if (fallbackRoundId) onSelectRound(fallbackRoundId);
+  }, [activeRoundId, canViewAdminOnlyRounds, onSelectRound, visibleRounds]);
 
   useEffect(() => {
     if (effectiveActiveViewId !== "winners") setWinnerRevealStarted(false);
@@ -997,7 +1132,7 @@ export function ControlRoom({
           onSelectView={onSelectView}
           t={t}
           views={visibleCommandViews}
-          winnersAlert={currentUserWinnerCount > 0}
+          winnersAlert={visibleCurrentUserWinnerCount > 0}
         />
         <LanguageSwitch />
         {showXFollowVerifyButton ? (
@@ -1057,7 +1192,7 @@ export function ControlRoom({
           matches={matches}
           milestones={milestones}
           currentMilestoneValue={currentMilestoneValue}
-          rounds={rounds}
+          rounds={visibleRounds}
           onSelectView={onSelectView}
           isActive={effectiveActiveViewId === "home"}
         />
@@ -1067,10 +1202,10 @@ export function ControlRoom({
             {showRoomMast ? (
               <RoomCommandMast
                 activeViewId={effectiveActiveViewId}
-                activeRound={activeRound}
+                activeRound={visibleActiveRound}
                 activeDraw={activeDraw}
                 matchStateCounts={matchStateCounts}
-                remainingRoundTickets={remainingRoundTickets}
+                remainingRoundTickets={displayedRemainingRoundTickets}
                 accumulatedDrawEntries={accumulatedDrawEntries}
                 copy={copy}
               />
@@ -1078,16 +1213,16 @@ export function ControlRoom({
 
             {showRoundSwitch ? (
               <RoundSwitch
-                rounds={rounds}
-                activeRoundId={activeRoundId}
+                rounds={visibleRounds}
+                activeRoundId={visibleActiveRoundId}
                 simulatedRoundId={simulatedRoundId}
                 simulationMode={simulationMode}
                 liveQualification={liveQualification}
-                drawStats={drawStats}
-                remainingRoundTickets={remainingRoundTickets}
+                drawStats={visibleDrawStats}
+                remainingRoundTickets={displayedRemainingRoundTickets}
                 showModeTools={showSimulationControls && effectiveActiveViewId !== "winners"}
                 allowAllRounds={roundSwitchAllowsAll}
-                onSelectRound={onSelectRound}
+                onSelectRound={handleSelectVisibleRound}
                 onSelectSimulatedRound={onSelectSimulatedRound}
                 onSelectSimulationMode={onSelectSimulationMode}
                 copy={copy}
@@ -1099,16 +1234,16 @@ export function ControlRoom({
         <Suspense fallback={<RoomLoadingShell t={t} />}>
           {effectiveActiveViewId === "schedule" ? (
             <LazyScheduleRoom
-              activeRound={activeRound}
-              activeRoundId={activeRoundId}
+              activeRound={visibleActiveRound}
+              activeRoundId={visibleActiveRoundId}
               simulatedRound={simulatedRound}
               simulatedRoundId={simulatedRoundId}
-              rounds={rounds}
+              rounds={visibleRounds}
               matches={matches}
               teamsById={teamsById}
               selectedMatch={selectedMatch}
-              roundAllocations={roundAllocations}
-              onSelectRound={onSelectRound}
+              roundAllocations={displayedRoundAllocations}
+              onSelectRound={handleSelectVisibleRound}
               onSelectMatch={onSelectMatch}
               onSelectTeam={onSelectTeam}
               onSelectView={onSelectView}
@@ -1121,19 +1256,19 @@ export function ControlRoom({
               ledgerIssue={ledgerIssue}
               activeEntry={activeEntry}
               selectedWallet={selectedWallet}
-              activeRound={activeRound}
-              activeRoundId={activeRoundId}
+              activeRound={visibleActiveRound}
+              activeRoundId={visibleActiveRoundId}
               matches={matches}
               teamsById={teamsById}
               selectedMatch={selectedMatch}
               selectedTeamId={selectedTeamId}
               ticketAmount={ticketAmount}
-              remainingRoundTickets={remainingRoundTickets}
-              roundTicketBreakdown={roundTicketBreakdown}
-              usedRoundTickets={usedRoundTickets}
-              roundAllocations={roundAllocations}
-              roundVoteOutcomes={roundVoteOutcomes}
-              roundOutcomeSummary={roundOutcomeSummary}
+              remainingRoundTickets={displayedRemainingRoundTickets}
+              roundTicketBreakdown={displayedRoundTicketBreakdown}
+              usedRoundTickets={displayedUsedRoundTickets}
+              roundAllocations={displayedRoundAllocations}
+              roundVoteOutcomes={displayedRoundVoteOutcomes}
+              roundOutcomeSummary={displayedRoundOutcomeSummary}
               previewVoteIssue={previewVoteIssue}
               voteActionBlocked={voteRequiresPreVoteGate}
               voteActionBlockReason={voteActionBlockReason}
@@ -1179,25 +1314,25 @@ export function ControlRoom({
 
           {effectiveActiveViewId === "draw" && drawViewEnabled ? (
             <LazyDrawRoom
-              activeRound={activeRound}
-              rounds={rounds}
+              activeRound={visibleActiveRound}
+              rounds={visibleRounds}
               simulatedRoundId={simulatedRoundId}
-              drawStats={drawStats}
+              drawStats={visibleDrawStats}
               matches={matches}
               teamsById={teamsById}
-              onSelectRound={onSelectRound}
+              onSelectRound={handleSelectVisibleRound}
             />
           ) : null}
 
           {effectiveActiveViewId === "winners" ? (
             <LazyWinnersRoom
-              activeRoundId={activeRoundId}
-              rounds={rounds}
+              activeRoundId={visibleActiveRoundId}
+              rounds={visibleRounds}
               matches={matches}
-              winnerRevealData={winnerRevealData}
+              winnerRevealData={visibleWinnerRevealData}
               winnerRevealIssue={winnerRevealIssue}
               currentWalletAddress={currentWinnerWalletAddress}
-              currentUserWinnerCount={currentUserWinnerCount}
+              currentUserWinnerCount={visibleCurrentUserWinnerCount}
               onRevealStateChange={setWinnerRevealStarted}
             />
           ) : null}

@@ -177,6 +177,40 @@
   line-height: 1;
 }
 
+.ticket-source-stat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ticket-source-info-button {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(240, 209, 139, 0.82);
+  background: transparent;
+  cursor: pointer;
+}
+
+.ticket-source-info-button:hover,
+.ticket-source-info-button:focus-visible,
+.ticket-source-info-button[aria-expanded="true"] {
+  color: rgba(255, 241, 203, 0.96);
+  background: rgba(240, 209, 139, 0.12);
+  outline: none;
+}
+
+.ticket-source-stat-note {
+  margin: 1px 0 0;
+  color: rgba(245, 246, 241, 0.66);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .ticket-source-meta {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
