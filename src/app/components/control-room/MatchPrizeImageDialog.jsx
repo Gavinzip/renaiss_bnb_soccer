@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Maximize2, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import matchPrizeCardImage from "../../assets/match-prize-card.webp";
-import matchPrizeOriginalImage from "../../assets/match-prize-card-original.webp";
 
 const HOVER_OPEN_DELAY_MS = 300;
 
@@ -31,7 +29,7 @@ function getOriginFrame(geometry) {
   };
 }
 
-export function MatchPrizeImageDialog({ copy, matchId }) {
+export function MatchPrizeImageDialog({ copy, matchId, prizeImage }) {
   const { t } = copy;
   const [open, setOpen] = useState(false);
   const [dialogGeometry, setDialogGeometry] = useState(null);
@@ -154,7 +152,7 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
             >
               <img
                 className="match-prize-dialog__image"
-                src={matchPrizeOriginalImage}
+                src={prizeImage}
                 alt={t("vote.matchPrizeOriginalAlt")}
                 decoding="async"
               />
@@ -216,7 +214,7 @@ export function MatchPrizeImageDialog({ copy, matchId }) {
         >
           <img
             className="match-prize-lane__prize"
-            src={matchPrizeCardImage}
+            src={prizeImage}
             alt=""
             aria-hidden="true"
             loading="lazy"

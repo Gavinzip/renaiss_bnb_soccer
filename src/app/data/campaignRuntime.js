@@ -25,7 +25,11 @@ export function normalizeFootballLedgerEntry(entry) {
 
   const carryoverTickets = toLedgerTickets(entry.carryoverTickets ?? entry.carryover_tickets);
   const insiderPracticeTickets = toLedgerTickets(entry.insiderPracticeTickets ?? entry.insider_practice_tickets);
-  const insiderGrantTickets = toLedgerTickets(entry.insiderGrantTickets ?? entry.insider_grant_tickets);
+  const taskRewardTickets = toLedgerTickets(entry.taskRewardTickets ?? entry.task_reward_tickets);
+  const insiderGrantTickets = Math.max(
+    taskRewardTickets,
+    toLedgerTickets(entry.insiderGrantTickets ?? entry.insider_grant_tickets),
+  );
   const fallbackFinalTickets = toLedgerTickets(entry.finalTickets ?? entry.final_tickets);
   const rawTickets = toLedgerTickets(
     entry.rawTickets ?? entry.raw_tickets ?? Math.max(0, fallbackFinalTickets - carryoverTickets),
@@ -43,6 +47,7 @@ export function normalizeFootballLedgerEntry(entry) {
     carryoverTickets,
     insiderPracticeTickets,
     insiderGrantTickets,
+    taskRewardTickets,
     finalTickets,
     totalVotingTickets,
     sbt: "none",
@@ -231,10 +236,16 @@ export function summarizeRoundDraw(round, allocations, outcomeSummary = null, us
         ? "eligible_ready"
         : round.drawStatus;
 
+  const matchCount = outcomeSummary?.matchCount ?? matches.length;
+  const officialFinalCount = outcomeSummary?.officialFinalCount ?? 0;
+  const officialFinalsRemaining = Math.max(0, matchCount - officialFinalCount);
+
   return {
     ...round,
-    matchCount: outcomeSummary?.matchCount ?? matches.length,
-    officialFinalCount: outcomeSummary?.officialFinalCount ?? 0,
+    matchCount,
+    officialFinalCount,
+    officialFinalsRemaining,
+    officialFinalsComplete: matchCount > 0 && officialFinalsRemaining === 0,
     totalPoolEntries,
     eligibleEntries,
     lostEntries: userLostEntries,

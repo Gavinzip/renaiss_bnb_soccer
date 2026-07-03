@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { roundDefinitions } from '../src/app/data/worldCupCampaign.js'
+import { getTicketBreakdownForRound } from '../src/app/data/ticketEligibility.js'
 import { readEnvFile, toNumber } from './lucky-draw/utils.mjs'
 import { findLedgerEntryByAddress, readLedgerPayload } from './soccer-ledger-api.mjs'
 import {
@@ -187,9 +188,11 @@ function validateWalletRoundCapacity({ baseLedger, allocations }) {
     const [walletAddress, roundId] = key.split(':')
     const ledgerEntry = findLedgerEntryByAddress(baseLedger, walletAddress)
     if (!ledgerEntry) throw new Error(`wallet ${walletAddress} in ${roundId} vote state is missing from base ticket ledger.`)
-    const finalTickets = toPositiveInteger(ledgerEntry.finalTickets)
-    if (usedTickets > finalTickets) {
-      throw new Error(`wallet ${walletAddress} uses ${usedTickets} tickets in ${roundId}, exceeding ledger balance ${finalTickets}.`)
+    const roundTickets = getTicketBreakdownForRound(ledgerEntry, roundId)
+    if (usedTickets > roundTickets.usableTickets) {
+      throw new Error(
+        `wallet ${walletAddress} uses ${usedTickets} tickets in ${roundId}, exceeding usable ledger balance ${roundTickets.usableTickets}.`,
+      )
     }
   }
 }
@@ -237,6 +240,8 @@ function entryForAllocation({ allocation, baseLedger, cursor, multiplier, result
     sourceTicketLedger: {
       ledgerUserAddress: ledgerEntry.userAddress || allocation.walletAddress,
       finalTickets: toPositiveInteger(ledgerEntry.finalTickets),
+      totalVotingTickets: toPositiveInteger(ledgerEntry.totalVotingTickets),
+      taskRewardTickets: toPositiveInteger(ledgerEntry.taskRewardTickets),
       rank: toPositiveInteger(ledgerEntry.rank),
     },
   }

@@ -41,7 +41,11 @@ export function getTicketBreakdownForRound(entry, roundId) {
   const rawTickets = toTicketInteger(entry?.rawTickets ?? entry?.raw_tickets);
   const carryoverTickets = toTicketInteger(entry?.carryoverTickets ?? entry?.carryover_tickets);
   const insiderPracticeTickets = toTicketInteger(entry?.insiderPracticeTickets ?? entry?.insider_practice_tickets);
-  const insiderGrantTickets = toTicketInteger(entry?.insiderGrantTickets ?? entry?.insider_grant_tickets);
+  const taskRewardTickets = toTicketInteger(entry?.taskRewardTickets ?? entry?.task_reward_tickets);
+  const insiderGrantTickets = Math.max(
+    taskRewardTickets,
+    toTicketInteger(entry?.insiderGrantTickets ?? entry?.insider_grant_tickets),
+  );
   const fallbackFinalTickets = toTicketInteger(entry?.finalTickets ?? entry?.final_tickets);
   const buybackUnlocked = roundAllowsBuybackTickets(roundId);
   const carryoverUnlocked = roundAllowsCarryoverTickets(roundId);
@@ -57,6 +61,7 @@ export function getTicketBreakdownForRound(entry, roundId) {
     carryoverTickets,
     insiderPracticeTickets,
     insiderGrantTickets,
+    taskRewardTickets,
     finalTickets: Math.max(fallbackFinalTickets, rawTickets + carryoverTickets),
     totalTickets,
     baseTickets,

@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { dirname, extname, join, normalize, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { createGzip } from 'node:zlib'
+import { verifyMessage } from 'ethers'
 
-import { milestones } from '../src/app/data/worldCupCampaign.js'
+import { milestones, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
 import { fetchFifaQualificationSnapshot, fetchFifaRound32MatchesSnapshot } from '../src/app/data/fifaRealtime.js'
 import {
   createAuthContext,
@@ -100,6 +102,25 @@ const backoffMs = process.env.LUCKY_DRAW_BACKOFF_MS || '1000'
 const requestBodyLimitBytes = readIntegerEnv('HTTP_JSON_BODY_LIMIT_BYTES', 64 * 1024, 1024)
 const authRequiredForVotes = process.env.AUTH_REQUIRE_SESSION_FOR_VOTES !== '0'
 const healthAdminToken = String(process.env.HEALTH_ADMIN_TOKEN || process.env.ADMIN_HEALTH_TOKEN || '').trim()
+const drawAdminApiEnabled = process.env.DRAW_ADMIN_API_ENABLED === '1'
+  || (runtimeTarget === 'local' && process.env.DRAW_ADMIN_API_ENABLED !== '0')
+const drawAdminChallengeTtlSeconds = readIntegerEnv('DRAW_ADMIN_CHALLENGE_TTL_SECONDS', 300, 30)
+const drawAdminChallengeTtlMs = drawAdminChallengeTtlSeconds * 1000
+const drawAdminScriptTimeoutSeconds = readIntegerEnv('DRAW_ADMIN_SCRIPT_TIMEOUT_SECONDS', 14 * 60, 60)
+const drawAdminScriptTimeoutMs = drawAdminScriptTimeoutSeconds * 1000
+const drawAdminOutputLimitBytes = readIntegerEnv('DRAW_ADMIN_OUTPUT_LIMIT_BYTES', 512 * 1024, 16 * 1024)
+const drawAdminRoundIds = new Set(roundDefinitions.map((round) => String(round.id || '').trim()).filter(Boolean))
+const drawAdminChallenges = new Map()
+let drawAdminRunRunning = false
+let lastDrawAdminRun = {
+  ok: false,
+  startedAt: null,
+  finishedAt: null,
+  durationSeconds: null,
+  exitCode: null,
+  error: null,
+  trigger: null,
+}
 const rateLimitEnabled = process.env.HTTP_RATE_LIMIT_ENABLED !== '0'
 const rateLimiter = createMemoryRateLimiter({
   maxBuckets: readIntegerEnv('HTTP_RATE_LIMIT_MAX_BUCKETS', 20000, 1000),
@@ -481,6 +502,377 @@ function xEligibilityRateLimitRules(request, session, status) {
   ]
 }
 
+function normalizeDrawAdminWalletAddress(value) {
+  const address = String(value || '').trim()
+  return /^0x[a-f0-9]{40}$/i.test(address) ? address.toLowerCase() : ''
+}
+
+function drawAdminAllowedAddresses() {
+  return [
+    process.env.DRAW_OWNER_ADDRESS,
+    process.env.DRAW_OPERATOR_ADDRESS,
+    process.env.DRAW_ADMIN_ADDRESSES,
+  ]
+    .flatMap((value) => String(value || '').split(/[,\s]+/))
+    .map(normalizeDrawAdminWalletAddress)
+    .filter(Boolean)
+}
+
+function drawContractAddress() {
+  return normalizeDrawAdminWalletAddress(process.env.DRAW_CONTRACT_ADDRESS)
+}
+
+function drawExpectedChainId() {
+  return String(process.env.BSC_CHAIN_ID || '56').trim() || '56'
+}
+
+function normalizeDrawAdminRoundId(value) {
+  const roundId = String(value || '').trim()
+  if (!drawAdminRoundIds.has(roundId)) {
+    throw Object.assign(new Error('Unsupported draw round.'), {
+      statusCode: 400,
+      code: 'draw_round_invalid',
+    })
+  }
+  return roundId
+}
+
+function normalizeDrawAdminAction(value, broadcast) {
+  const action = String(value || (broadcast ? 'broadcast' : 'verify')).trim().toLowerCase()
+  if (action === 'verify' || action === 'broadcast') return action
+  throw Object.assign(new Error('Unsupported draw action.'), {
+    statusCode: 400,
+    code: 'draw_action_invalid',
+  })
+}
+
+function drawAdminStatusPayload({ includeLastRun = false, includePrivate = false } = {}) {
+  const allowedAddresses = drawAdminAllowedAddresses()
+  const payload = {
+    ok: true,
+    enabled: drawAdminApiEnabled,
+    chainId: drawExpectedChainId(),
+    contractAddress: drawContractAddress() || null,
+    contractConfigured: Boolean(drawContractAddress()),
+    rpcConfigured: Boolean(process.env.BSC_RPC_URL),
+    broadcasterConfigured: Boolean(process.env.BSC_DEPLOYER_PRIVATE_KEY),
+    allowlistConfigured: allowedAddresses.length > 0,
+    matchDrawLedgerExists: existsSync(matchDrawLedgerPath),
+    drawWinnersExists: existsSync(drawWinnersPath),
+    challengeTtlSeconds: drawAdminChallengeTtlSeconds,
+    running: drawAdminRunRunning,
+  }
+  return {
+    ...payload,
+    ...(includePrivate ? { matchDrawLedgerPath, drawWinnersPath } : {}),
+    ...(includeLastRun ? { lastRun: lastDrawAdminRun } : {}),
+  }
+}
+
+function drawAdminDisabledError() {
+  if (!drawAdminApiEnabled) {
+    return Object.assign(new Error('Draw admin API is disabled.'), {
+      statusCode: 404,
+      code: 'draw_admin_disabled',
+    })
+  }
+  return null
+}
+
+function assertDrawAdminReady({ requireBroadcast = false } = {}) {
+  const disabled = drawAdminDisabledError()
+  if (disabled) throw disabled
+  if (!drawContractAddress()) {
+    throw Object.assign(new Error('Draw contract address is not configured.'), {
+      statusCode: 503,
+      code: 'draw_contract_missing',
+    })
+  }
+  if (!process.env.BSC_RPC_URL) {
+    throw Object.assign(new Error('BSC RPC URL is not configured.'), {
+      statusCode: 503,
+      code: 'draw_rpc_missing',
+    })
+  }
+  if (requireBroadcast && !process.env.BSC_DEPLOYER_PRIVATE_KEY) {
+    throw Object.assign(new Error('Draw broadcaster private key is not configured.'), {
+      statusCode: 503,
+      code: 'draw_broadcaster_missing',
+    })
+  }
+  if (drawAdminAllowedAddresses().length === 0) {
+    throw Object.assign(new Error('Draw admin wallet allowlist is not configured.'), {
+      statusCode: 503,
+      code: 'draw_allowlist_missing',
+    })
+  }
+  if (!existsSync(matchDrawLedgerPath)) {
+    throw Object.assign(new Error('Match draw ledger is not ready.'), {
+      statusCode: 503,
+      code: 'draw_ledger_missing',
+    })
+  }
+}
+
+function drawAdminRateLimitRules(request, address, action) {
+  const ip = clientIp(request)
+  const subject = `${address || 'wallet-missing'}:${action || 'unknown'}`
+  return [
+    {
+      scope: 'draw_admin_subject_10m',
+      key: subject,
+      limit: readIntegerEnv('DRAW_ADMIN_RATE_LIMIT_PER_WALLET_10M', 8, 1),
+      windowMs: minuteWindow(10),
+    },
+    {
+      scope: 'draw_admin_ip_10m',
+      key: ip,
+      limit: readIntegerEnv('DRAW_ADMIN_RATE_LIMIT_PER_IP_10M', 20, 1),
+      windowMs: minuteWindow(10),
+    },
+  ]
+}
+
+function assertDrawAdminWalletAllowed(address) {
+  const normalized = normalizeDrawAdminWalletAddress(address)
+  if (!normalized) {
+    throw Object.assign(new Error('Valid operator wallet address is required.'), {
+      statusCode: 400,
+      code: 'draw_wallet_invalid',
+    })
+  }
+  if (!drawAdminAllowedAddresses().includes(normalized)) {
+    throw Object.assign(new Error('This wallet is not allowed to run the draw.'), {
+      statusCode: 403,
+      code: 'draw_wallet_not_allowed',
+    })
+  }
+  return normalized
+}
+
+function createDrawAdminMessage({ address, action, roundId, nonce, issuedAt }) {
+  return [
+    'Renaiss World Cup draw authorization',
+    `Address: ${address}`,
+    `Action: ${action}`,
+    `Round: ${roundId}`,
+    `Chain ID: ${drawExpectedChainId()}`,
+    `Contract: ${drawContractAddress()}`,
+    `Nonce: ${nonce}`,
+    `Issued At: ${issuedAt}`,
+    'Only sign this from the official Renaiss draw room.',
+  ].join('\n')
+}
+
+function createDrawAdminChallenge({ address, action, roundId }) {
+  const nonce = randomUUID()
+  const issuedAt = new Date().toISOString()
+  const expiresAtMs = Date.now() + drawAdminChallengeTtlMs
+  const message = createDrawAdminMessage({ address, action, roundId, nonce, issuedAt })
+  drawAdminChallenges.set(nonce, {
+    address,
+    action,
+    roundId,
+    nonce,
+    issuedAt,
+    expiresAtMs,
+    message,
+  })
+  return {
+    address,
+    action,
+    roundId,
+    nonce,
+    issuedAt,
+    expiresAt: new Date(expiresAtMs).toISOString(),
+    message,
+  }
+}
+
+function verifyDrawAdminChallenge({ address, action, roundId, nonce, signature }) {
+  const normalizedAddress = assertDrawAdminWalletAllowed(address)
+  const challenge = drawAdminChallenges.get(String(nonce || ''))
+  drawAdminChallenges.delete(String(nonce || ''))
+
+  if (!challenge) {
+    throw Object.assign(new Error('Draw authorization challenge is missing or already used.'), {
+      statusCode: 401,
+      code: 'draw_challenge_missing',
+    })
+  }
+  if (Date.now() > challenge.expiresAtMs) {
+    throw Object.assign(new Error('Draw authorization challenge expired.'), {
+      statusCode: 401,
+      code: 'draw_challenge_expired',
+    })
+  }
+  if (challenge.address !== normalizedAddress || challenge.action !== action || challenge.roundId !== roundId) {
+    throw Object.assign(new Error('Draw authorization challenge does not match this request.'), {
+      statusCode: 401,
+      code: 'draw_challenge_mismatch',
+    })
+  }
+
+  let recovered = ''
+  try {
+    recovered = normalizeDrawAdminWalletAddress(verifyMessage(challenge.message, String(signature || '')))
+  } catch {
+    recovered = ''
+  }
+  if (recovered !== normalizedAddress) {
+    throw Object.assign(new Error('Draw authorization signature is invalid.'), {
+      statusCode: 401,
+      code: 'draw_signature_invalid',
+    })
+  }
+
+  return challenge
+}
+
+function appendLimitedOutput(current, chunk) {
+  const next = `${current}${chunk}`
+  if (Buffer.byteLength(next) <= drawAdminOutputLimitBytes) return next
+  return next.slice(-drawAdminOutputLimitBytes)
+}
+
+function parseDrawScriptOutput(stdout) {
+  const text = String(stdout || '').trim()
+  if (!text) return null
+  return JSON.parse(text)
+}
+
+function runDrawAdminRound({ roundId, action }) {
+  const broadcast = action === 'broadcast'
+  const startedAt = new Date().toISOString()
+  const args = [
+    fileURLToPath(new URL('./run-lucky-draw-round-level.mjs', import.meta.url)),
+    '--env-file',
+    process.env.DRAW_CONTRACT_ENV_FILE || 'config/draw-contract.env.local',
+    '--contract',
+    drawContractAddress(),
+    '--ledger',
+    matchDrawLedgerPath,
+    '--winners-out',
+    drawWinnersPath,
+    '--round-id',
+    roundId,
+  ]
+  if (process.env.DRAW_MATCH_BATCH_SIZE) {
+    args.push('--match-batch-size', process.env.DRAW_MATCH_BATCH_SIZE)
+  }
+  args.push(broadcast ? '--broadcast' : '--verify-only')
+
+  drawAdminRunRunning = true
+  lastDrawAdminRun = {
+    ok: false,
+    startedAt,
+    finishedAt: null,
+    durationSeconds: null,
+    exitCode: null,
+    error: null,
+    trigger: `draw-admin:${action}:${roundId}`,
+  }
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const child = spawn(process.execPath, args, {
+      cwd: repoRoot,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    const timeout = setTimeout(() => {
+      if (settled) return
+      settled = true
+      child.kill('SIGTERM')
+      const finishedAt = new Date().toISOString()
+      lastDrawAdminRun = {
+        ...lastDrawAdminRun,
+        ok: false,
+        finishedAt,
+        durationSeconds: durationSeconds(startedAt, finishedAt),
+        exitCode: null,
+        error: `draw script timed out after ${drawAdminScriptTimeoutSeconds} seconds`,
+      }
+      drawAdminRunRunning = false
+      rejectPromise(Object.assign(new Error(lastDrawAdminRun.error), {
+        statusCode: 504,
+        code: 'draw_script_timeout',
+      }))
+    }, drawAdminScriptTimeoutMs)
+
+    child.stdout.on('data', (chunk) => {
+      stdout = appendLimitedOutput(stdout, chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr = appendLimitedOutput(stderr, chunk)
+    })
+    child.on('error', (error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      const finishedAt = new Date().toISOString()
+      lastDrawAdminRun = {
+        ...lastDrawAdminRun,
+        ok: false,
+        finishedAt,
+        durationSeconds: durationSeconds(startedAt, finishedAt),
+        exitCode: null,
+        error: error.message,
+      }
+      drawAdminRunRunning = false
+      rejectPromise(Object.assign(error, { statusCode: 500, code: 'draw_script_failed' }))
+    })
+    child.on('close', (code) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      const finishedAt = new Date().toISOString()
+      let payload = null
+      let parseError = null
+      try {
+        payload = parseDrawScriptOutput(stdout)
+      } catch (error) {
+        parseError = error
+      }
+
+      lastDrawAdminRun = {
+        ...lastDrawAdminRun,
+        ok: code === 0 && !parseError,
+        finishedAt,
+        durationSeconds: durationSeconds(startedAt, finishedAt),
+        exitCode: code,
+        error: code === 0 && !parseError
+          ? null
+          : parseError?.message || `draw script exited with code ${code}`,
+      }
+      drawAdminRunRunning = false
+
+      if (code === 0 && !parseError) {
+        if (broadcast) runDataBackup('draw-admin-round')
+        resolvePromise({
+          ok: true,
+          action,
+          roundId,
+          result: payload,
+          stderr: stderr.trim() || null,
+          lastRun: lastDrawAdminRun,
+        })
+        return
+      }
+
+      rejectPromise(Object.assign(new Error(lastDrawAdminRun.error || 'Draw script failed.'), {
+        statusCode: 500,
+        code: parseError ? 'draw_script_output_invalid' : 'draw_script_failed',
+        stdout: stdout.trim() || null,
+        stderr: stderr.trim() || null,
+      }))
+    })
+  })
+}
+
 function protectAuthRequest(request, response, url) {
   const routePathname = url.pathname === '/auth/callback' ? '/api/auth/renaiss/callback' : url.pathname
   const oauthStart = /^\/api\/auth\/([^/]+)\/start$/.exec(routePathname)
@@ -546,6 +938,7 @@ function privateHealthPayload() {
     drawWinnersPath,
     drawWinnersExists: existsSync(drawWinnersPath),
     winnerRevealVideoUrlConfigured: Boolean(winnerRevealVideoUrl),
+    drawAdmin: drawAdminStatusPayload({ includeLastRun: true, includePrivate: true }),
     authDir: auth.authDir,
     auth: {
       ...getAuthPublicStatus(auth),
@@ -1545,6 +1938,106 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  if (url.pathname === '/api/draw-admin/status') {
+    sendJson(request, response, 200, drawAdminStatusPayload(), {
+      'cache-control': 'no-store',
+    })
+    return
+  }
+
+  if (url.pathname === '/api/draw-admin/challenge') {
+    if (request.method !== 'POST') {
+      sendJson(request, response, 405, { ok: false, error: 'POST required.' }, { 'cache-control': 'no-store' })
+      return
+    }
+
+    try {
+      if (!enforceUnsafeRequestOrigin(request, response)) return
+      const body = await readJsonBody(request)
+      const action = normalizeDrawAdminAction(body?.action, body?.broadcast)
+      const roundId = normalizeDrawAdminRoundId(body?.roundId)
+      const address = assertDrawAdminWalletAllowed(body?.address)
+      assertDrawAdminReady({ requireBroadcast: action === 'broadcast' })
+      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action))) return
+
+      sendJson(
+        request,
+        response,
+        200,
+        {
+          ok: true,
+          ...createDrawAdminChallenge({ address, action, roundId }),
+        },
+        { 'cache-control': 'no-store' },
+      )
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        Number(error?.statusCode || 500),
+        {
+          ok: false,
+          code: error?.code || 'draw_challenge_failed',
+          error: error instanceof Error ? error.message : 'Could not create draw authorization challenge.',
+        },
+        { 'cache-control': 'no-store' },
+      )
+    }
+    return
+  }
+
+  if (url.pathname === '/api/draw-admin/round') {
+    if (request.method !== 'POST') {
+      sendJson(request, response, 405, { ok: false, error: 'POST required.' }, { 'cache-control': 'no-store' })
+      return
+    }
+
+    try {
+      if (!enforceUnsafeRequestOrigin(request, response)) return
+      const body = await readJsonBody(request)
+      const action = normalizeDrawAdminAction(body?.action, body?.broadcast)
+      const roundId = normalizeDrawAdminRoundId(body?.roundId)
+      const address = assertDrawAdminWalletAllowed(body?.address)
+      assertDrawAdminReady({ requireBroadcast: action === 'broadcast' })
+      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action))) return
+      verifyDrawAdminChallenge({
+        address,
+        action,
+        roundId,
+        nonce: body?.nonce,
+        signature: body?.signature,
+      })
+      if (drawAdminRunRunning) {
+        sendJson(request, response, 409, {
+          ok: false,
+          code: 'draw_admin_running',
+          error: 'A draw operation is already running.',
+          lastRun: lastDrawAdminRun,
+        }, { 'cache-control': 'no-store' })
+        return
+      }
+
+      const result = await runDrawAdminRound({ roundId, action })
+      sendJson(request, response, 200, result, { 'cache-control': 'no-store' })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        Number(error?.statusCode || 500),
+        {
+          ok: false,
+          code: error?.code || 'draw_round_failed',
+          error: error instanceof Error ? error.message : 'Draw round operation failed.',
+          stdout: error?.stdout || undefined,
+          stderr: error?.stderr || undefined,
+          lastRun: lastDrawAdminRun,
+        },
+        { 'cache-control': 'no-store' },
+      )
+    }
+    return
+  }
+
   if (url.pathname === '/api/raffle-summary') {
     try {
       sendJson(request, response, 200, buildLedgerSummary(readLedgerPayload(ledgerPath)), {
@@ -1839,7 +2332,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === '/lucky-draw-ledger.json') {
-    sendFile(request, response, ledgerPath, {
+    sendJson(request, response, 200, readLedgerPayload(ledgerPath), {
       'cache-control': 'no-store',
       'access-control-allow-origin': '*',
     })

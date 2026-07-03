@@ -1,7 +1,7 @@
 import { Award, CirclePlay, Gift, RotateCcw, Sparkles, Ticket } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import revealBackdrop from "../../assets/championship-trophy-renaiss-mark.webp";
-import prizeCardBackdrop from "../../assets/match-prize-card-framed.webp";
+import { getMatchPrizeImageByMatchId } from "../../data/matchPrizeImages";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import SideRays from "../SideRays/SideRays";
@@ -89,6 +89,7 @@ function buildWinnerRoundGroups(winners, rounds, matches, t, roundLabel) {
       winner,
       globalIndex,
       matchLabel: match?.id ? match.id.toUpperCase() : winner.matchId ? winner.matchId.toUpperCase() : "",
+      prizeImage: getMatchPrizeImageByMatchId(match?.id || winner.matchId, matches, roundId),
     });
     groupsById.set(roundId, group);
   });
@@ -120,7 +121,7 @@ function buildWinnerRoundOptions(winnerRoundGroups, rounds, t, roundLabel) {
   });
 }
 
-function WinnerRevealRow({ winner, index, visible, active, matchLabel, currentUser }) {
+function WinnerRevealRow({ winner, index, visible, active, selected, matchLabel, prizeImage, currentUser, onSelect }) {
   const { t } = useCampaignCopy();
   const prizeSlot = t("winnerReveal.prizeSlot", { slot: formatNumber(winner.prizeSlotIndex + 1) });
   const prizeMeta = matchLabel
@@ -146,8 +147,20 @@ function WinnerRevealRow({ winner, index, visible, active, matchLabel, currentUs
         twitterUsername ? "has-twitter-profile" : "is-wallet-only",
       ].filter(Boolean).join(" ")}
       style={{ "--winner-delay": `${Math.min(index, 5) * 40}ms`, "--winner-order": index }}
+      role={visible ? "button" : undefined}
+      tabIndex={visible ? 0 : undefined}
+      aria-pressed={visible ? selected : undefined}
+      onClick={visible ? onSelect : undefined}
+      onKeyDown={visible ? (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onSelect?.();
+      } : undefined}
     >
       <span className="winner-reveal-row__rank">{String(index + 1).padStart(2, "0")}</span>
+      <span className="winner-reveal-row__prize" aria-hidden="true">
+        <img src={prizeImage} alt="" loading="lazy" decoding="async" />
+      </span>
       <span className="winner-reveal-row__identity">
         <span className={["winner-reveal-row__avatar", avatarUrl ? "has-image" : ""].filter(Boolean).join(" ")} aria-hidden="true">
           {hasProfileIdentity ? (
@@ -202,10 +215,10 @@ export function WinnersRoom({
   const [videoFinished, setVideoFinished] = useState(false);
   const [visibleCount, setVisibleCount] = useState(0);
   const [mediaIssue, setMediaIssue] = useState("");
+  const [selectedWinnerId, setSelectedWinnerId] = useState("");
   const winners = useMemo(() => winnerRevealData.winners || [], [winnerRevealData.winners]);
   const hasOfficialWinners = winnerRevealData.sourceStatus === "revealed" && winners.length > 0;
   const revealStarted = videoFinished;
-  const showPrizeCard = hasOfficialWinners && revealStarted;
   const winnerRoundGroups = useMemo(
     () => buildWinnerRoundGroups(winners, rounds, matches, t, roundLabel),
     [matches, roundLabel, rounds, t, winners],
@@ -224,15 +237,28 @@ export function WinnersRoom({
     || null;
   const selectedRoundWinners = selectedRound?.winners || [];
   const selectedRoundHasWinners = hasOfficialWinners && selectedRoundWinners.length > 0;
-  const selectedActiveRowIndex = selectedRoundHasWinners
+  const autoActiveRowIndex = selectedRoundHasWinners
     ? Math.max(0, Math.min(visibleCount - 1, selectedRoundWinners.length - 1))
     : -1;
-  const selectedRevealComplete = selectedRoundHasWinners && visibleCount >= selectedRoundWinners.length;
+  const manuallySelectedRowIndex = selectedRoundHasWinners && selectedWinnerId
+    ? selectedRoundWinners.findIndex(({ winner }) => winner.id === selectedWinnerId)
+    : -1;
+  const selectedActiveRowIndex = manuallySelectedRowIndex >= 0 ? manuallySelectedRowIndex : autoActiveRowIndex;
+  const selectedActiveWinner = selectedRoundHasWinners
+    ? selectedRoundWinners[selectedActiveRowIndex] || selectedRoundWinners[0] || null
+    : null;
+  const showPrizeCard = revealStarted && Boolean(selectedActiveWinner);
+  const activePrizeImage = selectedActiveWinner?.prizeImage || getMatchPrizeImageByMatchId("", matches, selectedRound?.id);
+  const activePrizeMatchLabel = selectedActiveWinner?.matchLabel || selectedRound?.label || "";
+  const activePrizeTitle = activePrizeMatchLabel
+    ? t("winnerReveal.cardPrizeMatchTitle", { match: activePrizeMatchLabel })
+    : t("winnerReveal.cardPrizeTitle");
 
   useEffect(() => {
     setVideoFinished(false);
     setVisibleCount(0);
     setMediaIssue("");
+    setSelectedWinnerId("");
   }, [winnerRevealData.videoUrl, winnerRevealData.drawId, winnerRevealData.generatedAt]);
 
   useEffect(() => {
@@ -246,6 +272,7 @@ export function WinnersRoom({
   useEffect(() => {
     if (!revealStarted || !selectedRoundHasWinners) {
       setVisibleCount(0);
+      setSelectedWinnerId("");
       return undefined;
     }
 
@@ -258,6 +285,7 @@ export function WinnersRoom({
     }
 
     setVisibleCount(0);
+    setSelectedWinnerId("");
     const intervalId = window.setInterval(() => {
       setVisibleCount((current) => {
         const next = Math.min(selectedRoundWinners.length, current + 1);
@@ -273,6 +301,7 @@ export function WinnersRoom({
     const video = videoRef.current;
     setVideoFinished(false);
     setVisibleCount(0);
+    setSelectedWinnerId("");
     if (!video) return;
     video.currentTime = 0;
     video.play().catch(() => undefined);
@@ -299,20 +328,10 @@ export function WinnersRoom({
         onError={() => setMediaIssue(t("winnerReveal.videoIssue"))}
       />
       <div
-        className={showPrizeCard ? "winner-stage-reveal-bg winner-stage-reveal-bg--card" : "winner-stage-reveal-bg"}
-        style={{ backgroundImage: `url(${showPrizeCard ? prizeCardBackdrop : revealBackdrop})` }}
+        className="winner-stage-reveal-bg"
+        style={{ backgroundImage: showPrizeCard ? "none" : `url(${revealBackdrop})` }}
         aria-hidden="true"
       />
-      {showPrizeCard ? (
-        <section className="winner-stage-prize-card-copy" aria-label={t("winnerReveal.cardPrizeAria")}>
-          <span>
-            <Gift size={15} strokeWidth={2.35} />
-            {t("winnerReveal.cardPrizeLabel")}
-          </span>
-          <strong>{t("winnerReveal.cardPrizeTitle")}</strong>
-          <p>{t("winnerReveal.cardPrizeBody")}</p>
-        </section>
-      ) : null}
       <div className="winner-stage-grid" aria-hidden="true" />
       {revealStarted ? (
         <div className="winner-stage-side-rays" aria-hidden="true">
@@ -355,7 +374,26 @@ export function WinnersRoom({
         )}
       </section>
 
-      <section className="winner-stage-reveal" aria-live="polite" aria-hidden={!revealStarted}>
+      <section
+        className={showPrizeCard ? "winner-stage-reveal has-prize-card" : "winner-stage-reveal"}
+        aria-live="polite"
+        aria-hidden={!revealStarted}
+      >
+        {showPrizeCard ? (
+          <section className="winner-stage-prize-card" aria-label={t("winnerReveal.cardPrizeAria")}>
+            <span className="winner-stage-prize-card__image">
+              <img src={activePrizeImage} alt="" decoding="async" />
+            </span>
+            <span className="winner-stage-prize-card__copy">
+              <span>
+                <Gift size={15} strokeWidth={2.35} />
+                {t("winnerReveal.cardPrizeLabel")}
+              </span>
+              <strong>{activePrizeTitle}</strong>
+              <p>{t("winnerReveal.cardPrizeBody")}</p>
+            </span>
+          </section>
+        ) : null}
         <section className="winner-stage-board" aria-label={t("winnerReveal.listAria")}>
           {currentUserWinnerCount > 0 ? (
             <section className="winner-current-user-callout" aria-label={t("winnerReveal.currentUserAria")}>
@@ -375,14 +413,17 @@ export function WinnersRoom({
                   <em>{t("winnerReveal.roundGroupCount", { count: formatNumber(selectedRoundWinners.length) })}</em>
                 </header>
                 <ol>
-                  {selectedRoundWinners.map(({ winner, matchLabel }, index) => (
+                  {selectedRoundWinners.map(({ winner, matchLabel, prizeImage }, index) => (
                     <WinnerRevealRow
                       winner={winner}
                       index={index}
                       matchLabel={matchLabel}
+                      prizeImage={prizeImage}
                       currentUser={isCurrentUserWinner(winner, currentWalletAddress)}
                       visible={index < visibleCount}
-                      active={index === selectedActiveRowIndex && !selectedRevealComplete}
+                      selected={index === selectedActiveRowIndex}
+                      active={index === selectedActiveRowIndex}
+                      onSelect={() => setSelectedWinnerId(winner.id)}
                       key={winner.id}
                     />
                   ))}

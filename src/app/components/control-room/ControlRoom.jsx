@@ -114,6 +114,7 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
   const carryoverTickets = toLedgerInteger(entry?.carryoverTickets);
   const insiderPracticeTickets = toLedgerInteger(entry?.insiderPracticeTickets);
   const insiderGrantTickets = toLedgerInteger(entry?.insiderGrantTickets);
+  const taskRewardTickets = toLedgerInteger(entry?.taskRewardTickets);
   const finalTickets = toLedgerInteger(entry?.finalTickets);
   const totalVotingTickets = Math.max(
     toLedgerInteger(entry?.totalVotingTickets),
@@ -202,6 +203,7 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
             {t("ticketSource.insiderRule", {
               practice: number(insiderPracticeTickets),
               grant: number(insiderGrantTickets),
+              task: number(taskRewardTickets),
             })}
           </p>
         ) : null}
@@ -326,6 +328,28 @@ function isLocalTestOrigin() {
     || normalizedHostname === "::1"
     || normalizedHostname === "127.0.0.1.nip.io"
     || normalizedHostname.endsWith(".127.0.0.1.nip.io");
+}
+
+function isDrawRoomFeatureEnabled(localToolsEnabled) {
+  if (localToolsEnabled) return true;
+  const value = String(import.meta.env.VITE_DRAW_ROOM_ENABLED || "").trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(value);
+}
+
+function drawRoomAllowedWallets() {
+  return String(import.meta.env.VITE_DRAW_ROOM_ALLOWED_WALLETS || "")
+    .split(/[,\s]+/)
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => /^0x[a-f0-9]{40}$/.test(value));
+}
+
+function canViewDrawRoom(localToolsEnabled, authSession) {
+  if (localToolsEnabled) return true;
+  if (!isDrawRoomFeatureEnabled(localToolsEnabled)) return false;
+  const allowedWallets = drawRoomAllowedWallets();
+  if (allowedWallets.length === 0) return true;
+  const walletAddress = String(authSession?.walletAddress || "").trim().toLowerCase();
+  return allowedWallets.includes(walletAddress);
 }
 
 function RoomLoadingShell({ t }) {
@@ -819,7 +843,7 @@ export function ControlRoom({
   const copy = useCampaignCopy();
   const { roundLabel, t } = copy;
   const localToolsEnabled = isLocalTestOrigin();
-  const drawViewEnabled = localToolsEnabled;
+  const drawViewEnabled = canViewDrawRoom(localToolsEnabled, authSession);
   const showSimulationControls = localToolsEnabled;
   const [winnerRevealStarted, setWinnerRevealStarted] = useState(false);
   const visibleCommandViews = useMemo(
@@ -982,6 +1006,7 @@ export function ControlRoom({
             className={xFollowVerifyComplete ? "header-x-verify is-complete" : "header-x-verify"}
             onClick={() => (xFollowPanelOpen ? setXFollowPanelOpen(false) : openXFollowOverlay())}
             aria-expanded={xFollowPanelOpen}
+            aria-label={xFollowVerifyComplete ? t("xFollowGate.optionalComplete") : t("xFollowGate.verifyEligibility")}
           >
             <ShieldCheck size={16} strokeWidth={2.25} />
             <span>{xFollowVerifyComplete ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>

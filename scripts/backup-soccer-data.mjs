@@ -20,6 +20,7 @@ import { stableStringify } from './lucky-draw/utils.mjs'
 
 const execFileAsync = promisify(execFile)
 const DEFAULT_REPO_URL = 'https://github.com/Gavinzip/renaiss_bnb_soccer_data.git'
+const DEFAULT_EXCLUDE_DIRS = 'cache'
 
 function parseExcludeDirs(value) {
   return new Set(
@@ -36,7 +37,7 @@ function parseArgs(argv) {
     repoUrl: process.env.DATA_BACKUP_REPO_URL || DEFAULT_REPO_URL,
     branch: process.env.DATA_BACKUP_BRANCH || 'main',
     worktree: process.env.DATA_BACKUP_WORKTREE || '/tmp/renaiss-bnb-soccer-data-backup',
-    excludeDirs: parseExcludeDirs(process.env.DATA_BACKUP_EXCLUDE_DIRS || ''),
+    excludeDirs: parseExcludeDirs(process.env.DATA_BACKUP_EXCLUDE_DIRS || DEFAULT_EXCLUDE_DIRS),
     dryRun: false,
   }
 

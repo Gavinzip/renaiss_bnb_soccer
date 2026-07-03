@@ -5,6 +5,7 @@ import {
   Ticket,
 } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
+import { getMatchPrizeImage } from "../../data/matchPrizeImages";
 import { estimateMultiPrizeChance, formatNumber } from "../../data/ticketMath";
 import { MatchPrizeImageDialog } from "./MatchPrizeImageDialog";
 
@@ -137,6 +138,7 @@ export function MatchPrizeList({
             ? matchStatusCompact(match.status)
             : statusText;
           const MatchIcon = phase.icon;
+          const prizeImage = getMatchPrizeImage(match, matchIndex);
 
           return (
             <li
@@ -161,7 +163,7 @@ export function MatchPrizeList({
                     <span data-short={statusTextCompact}>{statusText}</span>
                   </small>
                 </span>
-                <MatchPrizeImageDialog copy={copy} matchId={match.id} />
+                <MatchPrizeImageDialog copy={copy} matchId={match.id} prizeImage={prizeImage} />
               </header>
 
               <section className="match-prize-lane__teams" aria-label={t("schedule.teamsAria", { match: matchDisplayCode(match) })}>

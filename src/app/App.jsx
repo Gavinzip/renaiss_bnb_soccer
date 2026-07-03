@@ -199,8 +199,12 @@ function normalizeLedgerEntryPayload(payload) {
     0,
     Math.floor(Number(normalizedEntry.insiderPracticeTickets ?? normalizedEntry.insider_practice_tickets) || 0),
   );
-  const insiderGrantTickets = Math.max(
+  const taskRewardTickets = Math.max(
     0,
+    Math.floor(Number(normalizedEntry.taskRewardTickets ?? normalizedEntry.task_reward_tickets) || 0),
+  );
+  const insiderGrantTickets = Math.max(
+    taskRewardTickets,
     Math.floor(Number(normalizedEntry.insiderGrantTickets ?? normalizedEntry.insider_grant_tickets) || 0),
   );
   const totalVotingTickets = Math.max(
@@ -219,6 +223,7 @@ function normalizeLedgerEntryPayload(payload) {
     carryoverTickets,
     insiderPracticeTickets,
     insiderGrantTickets,
+    taskRewardTickets,
     finalTickets: Math.max(
       finalTickets,
       rawTickets + carryoverTickets,
@@ -325,6 +330,7 @@ function AppContent() {
   const [winnerRevealData, setWinnerRevealData] = useState(() => getEmptyWinnerRevealData(winnerRevealVideoUrl));
   const [winnerRevealIssue, setWinnerRevealIssue] = useState("");
   const [winnerRevealReady, setWinnerRevealReady] = useState(!drawWinnersUrl);
+  const [winnerRevealRefreshToken, setWinnerRevealRefreshToken] = useState(0);
   const [authSession, setAuthSession] = useState({ authenticated: false, config: null });
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
@@ -661,7 +667,18 @@ function AppContent() {
       cancelled = true;
       controller.abort();
     };
-  }, [drawWinnersUrl, t, winnerRevealVideoUrl]);
+  }, [drawWinnersUrl, t, winnerRevealVideoUrl, winnerRevealRefreshToken]);
+
+  useEffect(() => {
+    function refreshWinnerRevealData() {
+      setWinnerRevealRefreshToken((current) => current + 1);
+    }
+
+    window.addEventListener("renaiss:draw-winners-updated", refreshWinnerRevealData);
+    return () => {
+      window.removeEventListener("renaiss:draw-winners-updated", refreshWinnerRevealData);
+    };
+  }, []);
 
   useEffect(() => {
     if (simulationMode !== "realtime") return undefined;

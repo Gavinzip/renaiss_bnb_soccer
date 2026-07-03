@@ -2,6 +2,11 @@ import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { toTicketInteger } from '../src/app/data/ticketEligibility.js'
 import { stableStringify } from './lucky-draw/utils.mjs'
+import {
+  applyTaskRewardTickets,
+  createTaskRewardTicketConfig,
+  taskRewardStateMtimeMs,
+} from './task-reward-tickets.mjs'
 
 export const SUMMARY_LEADERBOARD_LIMIT = 10
 export const DEFAULT_ENTRY_INTERVAL_LIMIT = 0
@@ -12,6 +17,8 @@ export const MAX_TICKET_LOOKUP_LIMIT = 500
 let ledgerCache = {
   ledger: null,
   mtimeMs: -1,
+  taskRewardCacheKey: '',
+  taskRewardMtimeMs: -1,
   path: '',
 }
 
@@ -48,7 +55,11 @@ function rawTicketIntervals(entry) {
 export function normalizeFootballLedgerEntry(entry) {
   const carryoverTickets = toInteger(entry?.carryoverTickets ?? entry?.carryover_tickets)
   const insiderPracticeTickets = toInteger(entry?.insiderPracticeTickets ?? entry?.insider_practice_tickets)
-  const insiderGrantTickets = toInteger(entry?.insiderGrantTickets ?? entry?.insider_grant_tickets)
+  const taskRewardTickets = toInteger(entry?.taskRewardTickets ?? entry?.task_reward_tickets)
+  const insiderGrantTickets = Math.max(
+    taskRewardTickets,
+    toInteger(entry?.insiderGrantTickets ?? entry?.insider_grant_tickets),
+  )
   const fallbackFinalTickets = toInteger(entry?.finalTickets ?? entry?.final_tickets)
   const rawTickets = toInteger(
     entry?.rawTickets ?? entry?.raw_tickets ?? Math.max(0, fallbackFinalTickets - carryoverTickets),
@@ -67,6 +78,7 @@ export function normalizeFootballLedgerEntry(entry) {
     carryoverTickets,
     insiderPracticeTickets,
     insiderGrantTickets,
+    taskRewardTickets,
     finalTickets,
     totalVotingTickets,
     sbt: 'none',
@@ -112,6 +124,7 @@ function normalizedLedgerHash(ledger, entries, totals) {
     totalCarryoverTickets: totals.totalCarryoverTickets,
     totalInsiderPracticeTickets: totals.totalInsiderPracticeTickets,
     totalInsiderGrantTickets: totals.totalInsiderGrantTickets,
+    totalTaskRewardTickets: totals.totalTaskRewardTickets,
     totalFinalTickets: totals.totalFinalTickets,
     totalVotingTickets: totals.totalVotingTickets,
     entries: entries.map((entry) => ({
@@ -119,6 +132,7 @@ function normalizedLedgerHash(ledger, entries, totals) {
       finalTickets: entry.finalTickets,
       insiderPracticeTickets: entry.insiderPracticeTickets,
       insiderGrantTickets: entry.insiderGrantTickets,
+      taskRewardTickets: entry.taskRewardTickets,
       totalVotingTickets: entry.totalVotingTickets,
       ticketIntervals: entry.ticketIntervals,
     })),
@@ -139,6 +153,7 @@ export function normalizeFootballLedger(ledger) {
   const totalCarryoverTickets = entries.reduce((sum, entry) => sum + toInteger(entry.carryoverTickets), 0)
   const totalInsiderPracticeTickets = entries.reduce((sum, entry) => sum + toInteger(entry.insiderPracticeTickets), 0)
   const totalInsiderGrantTickets = entries.reduce((sum, entry) => sum + toInteger(entry.insiderGrantTickets), 0)
+  const totalTaskRewardTickets = entries.reduce((sum, entry) => sum + toInteger(entry.taskRewardTickets), 0)
   const totalFinalTickets = totalRawTickets + totalCarryoverTickets
   const totalVotingTickets = totalFinalTickets + totalInsiderPracticeTickets + totalInsiderGrantTickets
   const noBonusNote = 'This football campaign does not apply SBT ticket bonuses; final tickets equal raw buyback plus carryover tickets.'
@@ -154,6 +169,7 @@ export function normalizeFootballLedger(ledger) {
     totalCarryoverTickets,
     totalInsiderPracticeTickets,
     totalInsiderGrantTickets,
+    totalTaskRewardTickets,
     totalFinalTickets,
     totalVotingTickets,
     bonusShuffleVersion: null,
@@ -165,6 +181,7 @@ export function normalizeFootballLedger(ledger) {
       totalCarryoverTickets,
       totalInsiderPracticeTickets,
       totalInsiderGrantTickets,
+      totalTaskRewardTickets,
       totalFinalTickets,
       totalVotingTickets,
     }),
@@ -174,14 +191,34 @@ export function normalizeFootballLedger(ledger) {
 
 export function readLedgerPayload(ledgerPath) {
   const stat = statSync(ledgerPath)
-  if (ledgerCache.ledger && ledgerCache.path === ledgerPath && ledgerCache.mtimeMs === stat.mtimeMs) {
+  const taskRewardConfig = createTaskRewardTicketConfig()
+  const taskRewardCacheKey = JSON.stringify({
+    enabled: Boolean(taskRewardConfig.enabled),
+    statePath: taskRewardConfig.statePath || null,
+    ticketsPerWallet: toInteger(taskRewardConfig.ticketsPerWallet),
+  })
+  const taskRewardMtimeMs = taskRewardStateMtimeMs(taskRewardConfig)
+  if (
+    ledgerCache.ledger
+    && ledgerCache.path === ledgerPath
+    && ledgerCache.mtimeMs === stat.mtimeMs
+    && ledgerCache.taskRewardCacheKey === taskRewardCacheKey
+    && ledgerCache.taskRewardMtimeMs === taskRewardMtimeMs
+  ) {
     return ledgerCache.ledger
   }
 
-  const ledger = normalizeFootballLedger(JSON.parse(readFileSync(ledgerPath, 'utf8')))
+  const ledger = normalizeFootballLedger(
+    applyTaskRewardTickets(
+      normalizeFootballLedger(JSON.parse(readFileSync(ledgerPath, 'utf8'))),
+      taskRewardConfig,
+    ),
+  )
   ledgerCache = {
     ledger,
     mtimeMs: stat.mtimeMs,
+    taskRewardCacheKey,
+    taskRewardMtimeMs,
     path: ledgerPath,
   }
   return ledger
@@ -199,6 +236,7 @@ function buildLeaderboardEntries(ledger, limit) {
     carryoverTickets: toInteger(entry.carryoverTickets),
     insiderPracticeTickets: toInteger(entry.insiderPracticeTickets),
     insiderGrantTickets: toInteger(entry.insiderGrantTickets),
+    taskRewardTickets: toInteger(entry.taskRewardTickets),
     finalTickets: toInteger(entry.finalTickets),
     totalVotingTickets: toInteger(entry.totalVotingTickets),
     sbt: entry.sbt || 'none',
@@ -223,6 +261,7 @@ export function buildLedgerSummary(ledger) {
     totalCarryoverTickets: toInteger(ledger.totalCarryoverTickets),
     totalInsiderPracticeTickets: toInteger(ledger.totalInsiderPracticeTickets),
     totalInsiderGrantTickets: toInteger(ledger.totalInsiderGrantTickets),
+    totalTaskRewardTickets: toInteger(ledger.totalTaskRewardTickets),
     totalFinalTickets: toInteger(ledger.totalFinalTickets),
     totalVotingTickets: toInteger(ledger.totalVotingTickets),
     sourceEntries: toInteger(ledger.sourceEntries),
@@ -314,6 +353,7 @@ function buildTicketLookupHit(entry, interval, overlap) {
     carryoverTickets: toInteger(entry.carryoverTickets),
     insiderPracticeTickets: toInteger(entry.insiderPracticeTickets),
     insiderGrantTickets: toInteger(entry.insiderGrantTickets),
+    taskRewardTickets: toInteger(entry.taskRewardTickets),
     totalVotingTickets: toInteger(entry.totalVotingTickets),
     ticketStart: entry.ticketStart ?? null,
     ticketEnd: entry.ticketEnd ?? null,
@@ -361,6 +401,7 @@ export function buildTicketLookupResponse(ledger, options = {}) {
       totalCarryoverTickets: toInteger(ledger.totalCarryoverTickets),
       totalInsiderPracticeTickets: toInteger(ledger.totalInsiderPracticeTickets),
       totalInsiderGrantTickets: toInteger(ledger.totalInsiderGrantTickets),
+      totalTaskRewardTickets: toInteger(ledger.totalTaskRewardTickets),
       totalVotingTickets: toInteger(ledger.totalVotingTickets),
       ledgerHash: ledger.ledgerHash || null,
       generatedAt: toInteger(ledger.generatedAt),

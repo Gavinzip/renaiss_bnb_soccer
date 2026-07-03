@@ -16,11 +16,21 @@ import { AnimatedContent } from "../AnimatedContent";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { compactAddress, formatNumber, formatPercent } from "../../data/ticketMath";
+import { getMatchPrizeImage } from "../../data/matchPrizeImages";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+import { fetchJsonWithTimeout } from "../../utils/httpClient";
 import { getLegacyWalletProviders, normalizeWalletProviders } from "../../utils/walletProviders";
 
 const drawStepIds = ["results", "eligible", "snapshot", "reveal"];
 const targetDrawChainId = normalizeChainId(import.meta.env.VITE_DRAW_CHAIN_ID || "0x38");
+const drawAdminCheckTimeoutMs = 60000;
+const drawAdminBroadcastTimeoutMs = 14 * 60 * 1000;
+
+function drawAdminEndpoint(path) {
+  const apiOrigin = String(import.meta.env.VITE_DRAW_ADMIN_API_ORIGIN || import.meta.env.VITE_LOCAL_API_ORIGIN || "").replace(/\/$/, "");
+  if (!apiOrigin || import.meta.env.PROD) return path;
+  return `${apiOrigin}${path}`;
+}
 
 export function preloadRoomAssets() {
   return Promise.resolve();
@@ -427,11 +437,14 @@ function targetChainLabel(t) {
   return chainLabel(targetDrawChainId, t);
 }
 
-function DrawOperatorWallet({ t }) {
+function DrawOperatorWallet({ activeDraw, t }) {
   const [walletProviders, setWalletProviders] = useState([]);
   const [walletDetecting, setWalletDetecting] = useState(false);
   const [busyAction, setBusyAction] = useState("");
   const [issue, setIssue] = useState("");
+  const [adminStatus, setAdminStatus] = useState(null);
+  const [adminStatusIssue, setAdminStatusIssue] = useState("");
+  const [runResult, setRunResult] = useState(null);
   const [connectedWallet, setConnectedWallet] = useState({
     address: "",
     chainId: "",
@@ -508,6 +521,26 @@ function DrawOperatorWallet({ t }) {
     };
   }, [connectedWallet.provider]);
 
+  useEffect(() => {
+    let active = true;
+    fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/status"), {
+      timeoutMs: 10000,
+    })
+      .then(({ payload }) => {
+        if (!active) return;
+        setAdminStatus(payload);
+        setAdminStatusIssue("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setAdminStatus(null);
+        setAdminStatusIssue(error?.message || t("draw.operatorDrawStatusFailed"));
+      });
+    return () => {
+      active = false;
+    };
+  }, [t]);
+
   async function connectDrawWallet(walletProvider) {
     setIssue("");
     if (!walletProvider?.provider?.request) {
@@ -534,6 +567,91 @@ function DrawOperatorWallet({ t }) {
     }
   }
 
+  async function signDrawMessage(message) {
+    if (!connectedWallet.provider?.request || !connectedWallet.address) {
+      throw new Error(t("draw.operatorWalletMissing"));
+    }
+    return connectedWallet.provider.request({
+      method: "personal_sign",
+      params: [message, connectedWallet.address],
+    });
+  }
+
+  async function runDrawAction(action) {
+    const broadcast = action === "broadcast";
+    setIssue("");
+    setRunResult(null);
+
+    if (!connectedWallet.address) {
+      setIssue(t("draw.operatorWalletMissing"));
+      return;
+    }
+    if (!targetMatched) {
+      setIssue(t("draw.operatorWalletWrongChain", { chain: targetChainLabel(t) }));
+      return;
+    }
+    if (broadcast && !activeDraw.officialFinalsComplete) {
+      setIssue(t("draw.operatorDrawFinalsBlocked", {
+        finals: formatNumber(activeDraw.officialFinalCount),
+        matches: formatNumber(activeDraw.matchCount),
+        remaining: formatNumber(activeDraw.officialFinalsRemaining),
+      }));
+      return;
+    }
+    if (broadcast && typeof window !== "undefined") {
+      const confirmed = window.confirm(t("draw.operatorDrawBroadcastConfirm", { round: activeDraw.id }));
+      if (!confirmed) return;
+    }
+
+    setBusyAction(`draw:${action}`);
+    try {
+      const roundId = activeDraw.id;
+      const { payload: challenge } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/challenge"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          address: connectedWallet.address,
+          action,
+          roundId,
+        }),
+        timeoutMs: drawAdminCheckTimeoutMs,
+      });
+      const signature = await signDrawMessage(challenge.message);
+      const { payload } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/round"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          address: connectedWallet.address,
+          action,
+          roundId,
+          nonce: challenge.nonce,
+          signature,
+        }),
+        timeoutMs: broadcast ? drawAdminBroadcastTimeoutMs : drawAdminCheckTimeoutMs,
+      });
+      setRunResult(payload);
+      setAdminStatus((current) => ({
+        ...(current || {}),
+        running: false,
+        lastRun: payload.lastRun || current?.lastRun || null,
+      }));
+      if (payload?.ok && (broadcast || payload?.result?.winnersOut) && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("renaiss:draw-winners-updated", {
+          detail: {
+            roundId,
+            action,
+            generatedAt: payload?.result?.generatedAt || new Date().toISOString(),
+          },
+        }));
+      }
+    } catch (error) {
+      setIssue(error?.payload?.error || error?.message || t("draw.operatorDrawFailed"));
+      if (error?.payload) setRunResult(error.payload);
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function switchTargetChain() {
     if (!connectedWallet.provider?.request) return;
     setIssue("");
@@ -553,6 +671,33 @@ function DrawOperatorWallet({ t }) {
       setBusyAction("");
     }
   }
+
+  const adminReady = Boolean(
+    adminStatus?.enabled
+    && adminStatus?.contractConfigured
+    && adminStatus?.rpcConfigured
+    && adminStatus?.broadcasterConfigured
+    && adminStatus?.allowlistConfigured
+    && adminStatus?.matchDrawLedgerExists,
+  );
+  const canRunDraw = connected && targetMatched && adminReady && !busyAction;
+  const canBroadcastDraw = canRunDraw && activeDraw.officialFinalsComplete;
+  const statusParts = [
+    adminStatus?.contractConfigured ? t("draw.operatorDrawContractReady") : t("draw.operatorDrawContractMissing"),
+    adminStatus?.matchDrawLedgerExists ? t("draw.operatorDrawLedgerReady") : t("draw.operatorDrawLedgerMissing"),
+  ];
+  const finalsNotice = activeDraw.officialFinalsComplete
+    ? t("draw.operatorDrawFinalsReady", {
+      finals: formatNumber(activeDraw.officialFinalCount),
+      matches: formatNumber(activeDraw.matchCount),
+    })
+    : t("draw.operatorDrawFinalsPending", {
+      finals: formatNumber(activeDraw.officialFinalCount),
+      matches: formatNumber(activeDraw.matchCount),
+      remaining: formatNumber(activeDraw.officialFinalsRemaining),
+    });
+  const plannedSteps = Array.isArray(runResult?.result?.plannedSteps) ? runResult.result.plannedSteps : [];
+  const txs = Array.isArray(runResult?.result?.txs) ? runResult.result.txs : [];
 
   return (
     <section className="draw-operator-wallet" aria-label={t("draw.operatorWalletAria")}>
@@ -613,6 +758,72 @@ function DrawOperatorWallet({ t }) {
         ) : null}
       </div>
 
+      <section className="draw-operator-wallet__admin" aria-label={t("draw.operatorDrawAria")}>
+        <header>
+          <span>{t("draw.operatorDrawTitle")}</span>
+          <strong className={adminReady ? "is-ready" : "is-warning"}>
+            {adminReady ? t("draw.operatorDrawReady") : t("draw.operatorDrawNotReady")}
+          </strong>
+        </header>
+        <p>
+          {adminStatus?.enabled === false
+            ? t("draw.operatorDrawDisabled")
+            : adminStatusIssue || statusParts.join(" · ")}
+        </p>
+        {adminStatus?.contractAddress ? (
+          <code>{compactAddress(adminStatus.contractAddress)}</code>
+        ) : null}
+        <p className={["draw-operator-wallet__finals", activeDraw.officialFinalsComplete ? "is-ready" : "is-warning"].join(" ")}>
+          {finalsNotice}
+        </p>
+        <div className="draw-operator-wallet__actions">
+          <button
+            type="button"
+            disabled={!canRunDraw}
+            onClick={() => runDrawAction("verify")}
+          >
+            {busyAction === "draw:verify" ? <Loader2 className="is-spinning" size={15} /> : <ShieldCheck size={15} strokeWidth={2.2} />}
+            <span>{t("draw.operatorDrawVerify")}</span>
+          </button>
+          <button
+            type="button"
+            className="is-danger"
+            disabled={!canBroadcastDraw}
+            onClick={() => runDrawAction("broadcast")}
+          >
+            {busyAction === "draw:broadcast" ? <Loader2 className="is-spinning" size={15} /> : <Award size={15} strokeWidth={2.2} />}
+            <span>{t("draw.operatorDrawBroadcast")}</span>
+          </button>
+        </div>
+      </section>
+
+      {runResult ? (
+        <section className={["draw-operator-wallet__result", runResult.ok ? "is-ready" : "is-warning"].filter(Boolean).join(" ")}>
+          <strong>{runResult.ok ? t("draw.operatorDrawRunOk") : t("draw.operatorDrawRunFailed")}</strong>
+          <p>
+            {runResult.result?.broadcast
+              ? t("draw.operatorDrawBroadcasted")
+              : t("draw.operatorDrawDryRun")}
+          </p>
+          {plannedSteps.length > 0 ? (
+            <ol>
+              {plannedSteps.map((step, index) => (
+                <li key={`${step.step || "step"}-${index}`}>{step.step || t("common.status")}</li>
+              ))}
+            </ol>
+          ) : null}
+          {txs.length > 0 ? (
+            <ol>
+              {txs.map((tx, index) => (
+                <li key={`${tx.hash || tx.step || "tx"}-${index}`}>
+                  {tx.step || t("common.status")} · {compactAddress(tx.hash || "")}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </section>
+      ) : null}
+
       <small>{connected ? t("draw.operatorWalletReady") : t("draw.operatorWalletBoundary")}</small>
       {issue ? <em>{issue}</em> : null}
     </section>
@@ -647,14 +858,20 @@ function DrawMatchRibbon({ matches, teamsById, copy }) {
         <strong>{t("draw.officialOnly")}</strong>
       </header>
       <ol>
-        {matches.map((match) => {
+        {matches.map((match, matchIndex) => {
           const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
           const advancingTeam = teamsById.get(match.advancingTeamId);
+          const prizeImage = getMatchPrizeImage(match, matchIndex);
           return (
             <li className={match.advancingTeamId ? "has-result" : ""} key={match.id}>
-              <span>{match.id.toUpperCase()}</span>
-              <strong>{teams.map((team) => teamName(team)).join(" / ")}</strong>
-              <small>{advancingTeam ? `${t("common.advancing")} ${teamName(advancingTeam)}` : matchStatusCompact(match.status)}</small>
+              <span className="draw-match-ribbon__prize" aria-hidden="true">
+                <img src={prizeImage} alt="" loading="lazy" decoding="async" />
+              </span>
+              <span className="draw-match-ribbon__copy">
+                <span>{match.id.toUpperCase()}</span>
+                <strong>{teams.map((team) => teamName(team)).join(" / ")}</strong>
+                <small>{advancingTeam ? `${t("common.advancing")} ${teamName(advancingTeam)}` : matchStatusCompact(match.status)}</small>
+              </span>
             </li>
           );
         })}
@@ -683,7 +900,7 @@ export function DrawRoom({ activeRound, rounds, simulatedRoundId, drawStats, mat
         </header>
 
         <DrawProgressMap activeDraw={activeDraw} activeStep={activeStep} drawState={drawState} t={t} />
-        <DrawOperatorWallet t={t} />
+        <DrawOperatorWallet activeDraw={activeDraw} t={t} />
 
         <section className="draw-stage-map__stats" aria-label={t("mast.currentRoundBalances")}>
           <output>
