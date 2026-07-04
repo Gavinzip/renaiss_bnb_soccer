@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
+import { preloadRoundPrizeImages } from "../../data/matchPrizeImages";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import ElasticSlider from "../ElasticSlider/ElasticSlider";
 import { GlareHover } from "../GlareHover";
@@ -690,6 +691,10 @@ export function VoteRoom({
     0,
     Math.floor(Number(roundTicketBreakdown?.usableTickets ?? activeEntry?.totalVotingTickets ?? activeEntry?.finalTickets) || 0),
   );
+
+  useEffect(() => {
+    preloadRoundPrizeImages(activeRoundId);
+  }, [activeRoundId]);
 
   useEffect(() => {
     const selectedIsVoteable = Boolean(

@@ -1,7 +1,7 @@
 import { Award, CirclePlay, Gift, RotateCcw, Sparkles, Ticket } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import revealBackdrop from "../../assets/championship-trophy-renaiss-mark.webp";
-import { getMatchPrizeImageByMatchId } from "../../data/matchPrizeImages";
+import { getMatchPrizeImageByMatchId, preloadRoundPrizeImages } from "../../data/matchPrizeImages";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import SideRays from "../SideRays/SideRays";
@@ -257,6 +257,10 @@ export function WinnersRoom({
   const activePrizeTitle = activePrizeMatchLabel
     ? t("winnerReveal.cardPrizeMatchTitle", { match: activePrizeMatchLabel })
     : t("winnerReveal.cardPrizeTitle");
+
+  useEffect(() => {
+    preloadRoundPrizeImages(selectedRound?.id);
+  }, [selectedRound?.id]);
 
   useEffect(() => {
     setVideoFinished(false);

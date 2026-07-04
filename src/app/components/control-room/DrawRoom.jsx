@@ -16,7 +16,7 @@ import { AnimatedContent } from "../AnimatedContent";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { compactAddress, formatNumber, formatPercent } from "../../data/ticketMath";
-import { getMatchPrizeImage } from "../../data/matchPrizeImages";
+import { getMatchPrizeImage, preloadRoundPrizeImages } from "../../data/matchPrizeImages";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { fetchJsonWithTimeout } from "../../utils/httpClient";
 import { getLegacyWalletProviders, normalizeWalletProviders } from "../../utils/walletProviders";
@@ -936,6 +936,10 @@ export function DrawRoom({ activeRound, rounds, simulatedRoundId, drawStats, mat
   const activeStep = getActiveDrawStep(activeDraw.drawStatusResolved);
   const roundMatches = matches.filter((match) => match.roundId === activeRound.id);
   const drawState = getDrawStateCopy(activeDraw, t);
+
+  useEffect(() => {
+    preloadRoundPrizeImages(activeRound.id);
+  }, [activeRound.id]);
 
   return (
     <section className="draw-room draw-room-v2" aria-label={t("draw.roomAria")}>
