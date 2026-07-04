@@ -34,6 +34,20 @@ dev, keep `npm run local:server` running in another terminal and run:
 npm run local:dev
 ```
 
+To run the local Vite frontend against the production read APIs without using
+production write/login endpoints, run:
+
+```sh
+npm run local:dev:prod-api
+```
+
+This mode uses `LOCAL_READ_API_ORIGIN=https://renaiss-worldcup.zeabur.app` from
+`.env.prod-api` and proxies only read endpoints such as `/api/raffle-summary`,
+`/api/milestones`, `/api/vote-preview`, `/api/match-results`, live FIFA match
+feeds, and `/api/draw-winners`. It intentionally leaves auth, vote submit, and
+draw-admin endpoints unconfigured, so local UI work can inspect real backend data
+without logging into or mutating the production service.
+
 The Renaiss SSO redirect URI can be left blank in local env. The auth server derives
 `/auth/callback` from the current app origin when starting the OAuth flow.
 
@@ -112,7 +126,13 @@ Production builds read the server APIs by default:
 - `/api/auth/x/start?connect=1`
 - `/api/auth/x-account-eligibility/verify`
 
-Local dev still uses the mock vote preview unless `VITE_VOTE_PREVIEW_URL` and `VITE_VOTE_SUBMIT_URL` are set. The winner reveal page reads `VITE_DRAW_WINNERS_URL` when configured. Plain `npm run dev` reads `public/mock-api/draw-winners.json` so the reveal animation can show local-only grouped winners; set `VITE_DRAW_WINNERS_URL=/api/draw-winners` with `npm run local:server` when testing the local API snapshot instead.
+Local dev still uses the mock vote preview unless `VITE_VOTE_PREVIEW_URL` is set.
+The winner reveal page reads `VITE_DRAW_WINNERS_URL` when configured. Plain
+`npm run dev` reads `public/mock-api/draw-winners.json` so the reveal animation
+can show local-only grouped winners; set `VITE_DRAW_WINNERS_URL=/api/draw-winners`
+with `npm run local:server` when testing the local API snapshot instead. Keep
+`VITE_VOTE_SUBMIT_URL` empty for read-only local modes, including
+`npm run local:dev:prod-api`, so vote confirmation stays local preview only.
 
 ## Production Data Service
 

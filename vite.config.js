@@ -35,14 +35,41 @@ function localApiProxy(target) {
   };
 }
 
+function readOnlyApiProxy(target) {
+  if (!target) return undefined;
+  const createTarget = () => ({
+    target,
+    changeOrigin: true,
+  });
+
+  return {
+    "/api/raffle-summary": createTarget(),
+    "/api/raffle-entry": createTarget(),
+    "/api/raffle-ticket-lookup": createTarget(),
+    "/api/milestones": createTarget(),
+    "/api/vote-preview": createTarget(),
+    "/api/match-results": createTarget(),
+    "/api/live-qualification": createTarget(),
+    "/api/live-round32-matches": createTarget(),
+    "/api/live-round16-matches": createTarget(),
+    "/api/live-future-knockout-matches": createTarget(),
+    "/api/draw-winners": createTarget(),
+    "/lucky-draw-ledger.json": createTarget(),
+    "/match-draw-ledger.json": createTarget(),
+    "/draw-winners.json": createTarget(),
+    "/vote-preview.json": createTarget(),
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const readApiOrigin = String(env.LOCAL_READ_API_ORIGIN || "").trim();
   const localApiOrigin = String(env.VITE_LOCAL_API_ORIGIN || "").trim();
 
   return {
     plugins: [react()],
     server: {
-      proxy: localApiProxy(localApiOrigin),
+      proxy: readApiOrigin ? readOnlyApiProxy(readApiOrigin) : localApiProxy(localApiOrigin),
     },
   };
 });

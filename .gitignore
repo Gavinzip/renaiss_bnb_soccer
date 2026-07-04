@@ -4,6 +4,7 @@
 .env.*
 !.env.example
 !.env.local.example
+!.env.prod-api
 config/*.local
 .local-data/
 node_modules/
