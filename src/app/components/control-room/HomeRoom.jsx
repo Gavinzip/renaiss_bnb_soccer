@@ -11,7 +11,6 @@ import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
-import { RulesRoom } from "./RulesRoom";
 
 const HERO_SCROLL_VIDEO_URL =
   "https://pub-7230fa99c50e44e9b241e47cac526165.r2.dev/home/Background.web.2026-06-18.mp4";
@@ -518,11 +517,9 @@ function HomeTicketFlow({ copy }) {
 }
 
 export function HomeRoom({
-  activeRound,
   matches,
   milestones,
   currentMilestoneValue,
-  rounds,
   onSelectView,
   isActive = true,
 }) {
@@ -531,7 +528,6 @@ export function HomeRoom({
   const homeRoomRef = useRef(null);
   const heroVideoRef = useRef(null);
   const { mediaReady, videoFrameReady } = useHomeMediaReady(heroVideoRef);
-  const activeRoundMatches = matches.filter((match) => match.roundId === activeRound.id);
   const milestoneSnapshot = getMilestoneSnapshot(milestones, currentMilestoneValue);
   const heroMilestoneTitle = milestoneSnapshot.complete
     ? t("home.allMilestonesOpen")
@@ -624,12 +620,6 @@ export function HomeRoom({
           copy={copy}
         />
         <HomeTicketFlow copy={copy} />
-        <RulesRoom
-          activeRound={activeRound}
-          activeRoundMatches={activeRoundMatches}
-          rounds={rounds}
-          className="home-rules-panel"
-        />
       </section>
     </section>
   );
