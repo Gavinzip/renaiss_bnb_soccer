@@ -13736,14 +13736,18 @@ body,
 }
 
 .room-shell.is-home .hero-actions {
-  padding-left: clamp(18px, 2.8vw, 42px) !important;
+  padding-left: 0 !important;
 }
 
 @media (max-width: 640px) {
-  .room-shell.is-home .hero-copy,
-  .room-shell.is-home .hero-actions {
+  .room-shell.is-home .hero-copy {
     padding-left: 18px !important;
     padding-right: 10px !important;
+  }
+
+  .room-shell.is-home .hero-actions {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
 
   .room-shell.is-home .hero-copy h1 {

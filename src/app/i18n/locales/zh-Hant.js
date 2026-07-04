@@ -374,7 +374,7 @@ export const zhHantLocale = {
       "aria": "Renaiss 活動首頁",
       "kicker": "每輪重置活動",
       "title": "Renaiss\n世界盃預測",
-      "body": "32 強到冠軍賽，五輪都有獎\n猜中晉級即可加入抽獎；由第一場開始，衝向冠軍夜",
+      "body": "16 強到冠軍賽，五輪都有獎\n猜中晉級即可加入抽獎；由第一場開始，衝向冠軍夜",
       "startVoting": "開始預測",
       "viewSchedule": "查看賽程",
       "prizeLadder": "票數 Milestone",

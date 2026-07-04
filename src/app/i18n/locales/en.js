@@ -374,7 +374,7 @@ export const enLocale = {
       "aria": "Renaiss campaign home",
       "kicker": "Round reset campaign",
       "title": "Renaiss\nWorld Cup Prediction",
-      "body": "Rewards from the Round of 32 to the final, across all five rounds\nCorrect advancement picks enter the draw; start from the first match and chase championship night",
+      "body": "Rewards from the Round of 16 to the final, across the knockout rounds\nCorrect advancement picks enter the draw; start from the first match and chase championship night",
       "startVoting": "Start prediction",
       "viewSchedule": "View schedule",
       "prizeLadder": "Ticket Milestone",

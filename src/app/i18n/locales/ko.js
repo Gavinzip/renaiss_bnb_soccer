@@ -374,7 +374,7 @@ export const koLocale = {
       "aria": "Renaiss 이벤트 홈",
       "kicker": "라운드 리셋 이벤트",
       "title": "Renaiss\n월드컵 예측",
-      "body": "32강부터 결승까지 다섯 라운드 전부 보상 제공\n진출팀을 맞히면 추첨에 들어가며, 첫 경기부터 챔피언 밤까지 이어집니다",
+      "body": "16강부터 결승까지 녹아웃 라운드 보상 제공\n진출팀을 맞히면 추첨에 들어가며, 첫 경기부터 챔피언 밤까지 이어집니다",
       "startVoting": "예측 시작",
       "viewSchedule": "일정 보기",
       "prizeLadder": "티켓 마일스톤",
