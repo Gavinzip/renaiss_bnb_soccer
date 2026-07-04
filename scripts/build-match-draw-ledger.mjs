@@ -4,7 +4,11 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { campaignMatches, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
-import { getTicketBreakdownForRound } from '../src/app/data/ticketEligibility.js'
+import {
+  SHARED_INSIDER_GRANT_ROUND_IDS,
+  getTicketBreakdownForRound,
+  roundUsesSharedVotingTicketPool,
+} from '../src/app/data/ticketEligibility.js'
 import { canonicalMatchId } from './official-match-identity.mjs'
 import { readEnvFile, toNumber } from './lucky-draw/utils.mjs'
 import { findLedgerEntryByAddress, readLedgerPayload } from './soccer-ledger-api.mjs'
@@ -190,9 +194,13 @@ function compareAllocationOrder(left, right) {
 
 function validateWalletRoundCapacity({ baseLedger, allocations }) {
   const totals = new Map()
+  const sharedPoolTotals = new Map()
   for (const allocation of allocations) {
     const key = `${allocation.walletAddress}:${allocation.roundId}`
     totals.set(key, (totals.get(key) || 0) + allocation.tickets)
+    if (roundUsesSharedVotingTicketPool(allocation.roundId)) {
+      sharedPoolTotals.set(allocation.walletAddress, (sharedPoolTotals.get(allocation.walletAddress) || 0) + allocation.tickets)
+    }
   }
 
   for (const [key, usedTickets] of totals.entries()) {
@@ -203,6 +211,17 @@ function validateWalletRoundCapacity({ baseLedger, allocations }) {
     if (usedTickets > roundTickets.usableTickets) {
       throw new Error(
         `wallet ${walletAddress} uses ${usedTickets} tickets in ${roundId}, exceeding usable ledger balance ${roundTickets.usableTickets}.`,
+      )
+    }
+  }
+
+  for (const [walletAddress, usedTickets] of sharedPoolTotals.entries()) {
+    const ledgerEntry = findLedgerEntryByAddress(baseLedger, walletAddress)
+    if (!ledgerEntry) throw new Error(`wallet ${walletAddress} in shared vote state is missing from base ticket ledger.`)
+    const roundTickets = getTicketBreakdownForRound(ledgerEntry, SHARED_INSIDER_GRANT_ROUND_IDS[0])
+    if (usedTickets > roundTickets.usableTickets) {
+      throw new Error(
+        `wallet ${walletAddress} uses ${usedTickets} shared tickets from round16 through final, exceeding usable ledger balance ${roundTickets.usableTickets}.`,
       )
     }
   }

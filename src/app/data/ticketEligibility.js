@@ -25,6 +25,10 @@ export function roundAllowsSharedInsiderGrantTickets(roundId) {
   return SHARED_INSIDER_GRANT_ROUND_SET.has(String(roundId || ""));
 }
 
+export function roundUsesSharedVotingTicketPool(roundId) {
+  return SHARED_INSIDER_GRANT_ROUND_SET.has(String(roundId || ""));
+}
+
 export function ticketsUsedByWalletInRound(allocations, walletAddress, roundId) {
   const normalizedWallet = String(walletAddress || "").trim().toLowerCase();
   const normalizedRound = String(roundId || "");
@@ -80,6 +84,13 @@ export function getTicketBreakdownForRound(entry, roundId) {
 }
 
 export function getSharedInsiderGrantTicketsUsed(allocations, walletAddress, entry, options = {}) {
+  const sharedTicketsUsed = getSharedVotingTicketPoolTicketsUsed(allocations, walletAddress, options);
+  const baseTickets = getTicketBreakdownForRound(entry, SHARED_INSIDER_GRANT_ROUND_IDS[0]).baseTickets;
+
+  return Math.max(0, sharedTicketsUsed - baseTickets);
+}
+
+export function getSharedVotingTicketPoolTicketsUsed(allocations, walletAddress, options = {}) {
   const overrideRoundId = String(options.overrideRoundId || "");
   const hasOverride = overrideRoundId && Number.isFinite(Number(options.overrideRoundTickets));
   const excludeRoundId = String(options.excludeRoundId || "");
@@ -89,8 +100,7 @@ export function getSharedInsiderGrantTicketsUsed(allocations, walletAddress, ent
     const roundTickets = hasOverride && roundId === overrideRoundId
       ? toTicketInteger(options.overrideRoundTickets)
       : ticketsUsedByWalletInRound(allocations, walletAddress, roundId);
-    const breakdown = getTicketBreakdownForRound(entry, roundId);
-    return total + Math.max(0, roundTickets - breakdown.baseTickets);
+    return total + roundTickets;
   }, 0);
 }
 
@@ -98,28 +108,38 @@ export function getRoundTicketAvailability({ entry, roundId, allocations, wallet
   const breakdown = getTicketBreakdownForRound(entry, roundId);
   const usedRoundTickets = ticketsUsedByWalletInRound(allocations, walletAddress, roundId);
 
-  if (!breakdown.insiderGrantUnlocked) {
+  if (!roundUsesSharedVotingTicketPool(roundId)) {
     return {
       ...breakdown,
       usedRoundTickets,
+      sharedVotingTicketPoolTicketsUsed: 0,
+      sharedVotingTicketPoolTicketsRemaining: 0,
       sharedInsiderGrantTicketsUsed: 0,
       sharedInsiderGrantTicketsRemaining: 0,
       remainingTickets: Math.max(0, breakdown.usableTickets - usedRoundTickets),
     };
   }
 
+  const sharedVotingTicketPoolTicketsUsed = getSharedVotingTicketPoolTicketsUsed(allocations, walletAddress);
+  const sharedVotingTicketPoolTicketsRemaining = Math.max(
+    0,
+    breakdown.usableTickets - sharedVotingTicketPoolTicketsUsed,
+  );
   const sharedInsiderGrantTicketsUsed = getSharedInsiderGrantTicketsUsed(allocations, walletAddress, entry);
   const sharedInsiderGrantTicketsRemaining = Math.max(
     0,
     breakdown.insiderGrantTickets - sharedInsiderGrantTicketsUsed,
   );
-  const baseTicketsRemaining = Math.max(0, breakdown.baseTickets - usedRoundTickets);
+  const baseTicketsRemaining = Math.max(0, breakdown.baseTickets - sharedVotingTicketPoolTicketsUsed);
 
   return {
     ...breakdown,
     usedRoundTickets,
+    sharedVotingTicketPoolTicketsUsed,
+    sharedVotingTicketPoolTicketsRemaining,
+    baseTicketsRemaining,
     sharedInsiderGrantTicketsUsed,
     sharedInsiderGrantTicketsRemaining,
-    remainingTickets: baseTicketsRemaining + sharedInsiderGrantTicketsRemaining,
+    remainingTickets: sharedVotingTicketPoolTicketsRemaining,
   };
 }

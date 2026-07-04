@@ -7,6 +7,7 @@ import { isUnrevealedPrizePreviewMatch } from '../src/app/data/matchReveal.js'
 import { canonicalMatchId } from './official-match-identity.mjs'
 import {
   getSharedInsiderGrantTicketsUsed,
+  getSharedVotingTicketPoolTicketsUsed,
   getTicketBreakdownForRound,
   roundAllowsSharedInsiderGrantTickets,
 } from '../src/app/data/ticketEligibility.js'
@@ -267,20 +268,20 @@ export function submitVote({ statePath, eventsPath, previewPath, ledger, input, 
     : 0
 
   if (sharedInsiderGrantTicketsUsed > ledgerTickets.insiderGrantTickets) {
-    const usedOutsideThisRound = getSharedInsiderGrantTicketsUsed(activeAllocations, walletAddress, ledgerTickets.entry, {
+    const usedOutsideThisRound = getSharedVotingTicketPoolTicketsUsed(activeAllocations, walletAddress, {
       excludeRoundId: roundId,
     })
     throw Object.assign(new Error('Vote amount exceeds shared insider reward tickets.'), {
       statusCode: 409,
       availableTickets: Math.max(
         0,
-        ledgerTickets.baseTickets
-          + Math.max(0, ledgerTickets.insiderGrantTickets - usedOutsideThisRound)
+        ledgerTickets.usableTickets
+          - usedOutsideThisRound
           - usedOutsideCurrentTeam
           - currentTeamTickets,
       ),
       sharedInsiderGrantTickets: ledgerTickets.insiderGrantTickets,
-      sharedInsiderGrantTicketsUsed: usedOutsideThisRound,
+      sharedInsiderGrantTicketsUsed,
     })
   }
 

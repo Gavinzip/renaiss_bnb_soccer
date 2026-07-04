@@ -9,6 +9,7 @@ import { buildMatchResultIndex } from './soccer-match-results.mjs'
 import {
   SHARED_INSIDER_GRANT_ROUND_IDS,
   getSharedInsiderGrantTicketsUsed,
+  getSharedVotingTicketPoolTicketsUsed,
   roundAllowsSharedInsiderGrantTickets,
 } from '../src/app/data/ticketEligibility.js'
 import {
@@ -531,20 +532,20 @@ function submitVoteInDatabase({ db, ledger, input, matchResults, matches }) {
       : 0
 
     if (sharedInsiderGrantTicketsUsed > ledgerTickets.insiderGrantTickets) {
-      const usedOutsideThisRound = getSharedInsiderGrantTicketsUsed(sharedRoundAllocations, walletAddress, ledgerTickets.entry, {
+      const usedOutsideThisRound = getSharedVotingTicketPoolTicketsUsed(sharedRoundAllocations, walletAddress, {
         excludeRoundId: roundId,
       })
       throw Object.assign(new Error('Vote amount exceeds shared insider reward tickets.'), {
         statusCode: 409,
         availableTickets: Math.max(
           0,
-          ledgerTickets.baseTickets
-            + Math.max(0, ledgerTickets.insiderGrantTickets - usedOutsideThisRound)
+          ledgerTickets.usableTickets
+            - usedOutsideThisRound
             - usedOutsideCurrentTeam
             - currentTeamTickets,
         ),
         sharedInsiderGrantTickets: ledgerTickets.insiderGrantTickets,
-        sharedInsiderGrantTicketsUsed: usedOutsideThisRound,
+        sharedInsiderGrantTicketsUsed,
       })
     }
 
