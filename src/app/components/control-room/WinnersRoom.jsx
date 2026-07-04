@@ -67,6 +67,10 @@ function winnerRoundGroupLabel(roundId, round, t, roundLabel) {
   return round ? roundLabel(round, "label") : "";
 }
 
+function matchDisplayCode(match, fallbackMatchId = "") {
+  return String(match?.displayCode || match?.id || fallbackMatchId || "").toUpperCase();
+}
+
 function buildWinnerRoundGroups(winners, rounds, matches, t, roundLabel) {
   const roundById = new Map(rounds.map((round) => [round.id, round]));
   const roundOrder = new Map(rounds.map((round, index) => [round.id, index]));
@@ -88,7 +92,7 @@ function buildWinnerRoundGroups(winners, rounds, matches, t, roundLabel) {
     group.winners.push({
       winner,
       globalIndex,
-      matchLabel: match?.id ? match.id.toUpperCase() : winner.matchId ? winner.matchId.toUpperCase() : "",
+      matchLabel: matchDisplayCode(match, winner.matchId),
       prizeImage: getMatchPrizeImageByMatchId(match?.id || winner.matchId, matches, roundId),
     });
     groupsById.set(roundId, group);

@@ -163,7 +163,12 @@ export function MatchPrizeList({
                     <span data-short={statusTextCompact}>{statusText}</span>
                   </small>
                 </span>
-                <MatchPrizeImageDialog copy={copy} matchId={match.id} prizeImage={prizeImage} />
+                <MatchPrizeImageDialog
+                  copy={copy}
+                  matchId={match.id}
+                  matchLabel={matchLabel}
+                  prizeImage={prizeImage}
+                />
               </header>
 
               <section className="match-prize-lane__teams" aria-label={t("schedule.teamsAria", { match: matchDisplayCode(match) })}>

@@ -93,6 +93,10 @@ function getDrawStateCopy(activeDraw, t) {
   };
 }
 
+function matchDisplayCode(match) {
+  return String(match?.displayCode || match?.id || "").toUpperCase();
+}
+
 function PrizeSlots({ count, active, stateTone, t }) {
   return (
     <ol className="prize-slots" aria-label={t("draw.prizeSlotsAria", { count: formatNumber(count) })}>
@@ -137,7 +141,7 @@ function ResultTable({ matches, teamsById, copy }) {
             const advancing = match.advancingTeamId ? teamName(teamsById.get(match.advancingTeamId)) : t("draw.pending");
             return (
               <tr className={isFinal ? "is-final" : "is-pending"} key={match.id}>
-                <td>{match.id.toUpperCase()}</td>
+                <td>{matchDisplayCode(match)}</td>
                 <td>{teamName(left)} / {teamName(right)}</td>
                 <td>{isFinal ? match.score || t("common.final") : t("draw.pendingFinal")}</td>
                 <td>{advancing}</td>
@@ -868,7 +872,7 @@ function DrawMatchRibbon({ matches, teamsById, copy }) {
                 <img src={prizeImage} alt="" loading="lazy" decoding="async" />
               </span>
               <span className="draw-match-ribbon__copy">
-                <span>{match.id.toUpperCase()}</span>
+                <span>{matchDisplayCode(match)}</span>
                 <strong>{teams.map((team) => teamName(team)).join(" / ")}</strong>
                 <small>{advancingTeam ? `${t("common.advancing")} ${teamName(advancingTeam)}` : matchStatusCompact(match.status)}</small>
               </span>

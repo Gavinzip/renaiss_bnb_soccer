@@ -36,14 +36,14 @@ function getOriginFrame(geometry) {
   };
 }
 
-export function MatchPrizeImageDialog({ copy, matchId, prizeImage }) {
+export function MatchPrizeImageDialog({ copy, matchId, matchLabel: providedMatchLabel, prizeImage }) {
   const { t } = copy;
   const [open, setOpen] = useState(false);
   const [dialogGeometry, setDialogGeometry] = useState(null);
   const triggerRef = useRef(null);
   const hoverOpenTimeoutRef = useRef(0);
   const prefersReducedMotion = useReducedMotion();
-  const matchLabel = String(matchId || "").toUpperCase();
+  const matchLabel = String(providedMatchLabel || matchId || "").toUpperCase();
   const zoomTransition = prefersReducedMotion
     ? { duration: 0 }
     : { duration: 0.32, ease: [0.16, 1, 0.3, 1] };

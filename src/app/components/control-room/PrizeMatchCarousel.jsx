@@ -26,6 +26,10 @@ function getTeamAllocation(roundAllocations, matchId, teamId) {
   return roundAllocations.find((entry) => entry.matchId === matchId && entry.teamId === teamId) ?? null;
 }
 
+function matchDisplayCode(match) {
+  return String(match?.displayCode || match?.id || "").toUpperCase();
+}
+
 export function PrizeMatchCarousel({
   matches,
   teamsById,
@@ -147,6 +151,7 @@ export function PrizeMatchCarousel({
             const phase = getMatchPhase(match);
             const statusText = t(phase.labelKey);
             const matchTitle = teams.map((team) => teamName(team)).join(` ${t("vote.versusShort")} `);
+            const matchCode = matchDisplayCode(match);
 
             return (
               <article
@@ -166,7 +171,7 @@ export function PrizeMatchCarousel({
                     <Gift size={15} strokeWidth={2.25} />
                     {t("common.prizes")} {String(index + 1).padStart(2, "0")}
                   </span>
-                  <strong>{match.id.toUpperCase()}</strong>
+                  <strong>{matchCode}</strong>
                   {matchAllocations.length > 0 ? (
                     <em className="prize-slide__vote-mark">
                       {t("vote.votedTicketBadge", {
@@ -180,7 +185,7 @@ export function PrizeMatchCarousel({
                 <figure className="prize-slide__media">
                   <img
                     src={prizeSrc}
-                    alt={`${match.id.toUpperCase()} ${t("common.prizes")}`}
+                    alt={`${matchCode} ${t("common.prizes")}`}
                     draggable="false"
                   />
                 </figure>
