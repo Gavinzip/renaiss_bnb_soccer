@@ -933,10 +933,11 @@ function AppContent() {
     [activeEntry, activeRoundId, selectedWallet, walletAllocations],
   );
   const remainingRoundTickets = roundTicketBreakdown.remainingTickets;
+  const usedTicketPoolTickets = roundTicketBreakdown.usedTickets ?? usedRoundTickets;
   const isRealtimeRound32 = simulationMode === "realtime" && activeRoundId === "round32";
   const visibleRoundAllocations = roundAllocations;
   const visibleRoundVoteOutcomes = roundVoteOutcomes;
-  const visibleUsedRoundTickets = usedRoundTickets;
+  const visibleUsedRoundTickets = usedTicketPoolTickets;
   const visibleRemainingRoundTickets = remainingRoundTickets;
   const pendingVoteMatch = useMemo(
     () => (pendingVote ? matches.find((match) => match.id === pendingVote.matchId) ?? null : null),

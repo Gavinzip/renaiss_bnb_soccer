@@ -116,6 +116,7 @@ export function getRoundTicketAvailability({ entry, roundId, allocations, wallet
       sharedVotingTicketPoolTicketsRemaining: 0,
       sharedInsiderGrantTicketsUsed: 0,
       sharedInsiderGrantTicketsRemaining: 0,
+      usedTickets: usedRoundTickets,
       remainingTickets: Math.max(0, breakdown.usableTickets - usedRoundTickets),
     };
   }
@@ -140,6 +141,7 @@ export function getRoundTicketAvailability({ entry, roundId, allocations, wallet
     baseTicketsRemaining,
     sharedInsiderGrantTicketsUsed,
     sharedInsiderGrantTicketsRemaining,
+    usedTickets: sharedVotingTicketPoolTicketsUsed,
     remainingTickets: sharedVotingTicketPoolTicketsRemaining,
   };
 }
