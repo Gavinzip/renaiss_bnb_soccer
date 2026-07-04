@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { roundDefinitions } from '../src/app/data/worldCupCampaign.js'
 import { getTicketBreakdownForRound } from '../src/app/data/ticketEligibility.js'
-import { canonicalMatchId } from './round16-match-identity.mjs'
+import { canonicalMatchId } from './official-match-identity.mjs'
 import { readEnvFile, toNumber } from './lucky-draw/utils.mjs'
 import { findLedgerEntryByAddress, readLedgerPayload } from './soccer-ledger-api.mjs'
 import {

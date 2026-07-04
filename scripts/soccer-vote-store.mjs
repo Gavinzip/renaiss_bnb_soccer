@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { dirname } from 'node:path'
 
 import { campaignMatches, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
-import { canonicalMatchId } from './round16-match-identity.mjs'
+import { canonicalMatchId } from './official-match-identity.mjs'
 import {
   getSharedInsiderGrantTicketsUsed,
   getTicketBreakdownForRound,

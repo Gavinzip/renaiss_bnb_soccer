@@ -4,21 +4,56 @@ export const FIFA_WORLD_CUP_SOURCE = {
   groupStageId: "289273",
   round32StageId: "289287",
   round16StageId: "289288",
+  quarterFinalStageId: "289289",
+  semiFinalStageId: "289290",
+  thirdPlaceStageId: "289291",
+  finalStageId: "289292",
 };
 
 export const FIFA_STANDINGS_SOURCE_URL = `https://api.fifa.com/api/v3/standings/season/${FIFA_WORLD_CUP_SOURCE.seasonId}/stage/${FIFA_WORLD_CUP_SOURCE.groupStageId}`;
 export const FIFA_ROUND32_MATCHES_SOURCE_URL = `https://api.fifa.com/api/v3/calendar/matches?idCompetition=${FIFA_WORLD_CUP_SOURCE.competitionId}&idSeason=${FIFA_WORLD_CUP_SOURCE.seasonId}&count=200&language=en&from=2026-06-27&to=2026-07-05`;
 export const FIFA_ROUND16_MATCHES_SOURCE_URL = `https://api.fifa.com/api/v3/calendar/matches?idCompetition=${FIFA_WORLD_CUP_SOURCE.competitionId}&idSeason=${FIFA_WORLD_CUP_SOURCE.seasonId}&count=200&language=en&from=2026-07-04&to=2026-07-10`;
+export const FIFA_FUTURE_KNOCKOUT_MATCHES_SOURCE_URL = `https://api.fifa.com/api/v3/calendar/matches?idCompetition=${FIFA_WORLD_CUP_SOURCE.competitionId}&idSeason=${FIFA_WORLD_CUP_SOURCE.seasonId}&count=200&language=en&from=2026-07-08&to=2026-07-20`;
 
 const ROUND32_ID = "round32";
 const ROUND16_ID = "round16";
+const QUARTER_FINAL_ID = "quarterFinal";
+const SEMI_FINAL_ID = "semiFinal";
+const FINAL_ID = "final";
 const ROUND32_SLOT_COUNT = 32;
 const ROUND32_MATCH_COUNT = 16;
 const ROUND16_MATCH_COUNT = 8;
+const FUTURE_KNOCKOUT_MATCH_COUNT = 7;
 const ROUND32_MATCH_START_NUMBER = 73;
 const ROUND32_MATCH_END_NUMBER = 88;
 const ROUND16_MATCH_START_NUMBER = 89;
 const ROUND16_MATCH_END_NUMBER = 96;
+const FUTURE_KNOCKOUT_ROUND_CONFIGS = [
+  {
+    roundId: QUARTER_FINAL_ID,
+    stageId: FIFA_WORLD_CUP_SOURCE.quarterFinalStageId,
+    matchStartNumber: 97,
+    matchEndNumber: 100,
+    matchCount: 4,
+    sourceKey: "quarter-final",
+  },
+  {
+    roundId: SEMI_FINAL_ID,
+    stageId: FIFA_WORLD_CUP_SOURCE.semiFinalStageId,
+    matchStartNumber: 101,
+    matchEndNumber: 102,
+    matchCount: 2,
+    sourceKey: "semi-final",
+  },
+  {
+    roundId: FINAL_ID,
+    stageId: FIFA_WORLD_CUP_SOURCE.finalStageId,
+    matchStartNumber: 104,
+    matchEndNumber: 104,
+    matchCount: 1,
+    sourceKey: "final",
+  },
+];
 const DIRECT_GROUP_QUALIFIER_COUNT = 2;
 const BEST_THIRD_QUALIFIER_COUNT = 8;
 const UNREVEALED_FLAG_SRC = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 44'%3E%3Crect width='64' height='44' rx='4' fill='%23131515'/%3E%3Cpath d='M10 22h44M32 7v30' stroke='%23f5f6f1' stroke-opacity='.16' stroke-width='2'/%3E%3Ccircle cx='32' cy='22' r='12' fill='none' stroke='%23f0d18b' stroke-opacity='.28' stroke-width='2'/%3E%3C/svg%3E";
@@ -390,6 +425,14 @@ function normalizeFifaRound16Fixture(row) {
   });
 }
 
+function normalizeFifaFutureKnockoutFixture(row) {
+  for (const config of FUTURE_KNOCKOUT_ROUND_CONFIGS) {
+    const fixture = normalizeFifaKnockoutFixture(row, config);
+    if (fixture) return { ...fixture, roundId: config.roundId, sourceKey: config.sourceKey };
+  }
+  return null;
+}
+
 function countFixtures(fixtures) {
   return fixtures.reduce(
     (counts, fixture) => ({
@@ -435,6 +478,17 @@ export function createPendingFifaRound16MatchesSnapshot(issue = "") {
     issue,
     matches: [],
     counts: { total: 0, officialFinal: 0, pending: ROUND16_MATCH_COUNT },
+  };
+}
+
+export function createPendingFifaFutureKnockoutMatchesSnapshot(issue = "") {
+  return {
+    sourceStatus: "pending",
+    sourceUrl: FIFA_FUTURE_KNOCKOUT_MATCHES_SOURCE_URL,
+    fetchedAt: null,
+    issue,
+    matches: [],
+    counts: { total: 0, officialFinal: 0, pending: FUTURE_KNOCKOUT_MATCH_COUNT },
   };
 }
 
@@ -504,6 +558,28 @@ export function normalizeFifaRound16MatchesSnapshot(payload, fetchedAt = new Dat
   };
 }
 
+export function normalizeFifaFutureKnockoutMatchesSnapshot(payload, fetchedAt = new Date().toISOString()) {
+  const fixtures = Array.isArray(payload?.Results)
+    ? payload.Results.map(normalizeFifaFutureKnockoutFixture).filter(Boolean)
+      .sort((left, right) => left.matchNumber - right.matchNumber)
+    : [];
+
+  if (fixtures.length === 0) {
+    throw new Error("FIFA future knockout calendar payload has no Results rows");
+  }
+
+  return {
+    sourceStatus: "live",
+    sourceUrl: FIFA_FUTURE_KNOCKOUT_MATCHES_SOURCE_URL,
+    fetchedAt,
+    issue: fixtures.length < FUTURE_KNOCKOUT_MATCH_COUNT
+      ? `FIFA future knockout calendar returned ${fixtures.length}/${FUTURE_KNOCKOUT_MATCH_COUNT} matches.`
+      : "",
+    matches: fixtures,
+    counts: countFixtures(fixtures),
+  };
+}
+
 export async function fetchFifaQualificationSnapshot(fetcher = fetch) {
   const response = await fetcher(FIFA_STANDINGS_SOURCE_URL, { cache: "no-store" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -523,6 +599,13 @@ export async function fetchFifaRound16MatchesSnapshot(fetcher = fetch) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const payload = await response.json();
   return normalizeFifaRound16MatchesSnapshot(payload, new Date().toISOString());
+}
+
+export async function fetchFifaFutureKnockoutMatchesSnapshot(fetcher = fetch) {
+  const response = await fetcher(FIFA_FUTURE_KNOCKOUT_MATCHES_SOURCE_URL, { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const payload = await response.json();
+  return normalizeFifaFutureKnockoutMatchesSnapshot(payload, new Date().toISOString());
 }
 
 function flagUrlForCode(abbreviation) {
@@ -667,6 +750,7 @@ export function buildRealtimeRound32Preview({
   snapshot,
   fixtures,
   round16Fixtures,
+  futureKnockoutFixtures,
   voteTotalsByMatchTeam,
   voterCountsByMatch,
 }) {
@@ -798,93 +882,131 @@ export function buildRealtimeRound32Preview({
     }];
   }));
 
-  const round16Matches = matches
-    .filter((match) => match.roundId === ROUND16_ID)
-    .sort((left, right) => new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime());
-  const sourceRound16Fixtures = Array.isArray(round16Fixtures?.matches) ? round16Fixtures.matches : [];
-  const liveRound16Matches = new Map(round16Matches.map((match, index) => {
-    const fixture = sourceRound16Fixtures[index] ?? null;
-    if (!fixture) {
-      const homeTeam = createUnrevealedFixtureTeam(match, "home");
-      const awayTeam = createUnrevealedFixtureTeam(match, "away");
+  const buildLiveKnockoutRoundMatches = ({
+    roundId,
+    fixtureRows,
+    fallbackStartNumber,
+    sourceKey,
+    sourceUrl,
+    fetchedAt,
+  }) => {
+    const roundMatches = matches
+      .filter((match) => match.roundId === roundId)
+      .sort((left, right) => new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime());
+
+    return roundMatches.map((match, index) => {
+      const fixture = fixtureRows[index] ?? null;
+      if (!fixture) {
+        const homeTeam = createUnrevealedFixtureTeam(match, "home");
+        const awayTeam = createUnrevealedFixtureTeam(match, "away");
+        liveTeamsById.set(homeTeam.id, homeTeam);
+        liveTeamsById.set(awayTeam.id, awayTeam);
+        return [match.id, {
+          ...match,
+          displayCode: `M${fallbackStartNumber + index}`,
+          teams: [homeTeam.id, awayTeam.id],
+          status: "scheduled",
+          cutoffAt: null,
+          score: undefined,
+          advancingTeamId: null,
+          poolEntries: 0,
+          voterCount: getVoterCount(voterCountsByMatch, match.id),
+          resultSnapshotId: null,
+          realtimePreview: true,
+          source: `fifa-${sourceKey}-pending`,
+          sourceUrl,
+          fetchedAt,
+        }];
+      }
+
+      const homeTeam = fixture.home.fifaTeamId
+        ? createTeamForFixtureTeam(
+          fixture.home,
+          "left",
+          teamsById,
+          teamsByName,
+          getVoteTotal(voteTotalsByMatchTeam, match.id, resolveLocalTeamId({
+            abbreviation: fixture.home.abbreviation,
+            teamName: fixture.home.name,
+          }, teamsById, teamsByName)),
+        )
+        : createUnrevealedFixtureTeam(match, "home");
+      const awayTeam = fixture.away.fifaTeamId
+        ? createTeamForFixtureTeam(
+          fixture.away,
+          "right",
+          teamsById,
+          teamsByName,
+          getVoteTotal(voteTotalsByMatchTeam, match.id, resolveLocalTeamId({
+            abbreviation: fixture.away.abbreviation,
+            teamName: fixture.away.name,
+          }, teamsById, teamsByName)),
+        )
+        : createUnrevealedFixtureTeam(match, "away");
       liveTeamsById.set(homeTeam.id, homeTeam);
       liveTeamsById.set(awayTeam.id, awayTeam);
+      const advancingTeamId = fixture.status === "official_final" && fixture.teamsConfirmed
+        ? findWinnerTeamId(fixture, homeTeam.id, awayTeam.id)
+        : null;
+
       return [match.id, {
         ...match,
-        displayCode: `M${ROUND16_MATCH_START_NUMBER + index}`,
+        status: fixture.status,
+        displayCode: fixture.matchCode,
+        fifaMatchNumber: fixture.matchNumber,
         teams: [homeTeam.id, awayTeam.id],
-        status: "scheduled",
-        cutoffAt: null,
-        score: undefined,
-        advancingTeamId: null,
+        kickoffAt: fixture.kickoffAt ?? match.kickoffAt,
+        cutoffAt: fixture.cutoffAt,
+        venue: fixture.venue || match.venue,
+        score: fixture.score ?? undefined,
+        advancingTeamId,
+        awaitingOfficialResult: false,
         poolEntries: 0,
         voterCount: getVoterCount(voterCountsByMatch, match.id),
-        resultSnapshotId: null,
+        resultSnapshotId: advancingTeamId ? `fifa-${sourceKey}-${fixture.matchCode.toLowerCase()}` : null,
         realtimePreview: true,
-        source: "fifa-round16-pending",
-        sourceUrl: round16Fixtures?.sourceUrl || FIFA_ROUND16_MATCHES_SOURCE_URL,
-        fetchedAt: round16Fixtures?.fetchedAt || null,
+        source: fixture.teamsConfirmed ? `fifa-${sourceKey}-fixture` : `fifa-${sourceKey}-pending-team`,
+        sourceUrl,
+        fetchedAt,
+        liveFixture: fixture,
       }];
-    }
+    });
+  };
 
-    const homeTeam = fixture.home.fifaTeamId
-      ? createTeamForFixtureTeam(
-        fixture.home,
-        "left",
-        teamsById,
-        teamsByName,
-        getVoteTotal(voteTotalsByMatchTeam, match.id, resolveLocalTeamId({
-          abbreviation: fixture.home.abbreviation,
-          teamName: fixture.home.name,
-        }, teamsById, teamsByName)),
-      )
-      : createUnrevealedFixtureTeam(match, "home");
-    const awayTeam = fixture.away.fifaTeamId
-      ? createTeamForFixtureTeam(
-        fixture.away,
-        "right",
-        teamsById,
-        teamsByName,
-        getVoteTotal(voteTotalsByMatchTeam, match.id, resolveLocalTeamId({
-          abbreviation: fixture.away.abbreviation,
-          teamName: fixture.away.name,
-        }, teamsById, teamsByName)),
-      )
-      : createUnrevealedFixtureTeam(match, "away");
-    liveTeamsById.set(homeTeam.id, homeTeam);
-    liveTeamsById.set(awayTeam.id, awayTeam);
-    const advancingTeamId = fixture.status === "official_final" && fixture.teamsConfirmed
-      ? findWinnerTeamId(fixture, homeTeam.id, awayTeam.id)
-      : null;
-
-    return [match.id, {
-      ...match,
-      status: fixture.status,
-      displayCode: fixture.matchCode,
-      fifaMatchNumber: fixture.matchNumber,
-      teams: [homeTeam.id, awayTeam.id],
-      kickoffAt: fixture.kickoffAt ?? match.kickoffAt,
-      cutoffAt: fixture.cutoffAt,
-      venue: fixture.venue || match.venue,
-      score: fixture.score ?? undefined,
-      advancingTeamId,
-      awaitingOfficialResult: false,
-      poolEntries: 0,
-      voterCount: getVoterCount(voterCountsByMatch, match.id),
-      resultSnapshotId: advancingTeamId ? `fifa-r16-${fixture.matchCode.toLowerCase()}` : null,
-      realtimePreview: true,
-      source: fixture.teamsConfirmed ? "fifa-round16-fixture" : "fifa-round16-pending-team",
-      sourceUrl: round16Fixtures?.sourceUrl || FIFA_ROUND16_MATCHES_SOURCE_URL,
-      fetchedAt: round16Fixtures?.fetchedAt || null,
-      liveFixture: fixture,
-    }];
+  const sourceRound16Fixtures = Array.isArray(round16Fixtures?.matches) ? round16Fixtures.matches : [];
+  const liveRound16Matches = new Map(buildLiveKnockoutRoundMatches({
+    roundId: ROUND16_ID,
+    fixtureRows: sourceRound16Fixtures,
+    fallbackStartNumber: ROUND16_MATCH_START_NUMBER,
+    sourceKey: "round16",
+    sourceUrl: round16Fixtures?.sourceUrl || FIFA_ROUND16_MATCHES_SOURCE_URL,
+    fetchedAt: round16Fixtures?.fetchedAt || null,
   }));
+
+  const sourceFutureKnockoutFixtures = Array.isArray(futureKnockoutFixtures?.matches)
+    ? futureKnockoutFixtures.matches
+    : [];
+  const liveFutureKnockoutMatches = new Map(FUTURE_KNOCKOUT_ROUND_CONFIGS.flatMap((config) => (
+    buildLiveKnockoutRoundMatches({
+      roundId: config.roundId,
+      fixtureRows: sourceFutureKnockoutFixtures.filter((fixture) => fixture.roundId === config.roundId),
+      fallbackStartNumber: config.matchStartNumber,
+      sourceKey: config.sourceKey,
+      sourceUrl: futureKnockoutFixtures?.sourceUrl || FIFA_FUTURE_KNOCKOUT_MATCHES_SOURCE_URL,
+      fetchedAt: futureKnockoutFixtures?.fetchedAt || null,
+    })
+  )));
 
   const displayTeamsById = new Map(teams.map((team) => [team.id, team]));
   liveTeamsById.forEach((team, id) => displayTeamsById.set(id, team));
 
   return {
-    matches: matches.map((match) => liveRound32Matches.get(match.id) ?? liveRound16Matches.get(match.id) ?? match),
+    matches: matches.map((match) => (
+      liveRound32Matches.get(match.id)
+      ?? liveRound16Matches.get(match.id)
+      ?? liveFutureKnockoutMatches.get(match.id)
+      ?? match
+    )),
     teams: Array.from(displayTeamsById.values()),
     teamsById: displayTeamsById,
     snapshot: {

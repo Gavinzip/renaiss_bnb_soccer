@@ -6,9 +6,11 @@ import { VoteSubmitToast } from "./components/control-room/VoteSubmitToast";
 import { InitialPageLoader } from "./components/InitialPageLoader";
 import {
   buildRealtimeRound32Preview,
+  createPendingFifaFutureKnockoutMatchesSnapshot,
   createPendingFifaQualificationSnapshot,
   createPendingFifaRound16MatchesSnapshot,
   createPendingFifaRound32MatchesSnapshot,
+  fetchFifaFutureKnockoutMatchesSnapshot,
   fetchFifaQualificationSnapshot,
   fetchFifaRound16MatchesSnapshot,
   fetchFifaRound32MatchesSnapshot,
@@ -319,6 +321,12 @@ function AppContent() {
       : localApiOrigin
         ? `${localApiOrigin}/api/live-round16-matches`
         : "");
+  const liveFutureKnockoutMatchesUrl = import.meta.env.VITE_LIVE_FUTURE_KNOCKOUT_MATCHES_URL
+    || (import.meta.env.PROD || !localTestOrigin
+      ? "/api/live-future-knockout-matches"
+      : localApiOrigin
+        ? `${localApiOrigin}/api/live-future-knockout-matches`
+        : "");
   const winnerRevealVideoUrl = import.meta.env.VITE_WINNER_REVEAL_VIDEO_URL || DEFAULT_WINNER_REVEAL_VIDEO_URL;
   const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL
     || (import.meta.env.PROD ? "/api/draw-winners" : "/mock-api/draw-winners.json");
@@ -348,6 +356,9 @@ function AppContent() {
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
   const [liveRound32Matches, setLiveRound32Matches] = useState(() => createPendingFifaRound32MatchesSnapshot());
   const [liveRound16Matches, setLiveRound16Matches] = useState(() => createPendingFifaRound16MatchesSnapshot());
+  const [liveFutureKnockoutMatches, setLiveFutureKnockoutMatches] = useState(
+    () => createPendingFifaFutureKnockoutMatchesSnapshot(),
+  );
   const [simulatedRoundId, setSimulatedRoundId] = useState(initialRoundId);
   const [activeRoundId, setActiveRoundId] = useState(initialRoundId);
   const [selectedMatchId, setSelectedMatchId] = useState(initialMatchId);
@@ -809,6 +820,46 @@ function AppContent() {
     };
   }, [liveRound16MatchesUrl, simulationMode, t]);
 
+  useEffect(() => {
+    if (simulationMode !== "realtime") return undefined;
+
+    let cancelled = false;
+    let intervalId = 0;
+
+    async function syncFifaFutureKnockoutMatches() {
+      setLiveFutureKnockoutMatches((current) => (
+        current.fetchedAt
+          ? { ...current, sourceStatus: "stale", issue: t("liveQualification.refreshing") }
+          : createPendingFifaFutureKnockoutMatchesSnapshot(t("liveQualification.connecting"))
+      ));
+
+      try {
+        const snapshot = liveFutureKnockoutMatchesUrl
+          ? (await fetchJsonWithTimeout(liveFutureKnockoutMatchesUrl, {
+            cache: "no-store",
+            timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+          })).payload
+          : await fetchFifaFutureKnockoutMatchesSnapshot();
+        if (!cancelled) setLiveFutureKnockoutMatches(snapshot);
+      } catch (error) {
+        if (cancelled) return;
+        setLiveFutureKnockoutMatches((current) => (
+          current.fetchedAt
+            ? { ...current, sourceStatus: "stale", issue: error.message }
+            : createPendingFifaFutureKnockoutMatchesSnapshot(error.message)
+        ));
+      }
+    }
+
+    syncFifaFutureKnockoutMatches();
+    intervalId = window.setInterval(syncFifaFutureKnockoutMatches, 60000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [liveFutureKnockoutMatchesUrl, simulationMode, t]);
+
   const staticTeamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), []);
   const liveVoteStats = useMemo(
     () => buildLiveVoteStats(globalPreviewVoteData, previewVoteData),
@@ -821,10 +872,11 @@ function AppContent() {
       snapshot: liveQualification,
       fixtures: liveRound32Matches,
       round16Fixtures: liveRound16Matches,
+      futureKnockoutFixtures: liveFutureKnockoutMatches,
       voteTotalsByMatchTeam: liveVoteStats.totalsByMatchTeam,
       voterCountsByMatch: liveVoteStats.voterCountsByMatch,
     }),
-    [liveQualification, liveRound16Matches, liveRound32Matches, liveVoteStats],
+    [liveFutureKnockoutMatches, liveQualification, liveRound16Matches, liveRound32Matches, liveVoteStats],
   );
   const sourceMatches = simulationMode === "realtime" ? realtimeRound32Preview.matches : campaignMatches;
   const matches = useMemo(

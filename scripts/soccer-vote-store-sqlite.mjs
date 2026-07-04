@@ -12,9 +12,9 @@ import {
   roundAllowsSharedInsiderGrantTickets,
 } from '../src/app/data/ticketEligibility.js'
 import {
-  LEGACY_TO_OFFICIAL_ROUND16_MATCH_IDS,
+  LEGACY_TO_OFFICIAL_MATCH_IDS,
   canonicalMatchId,
-} from './round16-match-identity.mjs'
+} from './official-match-identity.mjs'
 import {
   STATE_VERSION,
   allocationId,
@@ -104,7 +104,7 @@ function ensureSchema(db) {
       ON vote_events (event_hash)
       WHERE event_hash IS NOT NULL;
   `)
-  migrateLegacyRound16MatchIds(db)
+  migrateLegacyMatchIds(db)
   db.prepare(`
     INSERT INTO vote_meta (key, value)
     VALUES ('schemaVersion', ?)
@@ -132,8 +132,8 @@ function updatePayloadMatchId(payloadJson, officialMatchId) {
   })
 }
 
-function migrateLegacyRound16MatchIds(db) {
-  const pairs = Object.entries(LEGACY_TO_OFFICIAL_ROUND16_MATCH_IDS)
+function migrateLegacyMatchIds(db) {
+  const pairs = Object.entries(LEGACY_TO_OFFICIAL_MATCH_IDS)
   if (pairs.length === 0) return null
 
   const summary = {
@@ -213,19 +213,19 @@ function migrateLegacyRound16MatchIds(db) {
     if (summary.allocationRowsMoved || summary.allocationRowsMerged || summary.eventRowsMoved) {
       db.prepare(`
         INSERT INTO vote_meta (key, value)
-        VALUES ('round16CanonicalMatchIdMigration', ?)
+        VALUES ('officialMatchIdMigration', ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
       `).run(JSON.stringify({
         ...summary,
         migratedAt: nowIso(),
-        mapping: LEGACY_TO_OFFICIAL_ROUND16_MATCH_IDS,
+        mapping: LEGACY_TO_OFFICIAL_MATCH_IDS,
       }))
     }
   })
 
   if (summary.allocationRowsMoved || summary.allocationRowsMerged || summary.eventRowsMoved) {
     backfillVoteEventHashes(db)
-    console.log('[vote-store-sqlite] migrated legacy round16 match ids', JSON.stringify(summary))
+    console.log('[vote-store-sqlite] migrated legacy official match ids', JSON.stringify(summary))
   }
 
   return summary
@@ -395,8 +395,8 @@ function readVoteStateFromDatabase(db) {
   }
 }
 
-function countLegacyRound16Allocations(db) {
-  const legacyIds = Object.keys(LEGACY_TO_OFFICIAL_ROUND16_MATCH_IDS)
+function countLegacyMatchIdAllocations(db) {
+  const legacyIds = Object.keys(LEGACY_TO_OFFICIAL_MATCH_IDS)
   if (legacyIds.length === 0) return 0
   const placeholders = legacyIds.map(() => '?').join(', ')
   return toPositiveInteger(db.prepare(`
@@ -406,8 +406,12 @@ function countLegacyRound16Allocations(db) {
   `).get(...legacyIds)?.count)
 }
 
-function legacyRound16MigrationMeta(db) {
+function legacyMatchIdMigrationMeta(db) {
   const value = db.prepare(`
+    SELECT value
+    FROM vote_meta
+    WHERE key = 'officialMatchIdMigration'
+  `).get()?.value || db.prepare(`
     SELECT value
     FROM vote_meta
     WHERE key = 'round16CanonicalMatchIdMigration'
@@ -798,8 +802,8 @@ export function createSqliteVoteStore({ dbPath, statePath = '', previewPath = ''
         generatedAt: state.generatedAt,
         updatedAt: state.updatedAt,
         schemaVersion: SQLITE_SCHEMA_VERSION,
-        legacyRound16AllocationCount: countLegacyRound16Allocations(db),
-        round16CanonicalMatchIdMigration: legacyRound16MigrationMeta(db),
+        legacyMatchIdAllocationCount: countLegacyMatchIdAllocations(db),
+        officialMatchIdMigration: legacyMatchIdMigrationMeta(db),
       }
     },
     close() {

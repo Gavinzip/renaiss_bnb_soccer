@@ -12,6 +12,7 @@ import { verifyMessage } from 'ethers'
 import { campaignMatches, milestones, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
 import {
   buildRealtimeRound32Preview,
+  fetchFifaFutureKnockoutMatchesSnapshot,
   fetchFifaQualificationSnapshot,
   fetchFifaRound16MatchesSnapshot,
   fetchFifaRound32MatchesSnapshot,
@@ -139,6 +140,9 @@ let fifaRound32MatchesCache = null
 const fifaRound16MatchesCacheSeconds = readIntegerEnv('FIFA_ROUND16_MATCHES_CACHE_SECONDS', 45, 0)
 const fifaRound16MatchesCacheMs = fifaRound16MatchesCacheSeconds * 1000
 let fifaRound16MatchesCache = null
+const fifaFutureKnockoutMatchesCacheSeconds = readIntegerEnv('FIFA_FUTURE_KNOCKOUT_MATCHES_CACHE_SECONDS', 45, 0)
+const fifaFutureKnockoutMatchesCacheMs = fifaFutureKnockoutMatchesCacheSeconds * 1000
+let fifaFutureKnockoutMatchesCache = null
 
 function cleanLogValue(value) {
   return String(value ?? 'none').replace(/\s+/g, ' ').slice(0, 160) || 'none'
@@ -1469,16 +1473,51 @@ async function readLiveRound16MatchesSnapshot() {
   }
 }
 
+async function readLiveFutureKnockoutMatchesSnapshot() {
+  const now = Date.now()
+  const cached = fifaFutureKnockoutMatchesCache
+  if (cached?.snapshot && now - cached.fetchedAtMs <= fifaFutureKnockoutMatchesCacheMs) {
+    return {
+      ...cached.snapshot,
+      cacheStatus: 'hit',
+      cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
+    }
+  }
+
+  try {
+    const snapshot = await fetchFifaFutureKnockoutMatchesSnapshot(fetch)
+    fifaFutureKnockoutMatchesCache = { snapshot, fetchedAtMs: now }
+    return {
+      ...snapshot,
+      cacheStatus: 'fresh',
+      cacheAgeSeconds: 0,
+    }
+  } catch (error) {
+    if (cached?.snapshot) {
+      return {
+        ...cached.snapshot,
+        sourceStatus: 'stale',
+        issue: error instanceof Error ? error.message : 'Could not fetch FIFA future knockout matches.',
+        cacheStatus: 'stale',
+        cacheAgeSeconds: Math.max(0, Math.round((now - cached.fetchedAtMs) / 1000)),
+      }
+    }
+    throw error
+  }
+}
+
 async function readRealtimeVoteMatches() {
-  const [round32Fixtures, round16Fixtures] = await Promise.all([
+  const [round32Fixtures, round16Fixtures, futureKnockoutFixtures] = await Promise.all([
     readLiveRound32MatchesSnapshot(),
     readLiveRound16MatchesSnapshot(),
+    readLiveFutureKnockoutMatchesSnapshot(),
   ])
   return buildRealtimeRound32Preview({
     matches: campaignMatches,
     teams: [],
     fixtures: round32Fixtures,
     round16Fixtures,
+    futureKnockoutFixtures,
   }).matches
 }
 
@@ -2170,6 +2209,27 @@ const server = createServer(async (request, response) => {
         503,
         {
           error: error instanceof Error ? error.message : 'Could not read FIFA round16 matches.',
+        },
+        {
+          'cache-control': 'no-store',
+        },
+      )
+    }
+    return
+  }
+
+  if (url.pathname === '/api/live-future-knockout-matches') {
+    try {
+      sendJson(request, response, 200, await readLiveFutureKnockoutMatchesSnapshot(), {
+        'cache-control': 'no-store',
+      })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        503,
+        {
+          error: error instanceof Error ? error.message : 'Could not read FIFA future knockout matches.',
         },
         {
           'cache-control': 'no-store',

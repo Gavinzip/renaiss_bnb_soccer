@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path'
 
 import { campaignMatches } from '../src/app/data/worldCupCampaign.js'
-import { canonicalMatchId } from './round16-match-identity.mjs'
+import { canonicalMatchId } from './official-match-identity.mjs'
 
 export const MATCH_RESULTS_VERSION = 1
 export const FIFA_WORLD_CUP_SOURCE = {
