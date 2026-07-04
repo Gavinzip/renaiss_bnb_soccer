@@ -35,7 +35,13 @@ import {
   parseEntryIntervalQuery,
   readLedgerPayload,
 } from './soccer-ledger-api.mjs'
-import { readMatchResultsSnapshot, summarizeMatchResults } from './soccer-match-results.mjs'
+import {
+  buildMatchResultIndex,
+  confirmedMatchResultFor,
+  readMatchResultsSnapshot,
+  summarizeMatchResults,
+} from './soccer-match-results.mjs'
+import { canonicalMatchId } from './official-match-identity.mjs'
 import { readVotePreview, readVoteState, submitVote } from './soccer-vote-store.mjs'
 import { createSqliteVoteStore } from './soccer-vote-store-sqlite.mjs'
 import { loadLocalEnvFiles } from './env-loader.mjs'
@@ -534,8 +540,88 @@ function drawContractAddress() {
   return normalizeDrawAdminWalletAddress(process.env.DRAW_CONTRACT_ADDRESS)
 }
 
+function publicAppOrigin() {
+  return String(process.env.PUBLIC_APP_ORIGIN || '').replace(/\/$/, '')
+}
+
+function publicMatchDrawLedgerUri() {
+  const configured = String(process.env.SOCCER_MATCH_DRAW_LEDGER_URI || '').trim()
+  if (configured) return configured
+  const origin = publicAppOrigin()
+  return origin ? `${origin}/match-draw-ledger.json` : matchDrawLedgerPath
+}
+
 function drawExpectedChainId() {
   return String(process.env.BSC_CHAIN_ID || '56').trim() || '56'
+}
+
+function expectedRoundMatchIds(roundId) {
+  return campaignMatches
+    .filter((match) => String(match.roundId || '').trim() === roundId)
+    .map((match) => canonicalMatchId(match.id))
+    .filter(Boolean)
+}
+
+function roundResultReadiness(roundId) {
+  const expectedMatchIds = expectedRoundMatchIds(roundId)
+  const snapshot = readMatchResultsSnapshot(matchResultsPath)
+  const resultIndex = buildMatchResultIndex(snapshot)
+  const confirmedMatchIds = expectedMatchIds.filter((matchId) => confirmedMatchResultFor(resultIndex, matchId))
+  const missingMatchIds = expectedMatchIds.filter((matchId) => !confirmedMatchResultFor(resultIndex, matchId))
+  return {
+    roundId,
+    expectedMatchIds,
+    confirmedMatchIds,
+    missingMatchIds,
+    expectedCount: expectedMatchIds.length,
+    confirmedCount: confirmedMatchIds.length,
+    missingCount: missingMatchIds.length,
+    complete: expectedMatchIds.length > 0 && missingMatchIds.length === 0,
+    sourceStatus: snapshot.sourceStatus || null,
+    generatedAt: snapshot.generatedAt || null,
+    hash: snapshot.hash || null,
+    summary: summarizeMatchResults(snapshot),
+  }
+}
+
+function readMatchDrawLedgerSummary() {
+  if (!existsSync(matchDrawLedgerPath)) return null
+  try {
+    const payload = JSON.parse(readFileSync(matchDrawLedgerPath, 'utf8'))
+    const roundDraws = Array.isArray(payload.roundDraws) ? payload.roundDraws : []
+    const draws = Array.isArray(payload.draws) ? payload.draws : []
+    return {
+      ok: true,
+      mode: payload.mode || null,
+      sourceStatus: payload.sourceStatus || null,
+      generatedAt: payload.generatedAt || null,
+      generatedAtUnix: payload.generatedAtUnix || null,
+      drawCount: draws.length,
+      roundDrawCount: roundDraws.length,
+      roundDraws: roundDraws.map((round) => ({
+        roundId: round.roundId || '',
+        roundKey: round.roundKey || '',
+        ledgerHash: round.ledgerHash || '',
+        matchCount: Number(round.matchCount || 0),
+        totalPrizeSlots: Number(round.totalPrizeSlots || 0),
+        totalAlternateSlots: Number(round.totalAlternateSlots || 0),
+      })),
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Could not read match draw ledger.',
+    }
+  }
+}
+
+function matchDrawLedgerContainsRound(roundId) {
+  const summary = readMatchDrawLedgerSummary()
+  return Boolean(
+    summary?.ok
+    && Array.isArray(summary.roundDraws)
+    && summary.roundDraws.some((round) => String(round.roundId || '') === roundId)
+  )
 }
 
 function normalizeDrawAdminRoundId(value) {
@@ -551,7 +637,7 @@ function normalizeDrawAdminRoundId(value) {
 
 function normalizeDrawAdminAction(value, broadcast) {
   const action = String(value || (broadcast ? 'broadcast' : 'verify')).trim().toLowerCase()
-  if (action === 'verify' || action === 'broadcast') return action
+  if (action === 'ledger' || action === 'verify' || action === 'broadcast') return action
   throw Object.assign(new Error('Unsupported draw action.'), {
     statusCode: 400,
     code: 'draw_action_invalid',
@@ -570,6 +656,7 @@ function drawAdminStatusPayload({ includeLastRun = false, includePrivate = false
     broadcasterConfigured: Boolean(process.env.BSC_DEPLOYER_PRIVATE_KEY),
     allowlistConfigured: allowedAddresses.length > 0,
     matchDrawLedgerExists: existsSync(matchDrawLedgerPath),
+    matchDrawLedger: readMatchDrawLedgerSummary(),
     drawWinnersExists: existsSync(drawWinnersPath),
     challengeTtlSeconds: drawAdminChallengeTtlSeconds,
     running: drawAdminRunRunning,
@@ -591,7 +678,7 @@ function drawAdminDisabledError() {
   return null
 }
 
-function assertDrawAdminReady({ requireBroadcast = false } = {}) {
+function assertDrawAdminReady({ requireBroadcast = false, roundId = '' } = {}) {
   const disabled = drawAdminDisabledError()
   if (disabled) throw disabled
   if (!drawContractAddress()) {
@@ -624,6 +711,60 @@ function assertDrawAdminReady({ requireBroadcast = false } = {}) {
       code: 'draw_ledger_missing',
     })
   }
+  if (roundId && !matchDrawLedgerContainsRound(roundId)) {
+    throw Object.assign(new Error('Match draw ledger does not include this round yet.'), {
+      statusCode: 503,
+      code: 'draw_ledger_round_missing',
+    })
+  }
+}
+
+function assertDrawAdminBaseReady() {
+  const disabled = drawAdminDisabledError()
+  if (disabled) throw disabled
+  if (drawAdminAllowedAddresses().length === 0) {
+    throw Object.assign(new Error('Draw admin wallet allowlist is not configured.'), {
+      statusCode: 503,
+      code: 'draw_allowlist_missing',
+    })
+  }
+}
+
+function assertDrawLedgerBuildReady(roundId) {
+  assertDrawAdminBaseReady()
+  if (!existsSync(ledgerPath)) {
+    throw Object.assign(new Error('Base ticket ledger is not ready.'), {
+      statusCode: 503,
+      code: 'draw_base_ledger_missing',
+    })
+  }
+  if (voteStoreMode === 'sqlite' && !existsSync(voteDbPath)) {
+    throw Object.assign(new Error('Vote database is not ready.'), {
+      statusCode: 503,
+      code: 'draw_vote_db_missing',
+    })
+  }
+  if (voteStoreMode !== 'sqlite' && !existsSync(voteStatePath)) {
+    throw Object.assign(new Error('Vote state is not ready.'), {
+      statusCode: 503,
+      code: 'draw_vote_state_missing',
+    })
+  }
+  if (!existsSync(matchResultsPath)) {
+    throw Object.assign(new Error('FIFA match results snapshot is not ready.'), {
+      statusCode: 503,
+      code: 'draw_results_missing',
+    })
+  }
+  const readiness = roundResultReadiness(roundId)
+  if (!readiness.complete) {
+    throw Object.assign(new Error('This round does not have a complete backend-confirmed FIFA result snapshot yet.'), {
+      statusCode: 409,
+      code: 'draw_results_incomplete',
+      readiness,
+    })
+  }
+  return readiness
 }
 
 function drawAdminRateLimitRules(request, address, action) {
@@ -751,6 +892,140 @@ function parseDrawScriptOutput(stdout) {
   const text = String(stdout || '').trim()
   if (!text) return null
   return JSON.parse(text)
+}
+
+function runDrawAdminLedger({ roundId }) {
+  const startedAt = new Date().toISOString()
+  const args = [
+    fileURLToPath(new URL('./build-match-draw-ledger.mjs', import.meta.url)),
+    '--base-ledger',
+    ledgerPath,
+    '--vote-store',
+    voteStoreMode,
+    '--vote-db',
+    voteDbPath,
+    '--vote-state',
+    voteStatePath,
+    '--match-results',
+    matchResultsPath,
+    '--out',
+    matchDrawLedgerPath,
+    '--round-id',
+    roundId,
+    '--ledger-uri-base',
+    publicMatchDrawLedgerUri(),
+  ]
+
+  drawAdminRunRunning = true
+  lastDrawAdminRun = {
+    ok: false,
+    startedAt,
+    finishedAt: null,
+    durationSeconds: null,
+    exitCode: null,
+    error: null,
+    trigger: `draw-admin:ledger:${roundId}`,
+  }
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const child = spawn(process.execPath, args, {
+      cwd: repoRoot,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    const timeout = setTimeout(() => {
+      if (settled) return
+      settled = true
+      child.kill('SIGTERM')
+      const finishedAt = new Date().toISOString()
+      lastDrawAdminRun = {
+        ...lastDrawAdminRun,
+        ok: false,
+        finishedAt,
+        durationSeconds: durationSeconds(startedAt, finishedAt),
+        exitCode: null,
+        error: `draw ledger script timed out after ${drawAdminScriptTimeoutSeconds} seconds`,
+      }
+      drawAdminRunRunning = false
+      rejectPromise(Object.assign(new Error(lastDrawAdminRun.error), {
+        statusCode: 504,
+        code: 'draw_ledger_script_timeout',
+      }))
+    }, drawAdminScriptTimeoutMs)
+
+    child.stdout.on('data', (chunk) => {
+      stdout = appendLimitedOutput(stdout, chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr = appendLimitedOutput(stderr, chunk)
+    })
+    child.on('error', (error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      const finishedAt = new Date().toISOString()
+      lastDrawAdminRun = {
+        ...lastDrawAdminRun,
+        ok: false,
+        finishedAt,
+        durationSeconds: durationSeconds(startedAt, finishedAt),
+        exitCode: null,
+        error: error.message,
+      }
+      drawAdminRunRunning = false
+      rejectPromise(Object.assign(error, { statusCode: 500, code: 'draw_ledger_script_failed' }))
+    })
+    child.on('close', (code) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      const finishedAt = new Date().toISOString()
+      let payload = null
+      let parseError = null
+      try {
+        payload = parseDrawScriptOutput(stdout)
+      } catch (error) {
+        parseError = error
+      }
+
+      lastDrawAdminRun = {
+        ...lastDrawAdminRun,
+        ok: code === 0 && !parseError,
+        finishedAt,
+        durationSeconds: durationSeconds(startedAt, finishedAt),
+        exitCode: code,
+        error: code === 0 && !parseError
+          ? null
+          : parseError?.message || `draw ledger script exited with code ${code}`,
+      }
+      drawAdminRunRunning = false
+
+      if (code === 0 && !parseError) {
+        runDataBackup('draw-admin-ledger')
+        resolvePromise({
+          ok: true,
+          action: 'ledger',
+          roundId,
+          result: payload,
+          status: drawAdminStatusPayload({ includeLastRun: true }),
+          stderr: stderr.trim() || null,
+          lastRun: lastDrawAdminRun,
+        })
+        return
+      }
+
+      rejectPromise(Object.assign(new Error(lastDrawAdminRun.error || 'Draw ledger script failed.'), {
+        statusCode: 500,
+        code: parseError ? 'draw_ledger_script_output_invalid' : 'draw_ledger_script_failed',
+        stdout,
+        stderr,
+      }))
+    })
+  })
 }
 
 function runDrawAdminRound({ roundId, action }) {
@@ -2055,7 +2330,11 @@ const server = createServer(async (request, response) => {
       const action = normalizeDrawAdminAction(body?.action, body?.broadcast)
       const roundId = normalizeDrawAdminRoundId(body?.roundId)
       const address = assertDrawAdminWalletAllowed(body?.address)
-      assertDrawAdminReady({ requireBroadcast: action === 'broadcast' })
+      if (action === 'ledger') {
+        assertDrawLedgerBuildReady(roundId)
+      } else {
+        assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId })
+      }
       if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action))) return
 
       sendJson(
@@ -2084,6 +2363,68 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  if (url.pathname === '/api/draw-admin/ledger') {
+    if (request.method !== 'POST') {
+      sendJson(request, response, 405, { ok: false, error: 'POST required.' }, { 'cache-control': 'no-store' })
+      return
+    }
+
+    try {
+      if (!enforceUnsafeRequestOrigin(request, response)) return
+      const body = await readJsonBody(request)
+      const action = normalizeDrawAdminAction(body?.action || 'ledger', false)
+      if (action !== 'ledger') {
+        throw Object.assign(new Error('Use /api/draw-admin/round for contract draw actions.'), {
+          statusCode: 400,
+          code: 'draw_action_invalid',
+        })
+      }
+      const roundId = normalizeDrawAdminRoundId(body?.roundId)
+      const address = assertDrawAdminWalletAllowed(body?.address)
+      const readiness = assertDrawLedgerBuildReady(roundId)
+      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action))) return
+      verifyDrawAdminChallenge({
+        address,
+        action,
+        roundId,
+        nonce: body?.nonce,
+        signature: body?.signature,
+      })
+      if (drawAdminRunRunning) {
+        sendJson(request, response, 409, {
+          ok: false,
+          code: 'draw_admin_running',
+          error: 'A draw operation is already running.',
+          lastRun: lastDrawAdminRun,
+        }, { 'cache-control': 'no-store' })
+        return
+      }
+
+      const result = await runDrawAdminLedger({ roundId })
+      sendJson(request, response, 200, {
+        ...result,
+        readiness,
+      }, { 'cache-control': 'no-store' })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        Number(error?.statusCode || 500),
+        {
+          ok: false,
+          code: error?.code || 'draw_ledger_failed',
+          error: error instanceof Error ? error.message : 'Draw ledger operation failed.',
+          readiness: error?.readiness || undefined,
+          stdout: error?.stdout || undefined,
+          stderr: error?.stderr || undefined,
+          lastRun: lastDrawAdminRun,
+        },
+        { 'cache-control': 'no-store' },
+      )
+    }
+    return
+  }
+
   if (url.pathname === '/api/draw-admin/round') {
     if (request.method !== 'POST') {
       sendJson(request, response, 405, { ok: false, error: 'POST required.' }, { 'cache-control': 'no-store' })
@@ -2094,9 +2435,15 @@ const server = createServer(async (request, response) => {
       if (!enforceUnsafeRequestOrigin(request, response)) return
       const body = await readJsonBody(request)
       const action = normalizeDrawAdminAction(body?.action, body?.broadcast)
+      if (action === 'ledger') {
+        throw Object.assign(new Error('Use /api/draw-admin/ledger to lock the draw ledger.'), {
+          statusCode: 400,
+          code: 'draw_action_invalid',
+        })
+      }
       const roundId = normalizeDrawAdminRoundId(body?.roundId)
       const address = assertDrawAdminWalletAllowed(body?.address)
-      assertDrawAdminReady({ requireBroadcast: action === 'broadcast' })
+      assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId })
       if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action))) return
       verifyDrawAdminChallenge({
         address,

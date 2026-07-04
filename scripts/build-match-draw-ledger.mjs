@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { roundDefinitions } from '../src/app/data/worldCupCampaign.js'
+import { campaignMatches, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
 import { getTicketBreakdownForRound } from '../src/app/data/ticketEligibility.js'
 import { canonicalMatchId } from './official-match-identity.mjs'
 import { readEnvFile, toNumber } from './lucky-draw/utils.mjs'
@@ -27,6 +27,11 @@ const DEFAULT_MATCH_PRIZE_SLOT_COUNT = 1
 const DEFAULT_ALTERNATE_COUNT = 2
 
 const roundsById = new Map(roundDefinitions.map((round) => [round.id, round]))
+const roundOrder = new Map(roundDefinitions.map((round, index) => [round.id, index]))
+const roundIdByMatchId = new Map(campaignMatches.map((match) => [
+  canonicalMatchId(match.id),
+  String(match.roundId || '').trim(),
+]))
 
 function argValue(name) {
   const index = process.argv.indexOf(name)
@@ -46,6 +51,7 @@ function parseArgs(argv) {
     voteStatePath: process.env.SOCCER_VOTE_STATE_PATH || 'data/soccer/votes/vote-state.json',
     matchResultsPath: process.env.SOCCER_MATCH_RESULTS_PATH || 'data/soccer/match-results.json',
     out: process.env.SOCCER_MATCH_DRAW_LEDGER_PATH || process.env.LUCKY_DRAW_LEDGER_PATH || 'public/lucky-draw-ledger.json',
+    roundId: '',
     matchId: '',
     prizeSlotCount: 0,
     alternateCount: toNumber(process.env.SOCCER_DRAW_ALTERNATE_COUNT || DEFAULT_ALTERNATE_COUNT),
@@ -62,6 +68,7 @@ function parseArgs(argv) {
     else if (arg === '--vote-state') args.voteStatePath = argv[++index] || args.voteStatePath
     else if (arg === '--match-results') args.matchResultsPath = argv[++index] || args.matchResultsPath
     else if (arg === '--out') args.out = argv[++index] || args.out
+    else if (arg === '--round-id') args.roundId = argv[++index] || ''
     else if (arg === '--match-id') args.matchId = argv[++index] || ''
     else if (arg === '--prize-slots') args.prizeSlotCount = toNumber(argv[++index] || 0)
     else if (arg === '--alternates') args.alternateCount = toNumber(argv[++index] || DEFAULT_ALTERNATE_COUNT)
@@ -88,6 +95,7 @@ function parseArgs(argv) {
   args.prizeSlotCount = Math.max(0, Math.floor(args.prizeSlotCount || 0))
   args.alternateCount = Math.max(DEFAULT_ALTERNATE_COUNT, Math.floor(args.alternateCount || DEFAULT_ALTERNATE_COUNT))
   args.voteStore = normalizeVoteStoreMode(args.voteStore)
+  args.roundId = String(args.roundId || '').trim()
   args.matchId = canonicalMatchId(args.matchId)
   return args
 }
@@ -114,6 +122,7 @@ Options:
   --vote-state <path>     Backend vote-state.json when --vote-store json.
   --match-results <path>  Backend match-results.json from sync-fifa-results.
   --out <path>            Output match draw ledger.
+  --round-id <id>         Build only one tournament round.
   --match-id <id>         Build one match only.
   --prize-slots <n>       Override primary winner slots per built match. Default 1.
   --alternates <n>        Alternate ticket count per prize slot. Default 2.
@@ -403,6 +412,53 @@ function buildRoundDraws({ draws, args }) {
   })
 }
 
+function roundSortValue(roundId) {
+  const knownOrder = roundOrder.get(String(roundId || ''))
+  return Number.isFinite(knownOrder) ? knownOrder : Number.MAX_SAFE_INTEGER
+}
+
+function sortRoundDrawRows(rows) {
+  return [...rows].sort((left, right) => (
+    roundSortValue(left.roundId) - roundSortValue(right.roundId)
+    || String(left.roundId || '').localeCompare(String(right.roundId || ''))
+  ))
+}
+
+function sortDrawRows(rows) {
+  return [...rows].sort((left, right) => (
+    roundSortValue(left.roundId) - roundSortValue(right.roundId)
+    || String(left.roundId || '').localeCompare(String(right.roundId || ''))
+    || String(left.matchId || '').localeCompare(String(right.matchId || ''))
+  ))
+}
+
+function mergeExistingRoundOutput(args, output) {
+  if (!args.roundId || !existsSync(args.out)) return output
+
+  const existing = JSON.parse(readFileSync(args.out, 'utf8'))
+  const existingRoundDraws = Array.isArray(existing.roundDraws) ? existing.roundDraws : []
+  const existingDraws = Array.isArray(existing.draws) ? existing.draws : []
+  const preservedRoundDraws = existingRoundDraws.filter((round) => String(round.roundId || '') !== args.roundId)
+  const preservedDraws = existingDraws.filter((draw) => String(draw.roundId || '') !== args.roundId)
+
+  return {
+    ...output,
+    mergedFrom: {
+      path: args.out,
+      generatedAt: existing.generatedAt || null,
+      replacedRoundId: args.roundId,
+      preservedRoundCount: preservedRoundDraws.length,
+      preservedDrawCount: preservedDraws.length,
+    },
+    roundDraws: sortRoundDrawRows([...preservedRoundDraws, ...output.roundDraws]),
+    draws: sortDrawRows([...preservedDraws, ...output.draws]),
+    notes: [
+      ...output.notes,
+      'When --round-id is used, existing locked draw rows for other rounds are preserved instead of overwritten.',
+    ],
+  }
+}
+
 export function buildMatchDrawLedger(args) {
   const baseLedger = readLedgerPayload(args.baseLedgerPath)
   const voteState = readConfiguredVoteState(args)
@@ -413,8 +469,12 @@ export function buildMatchDrawLedger(args) {
 
   const targetResults = Array.from(resultIndex.values())
     .filter((result) => (!args.matchId || result.matchId === args.matchId))
+    .filter((result) => (!args.roundId || roundIdByMatchId.get(result.matchId) === args.roundId))
     .filter((result) => result.resultStatus === 'confirmed' && result.winnerTeamId)
 
+  if (args.roundId && !roundsById.has(args.roundId)) {
+    throw new Error(`Unsupported round id ${args.roundId}.`)
+  }
   if (args.matchId && !confirmedMatchResultFor(resultIndex, args.matchId)) {
     throw new Error(`match ${args.matchId} does not have a backend-confirmed official result.`)
   }
@@ -486,7 +546,7 @@ function isCliEntrypoint() {
 if (isCliEntrypoint()) {
   const args = parseArgs(process.argv.slice(2))
   try {
-    const output = buildMatchDrawLedger(args)
+    const output = mergeExistingRoundOutput(args, buildMatchDrawLedger(args))
     const summary = {
       drawCount: output.draws.length,
       roundDrawCount: output.roundDraws.length,

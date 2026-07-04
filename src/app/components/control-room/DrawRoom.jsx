@@ -441,7 +441,18 @@ function targetChainLabel(t) {
   return chainLabel(targetDrawChainId, t);
 }
 
-function drawAdminReadinessItems(adminStatus, t) {
+function roundLedgerSummaryFor(adminStatus, roundId) {
+  const roundDraws = Array.isArray(adminStatus?.matchDrawLedger?.roundDraws)
+    ? adminStatus.matchDrawLedger.roundDraws
+    : [];
+  return roundDraws.find((round) => String(round.roundId || "") === String(roundId || "")) || null;
+}
+
+function hasLockedLedgerForRound(adminStatus, roundId) {
+  return Boolean(adminStatus?.matchDrawLedgerExists && roundLedgerSummaryFor(adminStatus, roundId));
+}
+
+function drawAdminReadinessItems(adminStatus, roundId, t) {
   if (!adminStatus) return [];
   return [
     {
@@ -471,8 +482,8 @@ function drawAdminReadinessItems(adminStatus, t) {
     },
     {
       id: "ledger",
-      ready: Boolean(adminStatus.matchDrawLedgerExists),
-      label: adminStatus.matchDrawLedgerExists ? t("draw.operatorDrawLedgerReady") : t("draw.operatorDrawLedgerMissing"),
+      ready: hasLockedLedgerForRound(adminStatus, roundId),
+      label: hasLockedLedgerForRound(adminStatus, roundId) ? t("draw.operatorDrawLedgerReady") : t("draw.operatorDrawLedgerMissing"),
     },
   ];
 }
@@ -581,6 +592,20 @@ function DrawOperatorWallet({ activeDraw, t }) {
     };
   }, [t]);
 
+  async function refreshAdminStatus() {
+    try {
+      const { payload } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/status"), {
+        timeoutMs: 10000,
+      });
+      setAdminStatus(payload);
+      setAdminStatusIssue("");
+      return payload;
+    } catch (error) {
+      setAdminStatusIssue(error?.message || t("draw.operatorDrawStatusFailed"));
+      return null;
+    }
+  }
+
   async function connectDrawWallet(walletProvider) {
     setIssue("");
     if (!walletProvider?.provider?.request) {
@@ -615,6 +640,67 @@ function DrawOperatorWallet({ activeDraw, t }) {
       method: "personal_sign",
       params: [message, connectedWallet.address],
     });
+  }
+
+  async function lockDrawLedger() {
+    setIssue("");
+    setRunResult(null);
+
+    if (!connectedWallet.address) {
+      setIssue(t("draw.operatorWalletMissing"));
+      return;
+    }
+    if (!targetMatched) {
+      setIssue(t("draw.operatorWalletWrongChain", { chain: targetChainLabel(t) }));
+      return;
+    }
+    if (!activeDraw.officialFinalsComplete) {
+      setIssue(t("draw.operatorDrawFinalsBlocked", {
+        finals: formatNumber(activeDraw.officialFinalCount),
+        matches: formatNumber(activeDraw.matchCount),
+        remaining: formatNumber(activeDraw.officialFinalsRemaining),
+      }));
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(t("draw.operatorDrawLedgerConfirm", { round: activeDraw.id }));
+      if (!confirmed) return;
+    }
+
+    setBusyAction("draw:ledger");
+    try {
+      const roundId = activeDraw.id;
+      const { payload: challenge } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/challenge"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          address: connectedWallet.address,
+          action: "ledger",
+          roundId,
+        }),
+        timeoutMs: drawAdminCheckTimeoutMs,
+      });
+      const signature = await signDrawMessage(challenge.message);
+      const { payload } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/ledger"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          address: connectedWallet.address,
+          action: "ledger",
+          roundId,
+          nonce: challenge.nonce,
+          signature,
+        }),
+        timeoutMs: drawAdminCheckTimeoutMs,
+      });
+      setRunResult(payload);
+      setAdminStatus(payload.status || await refreshAdminStatus());
+    } catch (error) {
+      setIssue(error?.payload?.error || error?.message || t("draw.operatorDrawLedgerFailed"));
+      if (error?.payload) setRunResult(error.payload);
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function runDrawAction(action) {
@@ -670,11 +756,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
         timeoutMs: broadcast ? drawAdminBroadcastTimeoutMs : drawAdminCheckTimeoutMs,
       });
       setRunResult(payload);
-      setAdminStatus((current) => ({
-        ...(current || {}),
-        running: false,
-        lastRun: payload.lastRun || current?.lastRun || null,
-      }));
+      await refreshAdminStatus();
       if (payload?.ok && (broadcast || payload?.result?.winnersOut) && typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("renaiss:draw-winners-updated", {
           detail: {
@@ -712,17 +794,21 @@ function DrawOperatorWallet({ activeDraw, t }) {
     }
   }
 
-  const adminReady = Boolean(
+  const activeRoundLedger = roundLedgerSummaryFor(adminStatus, activeDraw.id);
+  const ledgerLocked = Boolean(activeRoundLedger);
+  const adminBaseReady = Boolean(adminStatus?.enabled && adminStatus?.allowlistConfigured);
+  const contractExecutionReady = Boolean(
     adminStatus?.enabled
     && adminStatus?.contractConfigured
     && adminStatus?.rpcConfigured
     && adminStatus?.broadcasterConfigured
-    && adminStatus?.allowlistConfigured
-    && adminStatus?.matchDrawLedgerExists,
+    && adminStatus?.allowlistConfigured,
   );
+  const adminReady = contractExecutionReady && ledgerLocked;
+  const canLockLedger = connected && targetMatched && adminBaseReady && activeDraw.officialFinalsComplete && !busyAction;
   const canRunDraw = connected && targetMatched && adminReady && !busyAction;
   const canBroadcastDraw = canRunDraw && activeDraw.officialFinalsComplete;
-  const readinessItems = drawAdminReadinessItems(adminStatus, t);
+  const readinessItems = drawAdminReadinessItems(adminStatus, activeDraw.id, t);
   const missingReadinessItems = readinessItems.filter((item) => !item.ready);
   const adminStatusCopy = adminStatusIssue
     || (missingReadinessItems.length > 0
@@ -828,6 +914,14 @@ function DrawOperatorWallet({ activeDraw, t }) {
         <div className="draw-operator-wallet__actions">
           <button
             type="button"
+            disabled={!canLockLedger}
+            onClick={lockDrawLedger}
+          >
+            {busyAction === "draw:ledger" ? <Loader2 className="is-spinning" size={15} /> : <LockKeyhole size={15} strokeWidth={2.2} />}
+            <span>{t("draw.operatorDrawLockLedger")}</span>
+          </button>
+          <button
+            type="button"
             disabled={!canRunDraw}
             onClick={() => runDrawAction("verify")}
           >
@@ -850,10 +944,15 @@ function DrawOperatorWallet({ activeDraw, t }) {
         <section className={["draw-operator-wallet__result", runResult.ok ? "is-ready" : "is-warning"].filter(Boolean).join(" ")}>
           <strong>{runResult.ok ? t("draw.operatorDrawRunOk") : t("draw.operatorDrawRunFailed")}</strong>
           <p>
-            {runResult.result?.broadcast
+            {runResult.action === "ledger"
+              ? t("draw.operatorDrawLedgerLocked")
+              : runResult.result?.broadcast
               ? t("draw.operatorDrawBroadcasted")
               : t("draw.operatorDrawDryRun")}
           </p>
+          {runResult.action === "ledger" && activeRoundLedger?.ledgerHash ? (
+            <code>{compactAddress(activeRoundLedger.ledgerHash)}</code>
+          ) : null}
           {plannedSteps.length > 0 ? (
             <ol>
               {plannedSteps.map((step, index) => (
