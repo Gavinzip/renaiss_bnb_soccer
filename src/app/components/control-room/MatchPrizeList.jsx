@@ -166,7 +166,7 @@ export function MatchPrizeList({
                 <MatchPrizeImageDialog
                   copy={copy}
                   matchId={match.id}
-                  matchLabel={matchLabel}
+                  matchLabel={matchDisplayCode(match)}
                   prizeImage={prizeImage}
                 />
               </header>
