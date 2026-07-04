@@ -1,4 +1,4 @@
-import { blockByTimestamp, fetchLogsWindow } from './bscscan.mjs'
+import { blockByTimestamp, fetchLogsWindow, latestBlockNumber } from './bscscan.mjs'
 import { readJsonCache, writeJsonCache } from './cache.mjs'
 import {
   BUYBACK_SUCCESS_V3_EVENT_TOPIC,
@@ -216,24 +216,66 @@ async function fetchLogsWindowAdaptive(bscscanConfig, contract, fromBlock, toBlo
   return { rows, calls, splitWindows }
 }
 
-async function resolveBlockByTimestampWithLag(bscscanConfig, timestamp, closest, lags = [0]) {
-  let lastError = null
+function addBlockCheckpoint(byBlock, block, updatedAt = 0, source = 'cache') {
+  const normalizedBlock = toNumber(block)
+  if (!normalizedBlock) return
+  const normalizedUpdatedAt = Math.max(0, toNumber(updatedAt))
+  const existing = byBlock.get(normalizedBlock)
+  if (!existing || normalizedUpdatedAt > existing.updatedAt) {
+    byBlock.set(normalizedBlock, {
+      block: normalizedBlock,
+      updatedAt: normalizedUpdatedAt,
+      source,
+    })
+  }
+}
 
-  for (const lagSeconds of lags) {
-    const adjustedTimestamp = Math.max(0, timestamp - lagSeconds)
-    try {
-      const block = await blockByTimestamp(bscscanConfig, adjustedTimestamp, closest)
-      return {
-        block,
-        timestamp: adjustedTimestamp,
-        lagSeconds: timestamp - adjustedTimestamp,
-      }
-    } catch (error) {
-      lastError = error
-    }
+function normalizeBlockCheckpoints(eventCache) {
+  const byBlock = new Map()
+  const storedCheckpoints = Array.isArray(eventCache?.blockCheckpoints)
+    ? eventCache.blockCheckpoints
+    : []
+  for (const checkpoint of storedCheckpoints) {
+    addBlockCheckpoint(byBlock, checkpoint?.block, checkpoint?.updatedAt, checkpoint?.source || 'checkpoint')
   }
 
-  throw lastError || new Error(`Could not resolve block for timestamp ${timestamp}`)
+  for (const source of Object.values(eventCache?.sources || {})) {
+    addBlockCheckpoint(byBlock, source?.toBlock, source?.updatedAt, 'source-cache')
+  }
+
+  return [...byBlock.values()].sort((left, right) => {
+    if (left.block !== right.block) return left.block - right.block
+    return left.updatedAt - right.updatedAt
+  })
+}
+
+function cachedCampaignFromBlock(eventCache) {
+  const blocks = Object.values(eventCache?.sources || {})
+    .map((source) => toNumber(source?.fromBlock))
+    .filter(Boolean)
+  return blocks.length ? Math.min(...blocks) : 0
+}
+
+function resolveCheckpointLookbackFromBlock(eventCache, fromBlock, toBlock, lookbackCheckpoints) {
+  const checkpointCount = Math.max(0, toNumber(lookbackCheckpoints) || 0)
+  if (!checkpointCount) return { block: 0, checkpoints: [] }
+
+  const checkpoints = normalizeBlockCheckpoints(eventCache)
+    .filter((checkpoint) => checkpoint.block >= fromBlock && checkpoint.block <= toBlock)
+  const selected = checkpoints.slice(-checkpointCount)
+  const block = selected.length ? selected[0].block : 0
+  return { block, checkpoints: selected }
+}
+
+function appendBlockCheckpoint(eventCache, block, updatedAt = Date.now()) {
+  const byBlock = new Map()
+  for (const checkpoint of normalizeBlockCheckpoints(eventCache)) {
+    addBlockCheckpoint(byBlock, checkpoint.block, checkpoint.updatedAt, checkpoint.source)
+  }
+  addBlockCheckpoint(byBlock, block, updatedAt, 'refresh')
+  eventCache.blockCheckpoints = [...byBlock.values()]
+    .sort((left, right) => left.block - right.block)
+    .slice(-240)
 }
 
 async function scanLogSource({
@@ -478,35 +520,51 @@ export async function scanOnchainTicketEvents(args) {
     backoffMs: args.backoffMs,
     requestTimeoutMs: args.bscscanRequestTimeoutMs,
   }
-  const fromBlock = args.fromBlock || (await blockByTimestamp(bscscanConfig, campaignStart, 'after'))
-  const toBlockResolution = args.toBlock
-    ? { block: args.toBlock, timestamp: windowEndTs, lagSeconds: 0 }
-    : await resolveBlockByTimestampWithLag(
-      bscscanConfig,
-      windowEndTs,
-      'before',
-      [0, 15, 30, 60, 120, 300, 600],
-    )
-  const toBlock = toBlockResolution.block
-  const eventCacheLookbackMinutes = Math.max(0, toNumber(args.eventCacheLookbackMinutes) || 0)
-  const eventCacheLookbackTimestamp = Math.max(
-    campaignStart,
-    toBlockResolution.timestamp - eventCacheLookbackMinutes * 60,
-  )
-  const eventCacheLookbackFromBlock = eventCacheLookbackMinutes
-    ? await blockByTimestamp(
-      bscscanConfig,
-      eventCacheLookbackTimestamp,
-      'after',
-    )
-    : 0
-
   const eventCachePath = args.noCache ? '' : args.eventCachePath
   const eventCache = readJsonCache(eventCachePath, { version: 2, sources: {} }) || {
     version: 2,
     sources: {},
   }
   eventCache.sources ||= {}
+
+  let fromBlockSource = 'timestamp'
+  let fromBlockTimestampError = null
+  let fromBlock = args.fromBlock
+  if (fromBlock) {
+    fromBlockSource = 'explicit'
+  } else {
+    try {
+      fromBlock = await blockByTimestamp(bscscanConfig, campaignStart, 'after')
+    } catch (error) {
+      const cachedFromBlock = cachedCampaignFromBlock(eventCache)
+      if (!cachedFromBlock) throw error
+      fromBlock = cachedFromBlock
+      fromBlockSource = 'event-cache'
+      fromBlockTimestampError = error.message
+    }
+  }
+
+  const toBlockResolution = args.toBlock
+    ? { block: args.toBlock, timestamp: windowEndTs, lagSeconds: 0, source: 'explicit' }
+    : {
+      block: await latestBlockNumber(bscscanConfig),
+      timestamp: null,
+      lagSeconds: null,
+      source: 'latest-block',
+    }
+  const toBlock = toBlockResolution.block
+  const eventCacheLookbackMinutes = Math.max(0, toNumber(args.eventCacheLookbackMinutes) || 0)
+  const eventCacheLookbackCheckpoints = Math.max(
+    0,
+    toNumber(args.eventCacheLookbackCheckpoints) || 0,
+  )
+  const checkpointLookback = resolveCheckpointLookbackFromBlock(
+    eventCache,
+    fromBlock,
+    toBlock,
+    eventCacheLookbackCheckpoints,
+  )
+  const eventCacheLookbackFromBlock = checkpointLookback.block
 
   const successSources = buybackSuccessSourcesFor(contracts)
   const successByContract = new Map()
@@ -586,7 +644,10 @@ export async function scanOnchainTicketEvents(args) {
     })
   }
 
-  if (eventCachePath) writeJsonCache(eventCachePath, eventCache)
+  if (eventCachePath) {
+    appendBlockCheckpoint(eventCache, toBlock)
+    writeJsonCache(eventCachePath, eventCache)
+  }
   sortEvents(allEvents)
 
   return {
@@ -594,14 +655,21 @@ export async function scanOnchainTicketEvents(args) {
     source: {
       mode: 'contract-events-chain-only',
       fromBlock,
+      fromBlockSource,
+      fromBlockTimestampError,
       toBlock,
+      toBlockSource: toBlockResolution.source,
       campaignStart,
       campaignEnd,
       windowEnd: windowEndTs,
       toBlockTimestamp: toBlockResolution.timestamp,
       toBlockTimestampLagSeconds: toBlockResolution.lagSeconds,
       eventCacheLookbackMinutes,
-      eventCacheLookbackTimestamp: eventCacheLookbackMinutes ? eventCacheLookbackTimestamp : null,
+      eventCacheLookbackMode: eventCacheLookbackCheckpoints ? 'block-checkpoints' : 'cached-overlap',
+      eventCacheLookbackCheckpoints,
+      eventCacheLookbackCheckpointCount: checkpointLookback.checkpoints.length,
+      eventCacheLookbackBlocks: checkpointLookback.checkpoints,
+      eventCacheLookbackTimestamp: null,
       eventCacheLookbackFromBlock: eventCacheLookbackFromBlock || null,
       packEventSources: describePackEventSources(contracts),
       buybackSuccessEventTopic: BUYBACK_SUCCESS_V3_EVENT_TOPIC,

@@ -1822,6 +1822,9 @@ function runLedgerRefresh(trigger) {
   if (eventCacheLookbackMinutes > 0) {
     args.push('--event-cache-lookback-minutes', String(eventCacheLookbackMinutes))
   }
+  if (eventCacheLookbackRounds > 0) {
+    args.push('--event-cache-lookback-checkpoints', String(eventCacheLookbackRounds))
+  }
 
   console.log(
     `[ledger-refresh] start trigger=${trigger} data=${dataDir} cache=${cacheDir} lookback=${eventCacheLookbackMinutes}m`,

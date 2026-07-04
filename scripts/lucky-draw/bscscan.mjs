@@ -58,6 +58,9 @@ export async function bscscanJson(config, params) {
       }
 
       if (data?.status === '1' || Array.isArray(result)) return data
+      if (!('status' in data) && typeof result === 'string' && /^0x[0-9a-f]+$/i.test(result)) {
+        return data
+      }
 
       if (
         resultText.includes('max rate limit') ||
@@ -93,6 +96,16 @@ export async function blockByTimestamp(config, timestamp, closest) {
   })
   const block = toNumber(data.result)
   if (!block) throw new Error(`Could not resolve block for timestamp ${timestamp}`)
+  return block
+}
+
+export async function latestBlockNumber(config) {
+  const data = await bscscanJson(config, {
+    module: 'proxy',
+    action: 'eth_blockNumber',
+  })
+  const block = toNumber(data.result)
+  if (!block) throw new Error('Could not resolve latest block number')
   return block
 }
 
