@@ -10,6 +10,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
+import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import ElasticSlider from "../ElasticSlider/ElasticSlider";
 import { GlareHover } from "../GlareHover";
@@ -51,6 +52,10 @@ function matchDisplayCode(match) {
   return String(match?.displayCode || match?.id || "").toUpperCase();
 }
 
+function isMatchVoteable(match) {
+  return !isUnrevealedPrizePreviewMatch(match) && voteableStatuses.has(match?.status);
+}
+
 function getTicketVoteState({
   copy,
   remainingRoundTickets,
@@ -64,11 +69,12 @@ function getTicketVoteState({
   const selectedTeamName = selectedTeam ? copy.teamName(selectedTeam) : null;
   const selectedMatchLabel = selectedMatch ? matchDisplayCode(selectedMatch) : null;
   const selectedPhase = selectedMatch ? getMatchPhase(selectedMatch) : null;
+  const selectedMatchPreviewOnly = isUnrevealedPrizePreviewMatch(selectedMatch);
   const hasNoRemainingTickets = remainingRoundTickets <= 0;
   const canSubmit = Boolean(
     selectedTeam
     && selectedMatch
-    && voteableStatuses.has(selectedMatch.status)
+    && isMatchVoteable(selectedMatch)
     && remainingRoundTickets > 0
     && !voteActionBlocked,
   );
@@ -78,6 +84,7 @@ function getTicketVoteState({
     canSubmit,
     hasNoRemainingTickets,
     maxTickets,
+    selectedMatchPreviewOnly,
     selectedMatchLabel,
     selectedPhase,
     selectedTeamName,
@@ -85,6 +92,7 @@ function getTicketVoteState({
 }
 
 function getMatchIcon(match, allocation) {
+  if (isUnrevealedPrizePreviewMatch(match)) return Clock3;
   if (match.awaitingOfficialResult) return Clock3;
   if (match.status === "open") return Ticket;
   if (match.status === "closing_soon") return Clock3;
@@ -94,6 +102,13 @@ function getMatchIcon(match, allocation) {
 }
 
 function getMatchPhase(match) {
+  if (isUnrevealedPrizePreviewMatch(match)) {
+    return {
+      id: "scheduled",
+      labelKey: "vote.phaseUnrevealed",
+    };
+  }
+
   if (match.awaitingOfficialResult) {
     return {
       id: "locked",
@@ -108,7 +123,7 @@ function getMatchPhase(match) {
     };
   }
 
-  if (voteableStatuses.has(match.status)) {
+  if (isMatchVoteable(match)) {
     return {
       id: "voteable",
       labelKey: "vote.phaseVoteable",
@@ -176,7 +191,7 @@ function MatchVoteGroup({
   const matchAllocationIndex = matchAllocations.length > 0
     ? allocations.findIndex((entry) => entry.id === matchAllocations[0].id)
     : -1;
-  const canSelectTeam = voteableStatuses.has(match.status);
+  const canSelectTeam = isMatchVoteable(match);
   const selected = selectedMatchId === match.id;
   const MatchIcon = getMatchIcon(match, matchAllocations[0]);
   const phase = getMatchPhase(match);
@@ -279,6 +294,7 @@ function TicketAllocationPanel({
     hasNoRemainingTickets,
     maxTickets,
     selectedMatchLabel,
+    selectedMatchPreviewOnly,
     selectedPhase,
     selectedTeamName,
   } = getTicketVoteState({
@@ -293,6 +309,8 @@ function TicketAllocationPanel({
     ? voteActionBlockReason || t("vote.voteEligibilityBlocked")
     : canSubmit
       ? t("vote.votePanelReady", { team: selectedTeamName, match: selectedMatchLabel })
+      : selectedMatchPreviewOnly
+        ? t("vote.unrevealedMatchPrizeOnly")
       : t("vote.votePanelIdle");
 
   function handleSetTicketAmount(value) {
@@ -329,6 +347,8 @@ function TicketAllocationPanel({
             <img src={selectedTeam.flagSrc} alt="" aria-hidden="true" />
             <b>{selectedTeamName}</b>
           </strong>
+        ) : selectedMatchPreviewOnly ? (
+          <strong>{t("vote.unrevealedTeam")}</strong>
         ) : (
           <strong>{t("vote.selectedTargetEmpty")}</strong>
         )}
@@ -656,10 +676,11 @@ export function VoteRoom({
       .sort(sortMatchesByDisplayPhase),
     [activeRoundId, matches],
   );
-  const preferredRoundMatch = roundMatches.find((match) => voteableStatuses.has(match.status)) ?? roundMatches[0] ?? null;
+  const preferredRoundMatch = roundMatches.find((match) => isMatchVoteable(match)) ?? roundMatches[0] ?? null;
   const selectedMatchInRound = Boolean(selectedMatch && roundMatches.some((match) => match.id === selectedMatch.id));
   const selectedRoundMatch = selectedMatchInRound ? selectedMatch : preferredRoundMatch;
-  const selectedTeam = selectedRoundMatch?.teams.includes(selectedTeamId)
+  const selectedRoundMatchPreviewOnly = isUnrevealedPrizePreviewMatch(selectedRoundMatch);
+  const selectedTeam = !selectedRoundMatchPreviewOnly && selectedRoundMatch?.teams.includes(selectedTeamId)
     ? teamsById.get(selectedTeamId)
     : null;
   const activeRoundLabel = roundLabel(activeRound);
@@ -674,7 +695,7 @@ export function VoteRoom({
     const selectedIsVoteable = Boolean(
       selectedMatchInRound
       && selectedMatch
-      && voteableStatuses.has(selectedMatch.status),
+      && isMatchVoteable(selectedMatch),
     );
     if (!preferredRoundMatch || autoSelectedRoundRef.current === activeRoundId || selectedIsVoteable) return;
 

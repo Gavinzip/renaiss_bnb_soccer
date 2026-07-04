@@ -441,6 +441,42 @@ function targetChainLabel(t) {
   return chainLabel(targetDrawChainId, t);
 }
 
+function drawAdminReadinessItems(adminStatus, t) {
+  if (!adminStatus) return [];
+  return [
+    {
+      id: "api",
+      ready: adminStatus.enabled !== false,
+      label: adminStatus.enabled !== false ? t("draw.operatorDrawApiEnabled") : t("draw.operatorDrawDisabled"),
+    },
+    {
+      id: "contract",
+      ready: Boolean(adminStatus.contractConfigured),
+      label: adminStatus.contractConfigured ? t("draw.operatorDrawContractReady") : t("draw.operatorDrawContractMissing"),
+    },
+    {
+      id: "rpc",
+      ready: Boolean(adminStatus.rpcConfigured),
+      label: adminStatus.rpcConfigured ? t("draw.operatorDrawRpcReady") : t("draw.operatorDrawRpcMissing"),
+    },
+    {
+      id: "broadcaster",
+      ready: Boolean(adminStatus.broadcasterConfigured),
+      label: adminStatus.broadcasterConfigured ? t("draw.operatorDrawBroadcasterReady") : t("draw.operatorDrawBroadcasterMissing"),
+    },
+    {
+      id: "allowlist",
+      ready: Boolean(adminStatus.allowlistConfigured),
+      label: adminStatus.allowlistConfigured ? t("draw.operatorDrawAllowlistReady") : t("draw.operatorDrawAllowlistMissing"),
+    },
+    {
+      id: "ledger",
+      ready: Boolean(adminStatus.matchDrawLedgerExists),
+      label: adminStatus.matchDrawLedgerExists ? t("draw.operatorDrawLedgerReady") : t("draw.operatorDrawLedgerMissing"),
+    },
+  ];
+}
+
 function DrawOperatorWallet({ activeDraw, t }) {
   const [walletProviders, setWalletProviders] = useState([]);
   const [walletDetecting, setWalletDetecting] = useState(false);
@@ -686,10 +722,14 @@ function DrawOperatorWallet({ activeDraw, t }) {
   );
   const canRunDraw = connected && targetMatched && adminReady && !busyAction;
   const canBroadcastDraw = canRunDraw && activeDraw.officialFinalsComplete;
-  const statusParts = [
-    adminStatus?.contractConfigured ? t("draw.operatorDrawContractReady") : t("draw.operatorDrawContractMissing"),
-    adminStatus?.matchDrawLedgerExists ? t("draw.operatorDrawLedgerReady") : t("draw.operatorDrawLedgerMissing"),
-  ];
+  const readinessItems = drawAdminReadinessItems(adminStatus, t);
+  const missingReadinessItems = readinessItems.filter((item) => !item.ready);
+  const adminStatusCopy = adminStatusIssue
+    || (missingReadinessItems.length > 0
+      ? t("draw.operatorDrawMissingItems", {
+        items: missingReadinessItems.map((item) => item.label).join(" · "),
+      })
+      : t("draw.operatorDrawAllReady"));
   const finalsNotice = activeDraw.officialFinalsComplete
     ? t("draw.operatorDrawFinalsReady", {
       finals: formatNumber(activeDraw.officialFinalCount),
@@ -769,11 +809,16 @@ function DrawOperatorWallet({ activeDraw, t }) {
             {adminReady ? t("draw.operatorDrawReady") : t("draw.operatorDrawNotReady")}
           </strong>
         </header>
-        <p>
-          {adminStatus?.enabled === false
-            ? t("draw.operatorDrawDisabled")
-            : adminStatusIssue || statusParts.join(" · ")}
-        </p>
+        <p>{adminStatusCopy}</p>
+        {readinessItems.length > 0 ? (
+          <ul className="draw-operator-wallet__readiness">
+            {readinessItems.map((item) => (
+              <li className={item.ready ? "is-ready" : "is-warning"} key={item.id}>
+                {item.label}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {adminStatus?.contractAddress ? (
           <code>{compactAddress(adminStatus.contractAddress)}</code>
         ) : null}

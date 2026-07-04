@@ -5,13 +5,26 @@ import {
   Ticket,
 } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
+import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
 import { getMatchPrizeImage } from "../../data/matchPrizeImages";
 import { estimateMultiPrizeChance, formatNumber } from "../../data/ticketMath";
 import { MatchPrizeImageDialog } from "./MatchPrizeImageDialog";
 
 const voteableStatuses = new Set(["open", "closing_soon"]);
 
+function isMatchVoteable(match) {
+  return !isUnrevealedPrizePreviewMatch(match) && voteableStatuses.has(match?.status);
+}
+
 function getMatchPhase(match) {
+  if (isUnrevealedPrizePreviewMatch(match)) {
+    return {
+      id: "scheduled",
+      icon: Clock3,
+      labelKey: "vote.phaseUnrevealed",
+    };
+  }
+
   if (match.awaitingOfficialResult) {
     return {
       id: "locked",
@@ -28,7 +41,7 @@ function getMatchPhase(match) {
     };
   }
 
-  if (voteableStatuses.has(match.status)) {
+  if (isMatchVoteable(match)) {
     return {
       id: "voteable",
       icon: Ticket,
@@ -128,9 +141,10 @@ export function MatchPrizeList({
 
       <ol className="match-prize-list-view__matches">
         {matches.map((match, matchIndex) => {
-          const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
+          const teamsHidden = isUnrevealedPrizePreviewMatch(match);
+          const teams = teamsHidden ? [] : match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
           const matchAllocations = roundAllocations.filter((entry) => entry.matchId === match.id);
-          const canPickMatch = voteableStatuses.has(match.status);
+          const canPickMatch = isMatchVoteable(match);
           const selected = selectedMatchId === match.id;
           const phase = getMatchPhase(match);
           const statusText = t(phase.labelKey);
@@ -148,7 +162,7 @@ export function MatchPrizeList({
                 selected ? "is-selected" : "",
                 matchAllocations.length > 0 ? "has-vote-record" : "",
                 `is-phase-${phase.id}`,
-                voteableStatuses.has(match.status) ? "is-open" : "is-closed",
+                canPickMatch ? "is-open" : "is-closed",
                 `is-${match.status}`,
               ].filter(Boolean).join(" ")}
               key={match.id}
@@ -172,7 +186,34 @@ export function MatchPrizeList({
               </header>
 
               <section className="match-prize-lane__teams" aria-label={t("schedule.teamsAria", { match: matchDisplayCode(match) })}>
-                {teams.map((team, teamIndex) => {
+                {teamsHidden ? [0, 1].map((slotIndex) => (
+                  <Fragment key={`${match.id}-unrevealed-${slotIndex}`}>
+                    <button
+                      className={[
+                        "match-prize-team",
+                        "is-unrevealed",
+                        slotIndex === 0 ? "is-left-team" : "is-right-team",
+                      ].join(" ")}
+                      type="button"
+                      onClick={() => onSelectMatch(match.id)}
+                      aria-pressed={false}
+                      aria-label={`${matchDisplayCode(match)} ${t("vote.unrevealedTeam")}`}
+                    >
+                      <span className="match-prize-team__unknown-flag" aria-hidden="true">?</span>
+                      <span className="match-prize-team__copy">
+                        <span className="match-prize-team__title-row">
+                          <strong>{t("vote.unrevealedTeam")}</strong>
+                        </span>
+                        <small>{t("vote.unrevealedTeamHint")}</small>
+                      </span>
+                    </button>
+                    {slotIndex === 0 ? (
+                      <span className="match-prize-versus" aria-hidden="true" key={`${match.id}-versus`}>
+                        {t("vote.versusShort")}
+                      </span>
+                    ) : null}
+                  </Fragment>
+                )) : teams.map((team, teamIndex) => {
                   const allocation = getTeamAllocation(roundAllocations, match.id, team.id);
                   const canPickTeam = canPickMatch;
                   const isSelectedTeam = selected && selectedTeamId === team.id;

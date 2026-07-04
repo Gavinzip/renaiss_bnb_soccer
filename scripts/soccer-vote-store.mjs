@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { dirname } from 'node:path'
 
 import { campaignMatches, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
+import { isUnrevealedPrizePreviewMatch } from '../src/app/data/matchReveal.js'
 import { canonicalMatchId } from './official-match-identity.mjs'
 import {
   getSharedInsiderGrantTicketsUsed,
@@ -173,6 +174,11 @@ export function assertVoteInput(input, options = {}) {
   }
   if (!match.teams.includes(teamId)) {
     throw Object.assign(new Error('teamId is not in this match.'), { statusCode: 400 })
+  }
+  if (isUnrevealedPrizePreviewMatch(match)) {
+    throw Object.assign(new Error('This match is not open because FIFA has not confirmed both teams yet.'), {
+      statusCode: 409,
+    })
   }
   if (match.status === 'official_final' || confirmedMatchResultFor(resultIndex, matchId)) {
     throw Object.assign(new Error('This match already has a backend-confirmed official result.'), { statusCode: 409 })
