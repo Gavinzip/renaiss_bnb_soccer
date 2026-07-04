@@ -121,6 +121,7 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
     toLedgerInteger(entry?.totalVotingTickets),
     rawTickets + carryoverTickets + insiderPracticeTickets + insiderGrantTickets,
   );
+  const visibleSourceTotalTickets = rawTickets + carryoverTickets + insiderGrantTickets;
   const eventCount = toLedgerInteger(entry?.eventCount);
   const rank = toLedgerInteger(entry?.rank);
   const ticketIntervals = Array.isArray(entry?.ticketIntervals) ? entry.ticketIntervals : [];
@@ -192,7 +193,7 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
 
         <p className="ticket-source-panel__note">
           {matchedLedgerEntry
-            ? t("ticketSource.matchBody", { count: number(totalVotingTickets) })
+            ? t("ticketSource.matchBody", { count: number(visibleSourceTotalTickets) })
             : t("ticketSource.noMatchBody")}
         </p>
         {carryoverTickets > 0 ? (
@@ -211,7 +212,7 @@ function WalletTicketSourceDialog({ entry, ledger, walletAddress, onClose }) {
         <dl className="ticket-source-stats">
           <div>
             <dt>{t("ticketSource.finalTickets")}</dt>
-            <dd>{number(totalVotingTickets)}</dd>
+            <dd>{number(visibleSourceTotalTickets)}</dd>
           </div>
           <div>
             <dt>{t("ticketSource.rawTickets")}</dt>
