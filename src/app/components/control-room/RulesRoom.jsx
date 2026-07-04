@@ -149,19 +149,21 @@ function RulesRewardMap({ activeRound, matches, totalPrizeSlots, copy }) {
   );
 }
 
-export function RulesRoom({ activeRound, activeRoundMatches = [], rounds = [], className = "" }) {
+export function RulesRoom({ activeRound, activeRoundMatches = [], rounds = [], className = "", showRewardMap = true }) {
   const copy = useCampaignCopy();
   const { t } = copy;
   const totalPrizeSlots = rounds.reduce((total, round) => total + (round.prizeCount || 0), 0);
 
   return (
     <section className={["rules-room", className].filter(Boolean).join(" ")} aria-label={t("rules.roomAria")}>
-      <RulesRewardMap
-        activeRound={activeRound}
-        matches={activeRoundMatches}
-        totalPrizeSlots={totalPrizeSlots}
-        copy={copy}
-      />
+      {showRewardMap ? (
+        <RulesRewardMap
+          activeRound={activeRound}
+          matches={activeRoundMatches}
+          totalPrizeSlots={totalPrizeSlots}
+          copy={copy}
+        />
+      ) : null}
 
       <RulesFlowChart copy={copy} />
     </section>

@@ -1193,9 +1193,11 @@ export function ControlRoom({
 
       <section className={effectiveActiveViewId === "home" ? "room-shell is-home" : "room-shell"} id="top" aria-label={`${t(`nav.${activeView.id}`)} ${t("common.workspace")}`}>
         <HomeRoom
+          activeRound={visibleActiveRound}
           matches={matches}
           milestones={milestones}
           currentMilestoneValue={currentMilestoneValue}
+          rounds={visibleRounds}
           onSelectView={onSelectView}
           isActive={effectiveActiveViewId === "home"}
         />
