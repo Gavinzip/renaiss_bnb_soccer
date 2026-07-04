@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { dirname } from 'node:path'
 
 import { campaignMatches, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
+import { canonicalMatchId } from './round16-match-identity.mjs'
 import {
   getSharedInsiderGrantTicketsUsed,
   getTicketBreakdownForRound,
@@ -154,7 +155,7 @@ export function normalizeStateAllocations(state) {
 export function assertVoteInput(input, options = {}) {
   const walletAddress = normalizeAddress(input?.walletAddress)
   const roundId = normalizeId(input?.roundId)
-  const matchId = normalizeId(input?.matchId)
+  const matchId = canonicalMatchId(normalizeId(input?.matchId))
   const teamId = normalizeId(input?.teamId)
   const tickets = toPositiveInteger(input?.tickets)
   const resultIndex = options.resultIndex || buildMatchResultIndex(options.matchResults)

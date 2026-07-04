@@ -168,7 +168,7 @@ function createMatchResults({ generatedAtIso, matches }) {
           seasonId: FIFA_WORLD_CUP_SOURCE.seasonId,
           stageId: 'local-test-batch',
           matchId: `local-${match.id}`,
-          matchNumber: 73 + index,
+          matchNumber: 89 + index,
           matchStatus: 12,
           officialityStatus: 1,
           resultType: 1,

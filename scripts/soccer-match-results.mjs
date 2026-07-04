@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path'
 
 import { campaignMatches } from '../src/app/data/worldCupCampaign.js'
+import { canonicalMatchId } from './round16-match-identity.mjs'
 
 export const MATCH_RESULTS_VERSION = 1
 export const FIFA_WORLD_CUP_SOURCE = {
@@ -171,7 +172,7 @@ export function normalizeFifaTeam(team) {
 
 function normalizeMatchSourceRow(row) {
   if (!row || typeof row !== 'object') return null
-  const matchId = String(row.matchId || row.match_id || row.localMatchId || row.local_match_id || row.id || '').trim()
+  const matchId = canonicalMatchId(row.matchId || row.match_id || row.localMatchId || row.local_match_id || row.id)
   if (!matchId) return null
 
   const teamIds = Array.isArray(row.teamIds)
@@ -392,18 +393,29 @@ export function readMatchResultsSnapshot(path) {
   return {
     ...createEmptyMatchResultsSnapshot(),
     ...payload,
-    results: Array.isArray(payload.results) ? payload.results : [],
+    results: Array.isArray(payload.results)
+      ? payload.results.map((result) => ({
+        ...result,
+        matchId: canonicalMatchId(result?.matchId),
+      }))
+      : [],
     errors: Array.isArray(payload.errors) ? payload.errors : [],
   }
 }
 
 export function buildMatchResultIndex(snapshot) {
-  return new Map((Array.isArray(snapshot?.results) ? snapshot.results : []).map((result) => [result.matchId, result]))
+  return new Map((Array.isArray(snapshot?.results) ? snapshot.results : []).map((result) => [
+    canonicalMatchId(result?.matchId),
+    {
+      ...result,
+      matchId: canonicalMatchId(result?.matchId),
+    },
+  ]))
 }
 
 export function confirmedMatchResultFor(indexOrSnapshot, matchId) {
   const index = indexOrSnapshot instanceof Map ? indexOrSnapshot : buildMatchResultIndex(indexOrSnapshot)
-  const result = index.get(matchId)
+  const result = index.get(canonicalMatchId(matchId))
   return result?.resultStatus === 'confirmed' && result.winnerTeamId ? result : null
 }
 

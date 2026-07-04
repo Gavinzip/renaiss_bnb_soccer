@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { roundDefinitions } from '../src/app/data/worldCupCampaign.js'
 import { getTicketBreakdownForRound } from '../src/app/data/ticketEligibility.js'
+import { canonicalMatchId } from './round16-match-identity.mjs'
 import { readEnvFile, toNumber } from './lucky-draw/utils.mjs'
 import { findLedgerEntryByAddress, readLedgerPayload } from './soccer-ledger-api.mjs'
 import {
@@ -87,6 +88,7 @@ function parseArgs(argv) {
   args.prizeSlotCount = Math.max(0, Math.floor(args.prizeSlotCount || 0))
   args.alternateCount = Math.max(DEFAULT_ALTERNATE_COUNT, Math.floor(args.alternateCount || DEFAULT_ALTERNATE_COUNT))
   args.voteStore = normalizeVoteStoreMode(args.voteStore)
+  args.matchId = canonicalMatchId(args.matchId)
   return args
 }
 
@@ -145,7 +147,7 @@ function normalizeAddress(value) {
 function normalizeAllocation(row) {
   const walletAddress = normalizeAddress(row?.walletAddress)
   const roundId = String(row?.roundId || '').trim()
-  const matchId = String(row?.matchId || '').trim()
+  const matchId = canonicalMatchId(row?.matchId)
   const teamId = String(row?.teamId || '').trim()
   const tickets = toPositiveInteger(row?.tickets)
   if (!walletAddress || !roundId || !matchId || !teamId || tickets <= 0) return null

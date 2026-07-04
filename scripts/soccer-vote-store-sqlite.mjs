@@ -12,6 +12,10 @@ import {
   roundAllowsSharedInsiderGrantTickets,
 } from '../src/app/data/ticketEligibility.js'
 import {
+  LEGACY_TO_OFFICIAL_ROUND16_MATCH_IDS,
+  canonicalMatchId,
+} from './round16-match-identity.mjs'
+import {
   STATE_VERSION,
   allocationId,
   assertVoteInput,
@@ -100,11 +104,131 @@ function ensureSchema(db) {
       ON vote_events (event_hash)
       WHERE event_hash IS NOT NULL;
   `)
+  migrateLegacyRound16MatchIds(db)
   db.prepare(`
     INSERT INTO vote_meta (key, value)
     VALUES ('schemaVersion', ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(String(SQLITE_SCHEMA_VERSION))
+}
+
+function earlierIso(left, right) {
+  if (!left) return right
+  if (!right) return left
+  return Date.parse(left) <= Date.parse(right) ? left : right
+}
+
+function laterIso(left, right) {
+  if (!left) return right
+  if (!right) return left
+  return Date.parse(left) >= Date.parse(right) ? left : right
+}
+
+function updatePayloadMatchId(payloadJson, officialMatchId) {
+  const payload = parseEventPayload(payloadJson)
+  return JSON.stringify({
+    ...payload,
+    matchId: officialMatchId,
+  })
+}
+
+function migrateLegacyRound16MatchIds(db) {
+  const pairs = Object.entries(LEGACY_TO_OFFICIAL_ROUND16_MATCH_IDS)
+  if (pairs.length === 0) return null
+
+  const summary = {
+    allocationRowsMoved: 0,
+    allocationRowsMerged: 0,
+    eventRowsMoved: 0,
+  }
+
+  runImmediateTransaction(db, () => {
+    const selectLegacyAllocations = db.prepare(`
+      SELECT id, wallet_address, round_id, match_id, team_id, tickets, source, official, created_at, updated_at
+      FROM vote_allocations
+      WHERE round_id = 'round16' AND match_id = ?
+      ORDER BY created_at ASC, rowid ASC
+    `)
+    const selectOfficialAllocation = db.prepare(`
+      SELECT id, tickets, source, official, created_at, updated_at
+      FROM vote_allocations
+      WHERE wallet_address = ? AND round_id = 'round16' AND match_id = ? AND team_id = ?
+    `)
+    const updateOfficialAllocation = db.prepare(`
+      UPDATE vote_allocations
+      SET tickets = ?, source = ?, official = ?, created_at = ?, updated_at = ?
+      WHERE id = ?
+    `)
+    const deleteAllocation = db.prepare('DELETE FROM vote_allocations WHERE id = ?')
+    const moveAllocation = db.prepare(`
+      UPDATE vote_allocations
+      SET id = ?, match_id = ?
+      WHERE id = ?
+    `)
+    const selectLegacyEvents = db.prepare(`
+      SELECT rowid, payload_json
+      FROM vote_events
+      WHERE round_id = 'round16' AND match_id = ?
+      ORDER BY rowid ASC
+    `)
+    const moveEvent = db.prepare(`
+      UPDATE vote_events
+      SET match_id = ?, payload_json = ?
+      WHERE rowid = ?
+    `)
+
+    for (const [legacyMatchId, officialMatchId] of pairs) {
+      const legacyAllocations = selectLegacyAllocations.all(legacyMatchId)
+      for (const row of legacyAllocations) {
+        const officialId = allocationId({
+          walletAddress: row.wallet_address,
+          matchId: officialMatchId,
+          teamId: row.team_id,
+        })
+        const existing = selectOfficialAllocation.get(row.wallet_address, officialMatchId, row.team_id)
+        if (existing) {
+          updateOfficialAllocation.run(
+            toPositiveInteger(existing.tickets) + toPositiveInteger(row.tickets),
+            row.source || existing.source || 'server-vote-store-sqlite',
+            row.official || existing.official ? 1 : 0,
+            earlierIso(existing.created_at, row.created_at),
+            laterIso(existing.updated_at, row.updated_at),
+            existing.id,
+          )
+          deleteAllocation.run(row.id)
+          summary.allocationRowsMerged += 1
+        } else {
+          moveAllocation.run(officialId, officialMatchId, row.id)
+          summary.allocationRowsMoved += 1
+        }
+      }
+
+      const legacyEvents = selectLegacyEvents.all(legacyMatchId)
+      for (const row of legacyEvents) {
+        moveEvent.run(officialMatchId, updatePayloadMatchId(row.payload_json, officialMatchId), row.rowid)
+        summary.eventRowsMoved += 1
+      }
+    }
+
+    if (summary.allocationRowsMoved || summary.allocationRowsMerged || summary.eventRowsMoved) {
+      db.prepare(`
+        INSERT INTO vote_meta (key, value)
+        VALUES ('round16CanonicalMatchIdMigration', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(JSON.stringify({
+        ...summary,
+        migratedAt: nowIso(),
+        mapping: LEGACY_TO_OFFICIAL_ROUND16_MATCH_IDS,
+      }))
+    }
+  })
+
+  if (summary.allocationRowsMoved || summary.allocationRowsMerged || summary.eventRowsMoved) {
+    backfillVoteEventHashes(db)
+    console.log('[vote-store-sqlite] migrated legacy round16 match ids', JSON.stringify(summary))
+  }
+
+  return summary
 }
 
 function addColumnIfMissing(db, tableName, definition) {
@@ -217,6 +341,19 @@ function rowToAllocation(row) {
   }
 }
 
+function canonicalizeAllocationForWrite(allocation) {
+  const matchId = canonicalMatchId(allocation.matchId)
+  return {
+    ...allocation,
+    id: allocationId({
+      walletAddress: allocation.walletAddress,
+      matchId,
+      teamId: allocation.teamId,
+    }),
+    matchId,
+  }
+}
+
 function readMeta(db) {
   return Object.fromEntries(
     db.prepare('SELECT key, value FROM vote_meta').all().map((row) => [String(row.key), String(row.value)]),
@@ -255,6 +392,31 @@ function readVoteStateFromDatabase(db) {
     syncedFromProductionAt: meta.syncedFromProductionAt || null,
     productionOrigin: meta.productionOrigin || null,
     eventHashHead: hashRow?.event_hash || null,
+  }
+}
+
+function countLegacyRound16Allocations(db) {
+  const legacyIds = Object.keys(LEGACY_TO_OFFICIAL_ROUND16_MATCH_IDS)
+  if (legacyIds.length === 0) return 0
+  const placeholders = legacyIds.map(() => '?').join(', ')
+  return toPositiveInteger(db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM vote_allocations
+    WHERE round_id = 'round16' AND match_id IN (${placeholders})
+  `).get(...legacyIds)?.count)
+}
+
+function legacyRound16MigrationMeta(db) {
+  const value = db.prepare(`
+    SELECT value
+    FROM vote_meta
+    WHERE key = 'round16CanonicalMatchIdMigration'
+  `).get()?.value
+  if (!value) return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return { raw: value }
   }
 }
 
@@ -500,7 +662,10 @@ export function replaceSqliteVoteState({
         `).run(String(key), String(value))
       }
 
-      const allocationRows = (Array.isArray(allocations) ? allocations : []).map(normalizeAllocation).filter(Boolean)
+      const allocationRows = (Array.isArray(allocations) ? allocations : [])
+        .map(normalizeAllocation)
+        .filter(Boolean)
+        .map(canonicalizeAllocationForWrite)
       for (const [index, allocation] of allocationRows.entries()) {
         const createdAt = allocation.createdAt || nowIso()
         const updatedAt = allocation.updatedAt || createdAt
@@ -633,6 +798,8 @@ export function createSqliteVoteStore({ dbPath, statePath = '', previewPath = ''
         generatedAt: state.generatedAt,
         updatedAt: state.updatedAt,
         schemaVersion: SQLITE_SCHEMA_VERSION,
+        legacyRound16AllocationCount: countLegacyRound16Allocations(db),
+        round16CanonicalMatchIdMigration: legacyRound16MigrationMeta(db),
       }
     },
     close() {
