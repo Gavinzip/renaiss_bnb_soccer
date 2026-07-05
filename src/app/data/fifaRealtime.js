@@ -1,4 +1,4 @@
-import { canonicalMatchId } from "./matchIds";
+import { canonicalMatchId } from "./matchIds.js";
 
 export const FIFA_WORLD_CUP_SOURCE = {
   competitionId: "17",

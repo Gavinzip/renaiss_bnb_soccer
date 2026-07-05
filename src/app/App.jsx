@@ -49,7 +49,7 @@ import { installGoogleAnalytics, trackEvent, trackPageView } from "./utils/analy
 import { fetchJsonWithTimeout, isRequestAbortError } from "./utils/httpClient";
 import { preloadImage } from "./utils/preloadAssets";
 import { requestRenaissProviderSignOut } from "./utils/renaissAuth";
-import { canonicalMatchId, sameMatchId } from "./data/matchIds";
+import { canonicalMatchId, sameMatchId } from "./data/matchIds.js";
 import { getRoundTicketAvailability } from "./data/ticketEligibility";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;

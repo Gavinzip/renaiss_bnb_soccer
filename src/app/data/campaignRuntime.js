@@ -2,7 +2,7 @@ import { verifiedLedgerSnapshot } from "./ticketLedgerSnapshot";
 import { campaignMatches, roundDefinitions } from "./worldCupCampaign";
 import { estimateMultiPrizeChance } from "./ticketMath";
 import { toTicketInteger } from "./ticketEligibility";
-import { sameMatchId } from "./matchIds";
+import { sameMatchId } from "./matchIds.js";
 
 export const DEFAULT_VIEW_ID = "home";
 export const DEFAULT_ROUND_ID = "round32";

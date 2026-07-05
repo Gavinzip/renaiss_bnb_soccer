@@ -2,7 +2,7 @@ import { Award, CirclePlay, Gift, RotateCcw, Sparkles, Ticket } from "lucide-rea
 import { useEffect, useMemo, useRef, useState } from "react";
 import revealBackdrop from "../../assets/championship-trophy-renaiss-mark.webp";
 import { getMatchPrizeImageByMatchId, preloadRoundPrizeImages } from "../../data/matchPrizeImages";
-import { canonicalMatchId } from "../../data/matchIds";
+import { canonicalMatchId } from "../../data/matchIds.js";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import SideRays from "../SideRays/SideRays";

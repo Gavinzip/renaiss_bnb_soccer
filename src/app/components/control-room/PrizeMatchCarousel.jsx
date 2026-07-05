@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight, Gift } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { sameMatchId } from "../../data/matchIds";
+import { sameMatchId } from "../../data/matchIds.js";
 import { formatNumber } from "../../data/ticketMath";
 
 const swipeThreshold = 42;

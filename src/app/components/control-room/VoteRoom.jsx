@@ -10,7 +10,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
-import { sameMatchId } from "../../data/matchIds";
+import { sameMatchId } from "../../data/matchIds.js";
 import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
 import { preloadRoundPrizeImages } from "../../data/matchPrizeImages";
 import { compactAddress, formatNumber } from "../../data/ticketMath";

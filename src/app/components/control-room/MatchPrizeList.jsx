@@ -7,7 +7,7 @@ import {
 import { Fragment, useEffect, useRef } from "react";
 import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
 import { getMatchPrizeImage } from "../../data/matchPrizeImages";
-import { sameMatchId } from "../../data/matchIds";
+import { sameMatchId } from "../../data/matchIds.js";
 import { estimateMultiPrizeChance, formatNumber } from "../../data/ticketMath";
 import { MatchPrizeImageDialog } from "./MatchPrizeImageDialog";
 

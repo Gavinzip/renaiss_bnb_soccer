@@ -1,5 +1,5 @@
 import { TournamentArena, preloadTournamentArenaAssets } from "./TournamentArena";
-import { sameMatchId } from "../../data/matchIds";
+import { sameMatchId } from "../../data/matchIds.js";
 
 export function preloadRoomAssets() {
   return preloadTournamentArenaAssets();

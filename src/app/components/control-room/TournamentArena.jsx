@@ -15,7 +15,7 @@ import { useBorderGlow } from "../BorderGlow";
 import LightRays from "../LightRays/LightRays";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
-import { sameMatchId } from "../../data/matchIds";
+import { sameMatchId } from "../../data/matchIds.js";
 
 const voteableStatuses = new Set(["open", "closing_soon"]);
 const trophyRouteSocket = {
