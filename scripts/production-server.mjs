@@ -618,6 +618,12 @@ function drawExpectedChainId(networkKey = drawDefaultNetworkKey) {
   return String(network.chainId || drawNetworkDefinition(networkKey).chainId).trim() || drawNetworkDefinition(networkKey).chainId
 }
 
+function drawWinnersOutputPathForNetwork(networkKey = drawDefaultNetworkKey) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  if (selectedNetworkKey === 'mainnet') return drawWinnersPath
+  return readEnvString('DRAW_TESTNET_WINNERS_PATH') || readEnvString('SOCCER_TESTNET_DRAW_WINNERS_PATH')
+}
+
 function expectedRoundMatchIds(roundId) {
   return campaignMatches
     .filter((match) => String(match.roundId || '').trim() === roundId)
@@ -1048,7 +1054,7 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
     let stdout = ''
     let stderr = ''
     let settled = false
-    const child = spawn(process.execPath, args, {
+    const child = spawn(process.execPath, ['--', ...args], {
       cwd: repoRoot,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1151,7 +1157,8 @@ function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const network = drawNetworkEnv(selectedNetworkKey)
   const contractAddress = drawContractAddress(selectedNetworkKey)
-  return {
+  const winnersOutPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
+  const childEnv = {
     ...process.env,
     BSC_CHAIN_ID: drawExpectedChainId(selectedNetworkKey),
     BSC_RPC_URL: network.rpcUrl,
@@ -1162,12 +1169,19 @@ function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
     DRAW_OPERATOR_ADDRESS: network.operatorAddress,
     DRAW_ADMIN_ADDRESSES: network.adminAddresses,
   }
+  if (winnersOutPath) {
+    childEnv.SOCCER_DRAW_WINNERS_PATH = winnersOutPath
+  } else {
+    delete childEnv.SOCCER_DRAW_WINNERS_PATH
+  }
+  return childEnv
 }
 
 function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const network = drawNetworkEnv(selectedNetworkKey)
   const broadcast = action === 'broadcast'
+  const winnersOutPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
   const startedAt = new Date().toISOString()
   const args = [
     fileURLToPath(new URL('./run-lucky-draw-round-level.mjs', import.meta.url)),
@@ -1177,11 +1191,12 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
     drawContractAddress(selectedNetworkKey),
     '--ledger',
     matchDrawLedgerPath,
-    '--winners-out',
-    drawWinnersPath,
     '--round-id',
     roundId,
   ]
+  if (winnersOutPath) {
+    args.push('--winners-out', winnersOutPath)
+  }
   if (process.env.DRAW_MATCH_BATCH_SIZE) {
     args.push('--match-batch-size', process.env.DRAW_MATCH_BATCH_SIZE)
   }
@@ -1206,7 +1221,7 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
     let stdout = ''
     let stderr = ''
     let settled = false
-    const child = spawn(process.execPath, args, {
+    const child = spawn(process.execPath, ['--', ...args], {
       cwd: repoRoot,
       env: drawNetworkChildEnv(selectedNetworkKey),
       stdio: ['ignore', 'pipe', 'pipe'],

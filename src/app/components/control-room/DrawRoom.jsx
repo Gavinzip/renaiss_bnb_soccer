@@ -497,6 +497,35 @@ function drawNetworkChainId(network) {
   return normalizeChainId(network?.chainIdHex || network?.chainId || "0x38");
 }
 
+function walletChainParamsForNetwork(network, t) {
+  const chainId = drawNetworkChainId(network);
+  if (chainId === "0x38") {
+    return {
+      chainId,
+      chainName: "BNB Chain",
+      nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+      rpcUrls: ["https://bsc-dataseed.binance.org/"],
+      blockExplorerUrls: ["https://bscscan.com"],
+    };
+  }
+  if (chainId === "0x61") {
+    return {
+      chainId,
+      chainName: "BNB Smart Chain Testnet",
+      nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
+      rpcUrls: ["https://data-seed-prebsc-1-s1.bnbchain.org:8545/"],
+      blockExplorerUrls: ["https://testnet.bscscan.com"],
+    };
+  }
+  return {
+    chainId,
+    chainName: drawNetworkLabel(network, t),
+    nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+    rpcUrls: [],
+    blockExplorerUrls: [],
+  };
+}
+
 function formatDurationSeconds(value) {
   const totalSeconds = Math.max(0, Math.floor(Number(value) || 0));
   const hours = Math.floor(totalSeconds / 3600);
@@ -747,6 +776,64 @@ function DrawOperatorWallet({ activeDraw, t }) {
     });
   }
 
+  async function ensureTargetChain() {
+    if (!connectedWallet.provider?.request) {
+      setIssue(t("draw.operatorWalletMissing"));
+      return false;
+    }
+
+    const currentChainId = normalizeChainId(
+      await connectedWallet.provider.request({ method: "eth_chainId" }).catch(() => connectedWallet.chainId),
+    );
+    if (currentChainId === targetDrawChainId) {
+      setConnectedWallet((current) => ({ ...current, chainId: targetDrawChainId }));
+      return true;
+    }
+
+    setBusyAction("switch-chain");
+    try {
+      await connectedWallet.provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: targetDrawChainId }],
+      });
+    } catch (error) {
+      const code = Number(error?.code ?? error?.data?.originalError?.code);
+      try {
+        if (code !== 4902) throw error;
+        const params = walletChainParamsForNetwork(selectedNetwork, t);
+        if (!params.rpcUrls.length) throw error;
+        await connectedWallet.provider.request({
+          method: "wallet_addEthereumChain",
+          params: [params],
+        });
+        await connectedWallet.provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: targetDrawChainId }],
+        });
+      } catch (switchError) {
+        setIssue(switchError instanceof Error ? switchError.message : t("draw.operatorWalletFailed"));
+        setBusyAction("");
+        return false;
+      }
+    }
+
+    let nextChainId = "";
+    try {
+      nextChainId = normalizeChainId(await connectedWallet.provider.request({ method: "eth_chainId" }));
+    } catch (error) {
+      setIssue(error instanceof Error ? error.message : t("draw.operatorWalletFailed"));
+      setBusyAction("");
+      return false;
+    }
+    setConnectedWallet((current) => ({ ...current, chainId: nextChainId }));
+    setBusyAction("");
+    if (nextChainId !== targetDrawChainId) {
+      setIssue(t("draw.operatorWalletWrongChain", { chain: drawNetworkLabel(selectedNetwork, t) }));
+      return false;
+    }
+    return true;
+  }
+
   function selectDrawNetwork(networkKey) {
     if (busyAction || adminStatus?.running) return;
     setSelectedNetworkKey(normalizeDrawNetworkKey(networkKey));
@@ -824,10 +911,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
       setIssue(t("draw.operatorWalletMissing"));
       return;
     }
-    if (!targetMatched) {
-      setIssue(t("draw.operatorWalletWrongChain", { chain: drawNetworkLabel(selectedNetwork, t) }));
-      return;
-    }
+    if (!(await ensureTargetChain())) return;
     const roundReadiness = drawRoundReadinessSnapshot();
     if (!roundReadiness.complete) {
       setIssue(t("draw.operatorDrawFinalsBlocked", {
@@ -893,10 +977,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
       setIssue(t("draw.operatorWalletMissing"));
       return;
     }
-    if (!targetMatched) {
-      setIssue(t("draw.operatorWalletWrongChain", { chain: drawNetworkLabel(selectedNetwork, t) }));
-      return;
-    }
+    if (!(await ensureTargetChain())) return;
     const roundReadiness = drawRoundReadinessSnapshot();
     if (broadcast && !roundReadiness.complete) {
       setIssue(t("draw.operatorDrawFinalsBlocked", {
@@ -965,20 +1046,10 @@ function DrawOperatorWallet({ activeDraw, t }) {
   async function switchTargetChain() {
     if (!connectedWallet.provider?.request) return;
     setIssue("");
-    setBusyAction("switch-chain");
     try {
-      await connectedWallet.provider.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: targetDrawChainId }],
-      });
-      setConnectedWallet((current) => ({
-        ...current,
-        chainId: targetDrawChainId,
-      }));
+      await ensureTargetChain();
     } catch (error) {
       setIssue(error instanceof Error ? error.message : t("draw.operatorWalletFailed"));
-    } finally {
-      setBusyAction("");
     }
   }
 
@@ -998,8 +1069,8 @@ function DrawOperatorWallet({ activeDraw, t }) {
     && currentAdminStatus?.allowlistConfigured,
   );
   const adminReady = contractExecutionReady && ledgerLocked;
-  const canLockLedger = connected && targetMatched && adminBaseReady && roundReadiness.complete && !operationBusy;
-  const canRunDraw = connected && targetMatched && adminReady && !operationBusy;
+  const canLockLedger = connected && adminBaseReady && roundReadiness.complete && !operationBusy;
+  const canRunDraw = connected && adminReady && !operationBusy;
   const canBroadcastDraw = canRunDraw && roundReadiness.complete;
   const readinessItems = drawAdminReadinessItems(currentAdminStatus, activeDraw.id, t);
   const missingReadinessItems = readinessItems.filter((item) => !item.ready);

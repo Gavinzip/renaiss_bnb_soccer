@@ -467,7 +467,8 @@ if (!contractAddress) {
   throw new Error('Draw contract address is required. Pass --contract <address> or set DRAW_CONTRACT_ADDRESS.')
 }
 
-const ledger = JSON.parse(readFileSync(new URL(`../${ledgerPath}`, import.meta.url), 'utf8'))
+const ledgerFilePath = resolveOutputPath(ledgerPath)
+const ledger = JSON.parse(readFileSync(ledgerFilePath, 'utf8'))
 const roundLedger = normalizeRoundLedger({ ledger, env, ledgerPath })
 const expectedChainId = BigInt(env.BSC_CHAIN_ID || 56)
 const provider = new JsonRpcProvider(required(env, 'BSC_RPC_URL'), Number(expectedChainId))
