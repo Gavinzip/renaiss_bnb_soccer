@@ -18,6 +18,17 @@ export const enLocale = {
       "product": "World Cup",
       "homeAria": "Renaiss World Cup prediction campaign home"
     },
+    "verificationStats": {
+      "eyebrow": "Hidden stats",
+      "title": "Verification counts",
+      "xVerified": "X verified",
+      "voteEligible": "Full vote eligibility passed",
+      "people": "people",
+      "refresh": "Refresh",
+      "updatedAt": "Updated {time}",
+      "noTimestamp": "No update time yet",
+      "loadFailed": "Failed to load: {message}"
+    },
     "nav": {
       "aria": "Campaign navigation",
       "home": "Home",

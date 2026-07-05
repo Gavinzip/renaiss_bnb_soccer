@@ -18,6 +18,17 @@ export const zhHantLocale = {
       "product": "World Cup",
       "homeAria": "Renaiss 世界盃預測活動首頁"
     },
+    "verificationStats": {
+      "eyebrow": "隱藏統計",
+      "title": "驗證人數",
+      "xVerified": "X 驗證已通過",
+      "voteEligible": "完整投票資格已通過",
+      "people": "人",
+      "refresh": "重新整理",
+      "updatedAt": "更新時間 {time}",
+      "noTimestamp": "尚未取得更新時間",
+      "loadFailed": "讀取失敗：{message}"
+    },
     "nav": {
       "aria": "活動導覽",
       "home": "首頁",

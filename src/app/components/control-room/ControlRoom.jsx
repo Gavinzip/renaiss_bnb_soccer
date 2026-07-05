@@ -17,7 +17,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import renaissLogo from "../../assets/renaiss-logo-mark.webp";
 import { commandViews } from "../../data/campaignRuntime";
@@ -48,6 +48,8 @@ const LazyDrawRoom = lazyNamed(roomLoaders.draw, "DrawRoom");
 const LazyWinnersRoom = lazyNamed(roomLoaders.winners, "WinnersRoom");
 const roomPreloadCache = new Map();
 const ADMIN_ONLY_ROUND_IDS = new Set(["round32"]);
+const BRAND_STATS_CLICK_WINDOW_MS = 3000;
+const VERIFICATION_STATS_ENDPOINT = "/api/auth/verification-stats";
 
 function preloadRoom(viewId) {
   const loader = roomLoaders[viewId];
@@ -538,6 +540,69 @@ function getRoundRailDetail(round, draw, isActive, remainingRoundTickets, roundS
   };
 }
 
+function VerificationStatsPanel({
+  loading,
+  issue,
+  stats,
+  onClose,
+  onRefresh,
+  t,
+}) {
+  const counts = stats?.counts || {};
+  const xVerified = Number.isFinite(Number(counts.xVerified)) ? Number(counts.xVerified) : 0;
+  const voteEligible = Number.isFinite(Number(counts.voteEligible)) ? Number(counts.voteEligible) : 0;
+  const generatedAt = stats?.generatedAt ? new Date(stats.generatedAt) : null;
+  const generatedLabel = generatedAt && Number.isFinite(generatedAt.getTime())
+    ? generatedAt.toLocaleString()
+    : "";
+
+  return (
+    <div className="verification-stats-panel" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <section
+        className="verification-stats-panel__card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("verificationStats.title")}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="verification-stats-panel__head">
+          <span>{t("verificationStats.eyebrow")}</span>
+          <button type="button" onClick={onClose} aria-label={t("common.close")}>
+            <X size={18} strokeWidth={2.4} />
+          </button>
+        </div>
+        <h2>{t("verificationStats.title")}</h2>
+        <div className="verification-stats-panel__grid">
+          <output>
+            <span>{t("verificationStats.xVerified")}</span>
+            <strong>{loading ? "..." : formatNumber(xVerified)}</strong>
+            <small>{t("verificationStats.people")}</small>
+          </output>
+          <output>
+            <span>{t("verificationStats.voteEligible")}</span>
+            <strong>{loading ? "..." : formatNumber(voteEligible)}</strong>
+            <small>{t("verificationStats.people")}</small>
+          </output>
+        </div>
+        {issue ? (
+          <p className="verification-stats-panel__issue">
+            <CircleAlert size={15} strokeWidth={2.3} />
+            <span>{issue}</span>
+          </p>
+        ) : null}
+        <div className="verification-stats-panel__foot">
+          <span>{generatedLabel ? t("verificationStats.updatedAt", { time: generatedLabel }) : t("verificationStats.noTimestamp")}</span>
+          <button type="button" onClick={onRefresh} disabled={loading}>
+            {loading ? t("common.loading") : t("verificationStats.refresh")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function RoundSwitch({
   rounds,
   activeRoundId,
@@ -988,9 +1053,14 @@ export function ControlRoom({
   const headerWalletActionable = authIdentityActionable || ticketSourceActionable;
   const HeaderWalletIdentity = headerWalletActionable ? "button" : "div";
   const headerTicketCount = toLedgerInteger(remainingRoundTickets);
+  const brandStatsClickRef = useRef({ count: 0, lastAt: 0, timerId: null });
   const [ticketSourceOpen, setTicketSourceOpen] = useState(false);
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
   const [xFollowOverlayDismissed, setXFollowOverlayDismissed] = useState(false);
+  const [verificationStatsOpen, setVerificationStatsOpen] = useState(false);
+  const [verificationStatsLoading, setVerificationStatsLoading] = useState(false);
+  const [verificationStatsIssue, setVerificationStatsIssue] = useState("");
+  const [verificationStats, setVerificationStats] = useState(null);
   const xFollowGateRequired = authConfig?.xFollowGate?.required !== false;
   const xAccountEligibilityRequired = authConfig?.xAccountEligibility?.required !== false;
   const preVoteGateRequired = xFollowGateRequired || xAccountEligibilityRequired;
@@ -1014,6 +1084,64 @@ export function ControlRoom({
     && !(xFollowOverlayDismissed && canDismissXFollowOverlay)
     && showXFollowVerifyButton
     && xFollowPanelOpen;
+
+  const loadVerificationStats = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    setVerificationStatsLoading(true);
+    setVerificationStatsIssue("");
+
+    try {
+      const response = await fetch(VERIFICATION_STATS_ENDPOINT, {
+        headers: { accept: "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || `HTTP ${response.status}`);
+      }
+      setVerificationStats(payload);
+    } catch (error) {
+      setVerificationStatsIssue(t("verificationStats.loadFailed", {
+        message: error instanceof Error ? error.message : String(error || ""),
+      }));
+    } finally {
+      setVerificationStatsLoading(false);
+    }
+  }, [t]);
+
+  const openVerificationStats = useCallback(() => {
+    setVerificationStatsOpen(true);
+    loadVerificationStats();
+  }, [loadVerificationStats]);
+
+  const handleBrandLockupClick = useCallback((event) => {
+    const clickState = brandStatsClickRef.current;
+    const now = Date.now();
+    if (now - clickState.lastAt > BRAND_STATS_CLICK_WINDOW_MS) {
+      clickState.count = 0;
+    }
+
+    clickState.lastAt = now;
+    clickState.count += 1;
+
+    if (clickState.timerId) window.clearTimeout(clickState.timerId);
+    clickState.timerId = window.setTimeout(() => {
+      clickState.count = 0;
+      clickState.timerId = null;
+    }, BRAND_STATS_CLICK_WINDOW_MS);
+
+    if (clickState.count >= 3) {
+      if (clickState.timerId) window.clearTimeout(clickState.timerId);
+      clickState.count = 0;
+      clickState.timerId = null;
+      event.preventDefault();
+      openVerificationStats();
+      return;
+    }
+
+    onSelectView("home");
+  }, [onSelectView, openVerificationStats]);
 
   async function handleLogout() {
     if (typeof window === "undefined") return;
@@ -1058,6 +1186,11 @@ export function ControlRoom({
   useEffect(() => {
     if (effectiveActiveViewId !== "winners") setWinnerRevealStarted(false);
   }, [effectiveActiveViewId]);
+
+  useEffect(() => () => {
+    const timerId = brandStatsClickRef.current.timerId;
+    if (timerId) window.clearTimeout(timerId);
+  }, []);
 
   useEffect(() => {
     let cancelPreloadJobs = () => {};
@@ -1108,7 +1241,14 @@ export function ControlRoom({
       data-local-tools={localToolsEnabled ? "true" : "false"}
     >
       <header className={mobileNavOpen ? "control-header is-mobile-nav-open" : "control-header"} aria-label={t("nav.aria")}>
-        <Magnet as="button" className="brand-lockup" type="button" strength={80} onClick={() => onSelectView("home")} aria-label={t("brand.homeAria")}>
+        <Magnet
+          as="button"
+          className="brand-lockup"
+          type="button"
+          strength={80}
+          onClick={handleBrandLockupClick}
+          aria-label={t("brand.homeAria")}
+        >
           <img src={renaissLogo} alt="" aria-hidden="true" />
           <span>
             <strong>{t("brand.name")}</strong>
@@ -1176,6 +1316,17 @@ export function ControlRoom({
           ) : null}
         </section>
       </header>
+
+      {verificationStatsOpen ? (
+        <VerificationStatsPanel
+          loading={verificationStatsLoading}
+          issue={verificationStatsIssue}
+          stats={verificationStats}
+          onClose={() => setVerificationStatsOpen(false)}
+          onRefresh={loadVerificationStats}
+          t={t}
+        />
+      ) : null}
 
       {ticketSourceOpen ? (
         <WalletTicketSourceDialog

@@ -88,6 +88,32 @@ function recordFireflyUid(record) {
   return cleanFireflyUid(record?.fireflyUid ?? record?.ffAccountUid ?? record?.ff_account_uid)
 }
 
+function eligibilityPersonKeys(key, record) {
+  const keys = []
+  const walletAddress = normalizeAddress(record?.walletAddress)
+  if (walletAddress) keys.push(`wallet:${walletAddress}`)
+
+  const xUserId = cleanXUserId(record?.xUserId)
+  if (xUserId) keys.push(`x:${xUserId}`)
+
+  const [, legacyXUserId] = String(key || '').split(':x:')
+  if (cleanXUserId(legacyXUserId)) keys.push(`x:${legacyXUserId}`)
+
+  return keys.length ? [...new Set(keys)] : [`record:${key}`]
+}
+
+function mergePersonKeys(groups, keys) {
+  const existingGroups = [...new Set(keys.map((key) => groups.get(key)).filter(Boolean))]
+  const canonical = existingGroups[0] || keys[0]
+
+  for (const [key, group] of groups.entries()) {
+    if (existingGroups.includes(group)) groups.set(key, canonical)
+  }
+  for (const key of keys) groups.set(key, canonical)
+
+  return canonical
+}
+
 function recordHasClaimedFireflyUid(record) {
   return Boolean(recordFireflyUid(record))
 }
@@ -369,6 +395,24 @@ export function createXAccountEligibilityConfig({ authDir, env = process.env }) 
       DEFAULT_CACHE_TTL_SECONDS,
       0,
     ),
+  }
+}
+
+export function getXAccountEligibilityStats(config) {
+  const state = readState(config.path)
+  const personGroups = new Map()
+  let eligibleRecords = 0
+
+  for (const [key, record] of Object.entries(state.checks || {})) {
+    if (!eligibleRecordCanPass(record)) continue
+    eligibleRecords += 1
+    mergePersonKeys(personGroups, eligibilityPersonKeys(key, record))
+  }
+
+  return {
+    updatedAt: state.updatedAt || null,
+    eligibleRecords,
+    eligiblePeople: new Set(personGroups.values()).size,
   }
 }
 

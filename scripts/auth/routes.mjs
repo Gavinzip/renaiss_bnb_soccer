@@ -42,12 +42,14 @@ import {
 import {
   clearXFollowSkipCookie,
   createXFollowGateConfig,
+  getXFollowVerificationStats,
   getXFollowStatus,
   skipXFollow,
   verifyXFollow,
 } from './x-follow-gate.mjs'
 import {
   createXAccountEligibilityConfig,
+  getXAccountEligibilityStats,
   getXAccountEligibilityStatus,
   verifyXAccountEligibility,
 } from './x-account-eligibility.mjs'
@@ -588,6 +590,34 @@ export async function handleAuthRoute({
       200,
       getXAccountEligibilityStatus(auth, session, request, { xFollowStatus: xFollow }),
     )
+    return true
+  }
+
+  if (routePathname === '/api/auth/verification-stats') {
+    if (request.method !== 'GET') {
+      sendJsonResponse(sendJson, request, response, 405, { ok: false, error: 'GET required.' })
+      return true
+    }
+
+    const xFollowStats = getXFollowVerificationStats(auth.xFollowGateConfig)
+    const eligibilityStats = getXAccountEligibilityStats(auth.xAccountEligibilityConfig)
+    sendJsonResponse(sendJson, request, response, 200, {
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      counts: {
+        xVerified: xFollowStats.verifiedPeople,
+        voteEligible: eligibilityStats.eligiblePeople,
+      },
+      sources: {
+        xFollow: {
+          updatedAt: xFollowStats.updatedAt,
+          targetHandle: xFollowStats.targetHandle,
+        },
+        xAccountEligibility: {
+          updatedAt: eligibilityStats.updatedAt,
+        },
+      },
+    })
     return true
   }
 

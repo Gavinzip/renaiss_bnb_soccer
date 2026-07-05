@@ -178,6 +178,33 @@ function readState(path) {
   }
 }
 
+function verifiedPersonKeys(key, record) {
+  const keys = []
+  const walletAddress = normalizeWalletAddress(record?.walletAddress)
+  if (walletAddress) keys.push(`wallet:${walletAddress}`)
+
+  const provider = String(record?.provider || '').trim().toLowerCase()
+  const providerUserId = String(record?.providerUserId || '').trim()
+  if (provider && providerUserId) keys.push(`${provider}:${providerUserId}`)
+
+  const legacyXUserId = String(key || '').split(':').pop()
+  if (/^\d{1,32}$/.test(legacyXUserId)) keys.push(`x:${legacyXUserId}`)
+
+  return keys.length ? [...new Set(keys)] : [`record:${key}`]
+}
+
+function mergePersonKeys(groups, keys) {
+  const existingGroups = [...new Set(keys.map((key) => groups.get(key)).filter(Boolean))]
+  const canonical = existingGroups[0] || keys[0]
+
+  for (const [key, group] of groups.entries()) {
+    if (existingGroups.includes(group)) groups.set(key, canonical)
+  }
+  for (const key of keys) groups.set(key, canonical)
+
+  return canonical
+}
+
 function writeState(path, state) {
   writeJsonFileAtomic(path, {
     ...state,
@@ -553,6 +580,25 @@ export function createXFollowGateConfig({ authDir, env = process.env }) {
       ? env.AUTH_COOKIE_SECURE !== '0'
       : String(env.PUBLIC_APP_ORIGIN || env.AUTH_PUBLIC_ORIGIN || '').startsWith('https://'),
     apiBaseUrl: String(env.X_API_BASE_URL || 'https://api.x.com/2').replace(/\/$/, ''),
+  }
+}
+
+export function getXFollowVerificationStats(config) {
+  const state = readState(config.path)
+  const personGroups = new Map()
+  let verifiedRecords = 0
+
+  for (const [key, record] of Object.entries(state.verifications || {})) {
+    if (!record || record.status !== 'verified') continue
+    verifiedRecords += 1
+    mergePersonKeys(personGroups, verifiedPersonKeys(key, record))
+  }
+
+  return {
+    targetHandle: config.targetHandle,
+    updatedAt: state.updatedAt || null,
+    verifiedRecords,
+    verifiedPeople: new Set(personGroups.values()).size,
   }
 }
 

@@ -18,6 +18,17 @@ export const koLocale = {
       "product": "World Cup",
       "homeAria": "Renaiss 월드컵 예측 이벤트 홈"
     },
+    "verificationStats": {
+      "eyebrow": "숨김 통계",
+      "title": "인증 인원",
+      "xVerified": "X 인증 완료",
+      "voteEligible": "전체 투표 자격 완료",
+      "people": "명",
+      "refresh": "새로고침",
+      "updatedAt": "업데이트 {time}",
+      "noTimestamp": "업데이트 시간이 없습니다",
+      "loadFailed": "불러오기 실패: {message}"
+    },
     "nav": {
       "aria": "이벤트 내비게이션",
       "home": "홈",
