@@ -111,6 +111,62 @@
       "fifaMatchNumber": 88,
       "teamIds": ["australia", "egypt"],
       "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M89",
+      "fifaMatchId": "400021533",
+      "fifaMatchNumber": 89,
+      "teamIds": ["paraguay", "france"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M90",
+      "fifaMatchId": "400021530",
+      "fifaMatchNumber": 90,
+      "teamIds": ["canada", "morocco"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M91",
+      "fifaMatchId": "400021532",
+      "fifaMatchNumber": 91,
+      "teamIds": ["brazil", "norway"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M92",
+      "fifaMatchId": "400021531",
+      "fifaMatchNumber": 92,
+      "teamIds": ["mexico", "england"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M93",
+      "fifaMatchId": "400021529",
+      "fifaMatchNumber": 93,
+      "teamIds": ["portugal", "spain"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M94",
+      "fifaMatchId": "400021534",
+      "fifaMatchNumber": 94,
+      "teamIds": ["united-states", "belgium"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M95",
+      "fifaMatchId": "400021528",
+      "fifaMatchNumber": 95,
+      "teamIds": ["argentina", "egypt"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M96",
+      "fifaMatchId": "400021535",
+      "fifaMatchNumber": 96,
+      "teamIds": ["switzerland", "colombia"],
+      "enforceTeamMatch": true
     }
   ]
 }
