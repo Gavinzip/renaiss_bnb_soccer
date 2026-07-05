@@ -22,7 +22,11 @@ import { fetchJsonWithTimeout } from "../../utils/httpClient";
 import { getLegacyWalletProviders, normalizeWalletProviders } from "../../utils/walletProviders";
 
 const drawStepIds = ["results", "eligible", "snapshot", "reveal"];
-const targetDrawChainId = normalizeChainId(import.meta.env.VITE_DRAW_CHAIN_ID || "0x38");
+const fallbackDrawNetworks = [
+  { key: "mainnet", label: "BNB Chain", chainId: "56", chainIdHex: "0x38" },
+  { key: "testnet", label: "BNB Testnet", chainId: "97", chainIdHex: "0x61" },
+];
+const defaultDrawNetworkKey = normalizeDrawNetworkKey(import.meta.env.VITE_DRAW_NETWORK || "mainnet");
 const drawAdminCheckTimeoutMs = 60000;
 const drawAdminBroadcastTimeoutMs = 14 * 60 * 1000;
 
@@ -30,6 +34,14 @@ function drawAdminEndpoint(path) {
   const apiOrigin = String(import.meta.env.VITE_DRAW_ADMIN_API_ORIGIN || import.meta.env.VITE_LOCAL_API_ORIGIN || "").replace(/\/$/, "");
   if (!apiOrigin || import.meta.env.PROD) return path;
   return `${apiOrigin}${path}`;
+}
+
+function drawAdminStatusEndpoint(networkKey, roundId) {
+  const params = new URLSearchParams();
+  if (networkKey) params.set("network", networkKey);
+  if (roundId) params.set("roundId", roundId);
+  const query = params.toString();
+  return drawAdminEndpoint(`/api/draw-admin/status${query ? `?${query}` : ""}`);
 }
 
 export function preloadRoomAssets() {
@@ -429,6 +441,46 @@ function normalizeChainId(value) {
   return Number.isFinite(numeric) ? `0x${numeric.toString(16)}` : chainId;
 }
 
+function normalizeDrawNetworkKey(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (!key || key === "mainnet" || key === "bsc" || key === "bnb" || key === "56" || key === "0x38") return "mainnet";
+  if (key === "testnet" || key === "bsc-testnet" || key === "bnb-testnet" || key === "97" || key === "0x61") return "testnet";
+  return "mainnet";
+}
+
+function drawNetworkOptions(adminStatus) {
+  const networks = Array.isArray(adminStatus?.networks) && adminStatus.networks.length > 0
+    ? adminStatus.networks
+    : fallbackDrawNetworks;
+  const seen = new Set();
+  return networks
+    .map((network) => ({
+      ...network,
+      key: normalizeDrawNetworkKey(network?.key || network?.chainId || network?.chainIdHex),
+      label: network?.label || (normalizeChainId(network?.chainIdHex || network?.chainId) === "0x61" ? "BNB Testnet" : "BNB Chain"),
+    }))
+    .filter((network) => {
+      if (seen.has(network.key)) return false;
+      seen.add(network.key);
+      return true;
+    });
+}
+
+function selectedDrawNetwork(adminStatus, selectedNetworkKey) {
+  const key = normalizeDrawNetworkKey(selectedNetworkKey);
+  return drawNetworkOptions(adminStatus).find((network) => network.key === key) || fallbackDrawNetworks[0];
+}
+
+function statusForSelectedNetwork(adminStatus, selectedNetworkKey) {
+  if (!adminStatus) return null;
+  const selectedNetwork = selectedDrawNetwork(adminStatus, selectedNetworkKey);
+  return {
+    ...adminStatus,
+    ...selectedNetwork,
+    networkKey: selectedNetwork.key,
+  };
+}
+
 function chainLabel(chainId, t) {
   const normalized = normalizeChainId(chainId);
   if (!normalized) return t("draw.operatorWalletChainUnknown");
@@ -437,8 +489,42 @@ function chainLabel(chainId, t) {
   return normalized;
 }
 
-function targetChainLabel(t) {
-  return chainLabel(targetDrawChainId, t);
+function drawNetworkLabel(network, t) {
+  return network?.label || chainLabel(network?.chainIdHex || network?.chainId, t);
+}
+
+function drawNetworkChainId(network) {
+  return normalizeChainId(network?.chainIdHex || network?.chainId || "0x38");
+}
+
+function formatDurationSeconds(value) {
+  const totalSeconds = Math.max(0, Math.floor(Number(value) || 0));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+function elapsedSecondsSince(startedAt, nowMs) {
+  const startedMs = Date.parse(startedAt || "");
+  if (!Number.isFinite(startedMs)) return 0;
+  return Math.max(0, Math.floor((nowMs - startedMs) / 1000));
+}
+
+function durationSecondsBetween(startedAt, finishedAt) {
+  const startedMs = Date.parse(startedAt || "");
+  const finishedMs = Date.parse(finishedAt || "");
+  if (!Number.isFinite(startedMs) || !Number.isFinite(finishedMs) || finishedMs < startedMs) return 0;
+  return Math.round((finishedMs - startedMs) / 1000);
+}
+
+function formatRunTimestamp(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString();
 }
 
 function roundLedgerSummaryFor(adminStatus, roundId) {
@@ -496,6 +582,9 @@ function DrawOperatorWallet({ activeDraw, t }) {
   const [adminStatus, setAdminStatus] = useState(null);
   const [adminStatusIssue, setAdminStatusIssue] = useState("");
   const [runResult, setRunResult] = useState(null);
+  const [selectedNetworkKey, setSelectedNetworkKey] = useState(defaultDrawNetworkKey);
+  const [activeRun, setActiveRun] = useState(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [connectedWallet, setConnectedWallet] = useState({
     address: "",
     chainId: "",
@@ -503,6 +592,8 @@ function DrawOperatorWallet({ activeDraw, t }) {
     provider: null,
   });
   const connected = Boolean(connectedWallet.address);
+  const selectedNetwork = selectedDrawNetwork(adminStatus, selectedNetworkKey);
+  const targetDrawChainId = drawNetworkChainId(selectedNetwork);
   const targetMatched = connected && normalizeChainId(connectedWallet.chainId) === targetDrawChainId;
 
   useEffect(() => {
@@ -574,7 +665,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
 
   useEffect(() => {
     let active = true;
-    fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/status"), {
+    fetchJsonWithTimeout(drawAdminStatusEndpoint(selectedNetworkKey, activeDraw.id), {
       timeoutMs: 10000,
     })
       .then(({ payload }) => {
@@ -590,11 +681,25 @@ function DrawOperatorWallet({ activeDraw, t }) {
     return () => {
       active = false;
     };
-  }, [t]);
+  }, [activeDraw.id, selectedNetworkKey, t]);
+
+  useEffect(() => {
+    if (!busyAction && !adminStatus?.running && activeRun?.status !== "running") return undefined;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [activeRun?.status, adminStatus?.running, busyAction]);
+
+  useEffect(() => {
+    if (!adminStatus?.running) return undefined;
+    const timer = window.setInterval(() => {
+      refreshAdminStatus();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [adminStatus?.running, selectedNetworkKey, activeDraw.id]);
 
   async function refreshAdminStatus() {
     try {
-      const { payload } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/status"), {
+      const { payload } = await fetchJsonWithTimeout(drawAdminStatusEndpoint(selectedNetworkKey, activeDraw.id), {
         timeoutMs: 10000,
       });
       setAdminStatus(payload);
@@ -642,6 +747,75 @@ function DrawOperatorWallet({ activeDraw, t }) {
     });
   }
 
+  function selectDrawNetwork(networkKey) {
+    if (busyAction || adminStatus?.running) return;
+    setSelectedNetworkKey(normalizeDrawNetworkKey(networkKey));
+    setIssue("");
+    setRunResult(null);
+  }
+
+  function beginOperatorRun(action, roundId) {
+    const startedAt = new Date().toISOString();
+    setNowMs(Date.now());
+    setActiveRun({
+      action,
+      roundId,
+      networkKey: selectedNetworkKey,
+      networkLabel: drawNetworkLabel(selectedNetwork, t),
+      status: "running",
+      ok: false,
+      startedAt,
+      finishedAt: null,
+      durationSeconds: null,
+      code: "",
+      error: "",
+    });
+  }
+
+  function finishOperatorRun(payload, error = null) {
+    const finishedAt = new Date().toISOString();
+    const lastRun = payload?.lastRun || null;
+    setActiveRun((current) => {
+      const startedAt = current?.startedAt || lastRun?.startedAt || finishedAt;
+      const ok = Boolean(payload?.ok);
+      return {
+        ...(current || {}),
+        action: payload?.action || current?.action || lastRun?.action || "",
+        roundId: payload?.roundId || current?.roundId || lastRun?.roundId || "",
+        networkKey: payload?.networkKey || current?.networkKey || lastRun?.networkKey || selectedNetworkKey,
+        networkLabel: current?.networkLabel || drawNetworkLabel(selectedNetwork, t),
+        status: ok ? "completed" : "failed",
+        ok,
+        startedAt,
+        finishedAt: lastRun?.finishedAt || finishedAt,
+        durationSeconds: lastRun?.durationSeconds ?? durationSecondsBetween(startedAt, finishedAt),
+        code: payload?.code || error?.code || "",
+        error: payload?.error || error?.message || lastRun?.error || "",
+      };
+    });
+  }
+
+  function drawRoundReadinessSnapshot() {
+    const currentStatus = statusForSelectedNetwork(adminStatus, selectedNetworkKey);
+    const readiness = currentStatus?.roundReadiness || runResult?.readiness || null;
+    if (!readiness) {
+      return {
+        complete: activeDraw.officialFinalsComplete,
+        confirmedCount: activeDraw.officialFinalCount,
+        expectedCount: activeDraw.matchCount,
+        missingCount: activeDraw.officialFinalsRemaining,
+        missingMatchIds: [],
+      };
+    }
+    return {
+      complete: Boolean(readiness.complete),
+      confirmedCount: Number(readiness.confirmedCount || 0),
+      expectedCount: Number(readiness.expectedCount || activeDraw.matchCount || 0),
+      missingCount: Number(readiness.missingCount || 0),
+      missingMatchIds: Array.isArray(readiness.missingMatchIds) ? readiness.missingMatchIds : [],
+    };
+  }
+
   async function lockDrawLedger() {
     setIssue("");
     setRunResult(null);
@@ -651,14 +825,15 @@ function DrawOperatorWallet({ activeDraw, t }) {
       return;
     }
     if (!targetMatched) {
-      setIssue(t("draw.operatorWalletWrongChain", { chain: targetChainLabel(t) }));
+      setIssue(t("draw.operatorWalletWrongChain", { chain: drawNetworkLabel(selectedNetwork, t) }));
       return;
     }
-    if (!activeDraw.officialFinalsComplete) {
+    const roundReadiness = drawRoundReadinessSnapshot();
+    if (!roundReadiness.complete) {
       setIssue(t("draw.operatorDrawFinalsBlocked", {
-        finals: formatNumber(activeDraw.officialFinalCount),
-        matches: formatNumber(activeDraw.matchCount),
-        remaining: formatNumber(activeDraw.officialFinalsRemaining),
+        finals: formatNumber(roundReadiness.confirmedCount),
+        matches: formatNumber(roundReadiness.expectedCount),
+        remaining: formatNumber(roundReadiness.missingCount),
       }));
       return;
     }
@@ -668,6 +843,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
     }
 
     setBusyAction("draw:ledger");
+    beginOperatorRun("ledger", activeDraw.id);
     try {
       const roundId = activeDraw.id;
       const { payload: challenge } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/challenge"), {
@@ -677,6 +853,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           address: connectedWallet.address,
           action: "ledger",
           roundId,
+          network: selectedNetworkKey,
         }),
         timeoutMs: drawAdminCheckTimeoutMs,
       });
@@ -688,6 +865,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           address: connectedWallet.address,
           action: "ledger",
           roundId,
+          network: selectedNetworkKey,
           nonce: challenge.nonce,
           signature,
         }),
@@ -695,9 +873,12 @@ function DrawOperatorWallet({ activeDraw, t }) {
       });
       setRunResult(payload);
       setAdminStatus(payload.status || await refreshAdminStatus());
+      finishOperatorRun(payload);
     } catch (error) {
-      setIssue(error?.payload?.error || error?.message || t("draw.operatorDrawLedgerFailed"));
-      if (error?.payload) setRunResult(error.payload);
+      const payload = error?.payload || null;
+      setIssue(payload?.error || error?.message || t("draw.operatorDrawLedgerFailed"));
+      if (payload) setRunResult(payload);
+      finishOperatorRun(payload, error);
     } finally {
       setBusyAction("");
     }
@@ -713,14 +894,15 @@ function DrawOperatorWallet({ activeDraw, t }) {
       return;
     }
     if (!targetMatched) {
-      setIssue(t("draw.operatorWalletWrongChain", { chain: targetChainLabel(t) }));
+      setIssue(t("draw.operatorWalletWrongChain", { chain: drawNetworkLabel(selectedNetwork, t) }));
       return;
     }
-    if (broadcast && !activeDraw.officialFinalsComplete) {
+    const roundReadiness = drawRoundReadinessSnapshot();
+    if (broadcast && !roundReadiness.complete) {
       setIssue(t("draw.operatorDrawFinalsBlocked", {
-        finals: formatNumber(activeDraw.officialFinalCount),
-        matches: formatNumber(activeDraw.matchCount),
-        remaining: formatNumber(activeDraw.officialFinalsRemaining),
+        finals: formatNumber(roundReadiness.confirmedCount),
+        matches: formatNumber(roundReadiness.expectedCount),
+        remaining: formatNumber(roundReadiness.missingCount),
       }));
       return;
     }
@@ -730,6 +912,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
     }
 
     setBusyAction(`draw:${action}`);
+    beginOperatorRun(action, activeDraw.id);
     try {
       const roundId = activeDraw.id;
       const { payload: challenge } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/challenge"), {
@@ -739,6 +922,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           address: connectedWallet.address,
           action,
           roundId,
+          network: selectedNetworkKey,
         }),
         timeoutMs: drawAdminCheckTimeoutMs,
       });
@@ -750,6 +934,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           address: connectedWallet.address,
           action,
           roundId,
+          network: selectedNetworkKey,
           nonce: challenge.nonce,
           signature,
         }),
@@ -757,6 +942,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
       });
       setRunResult(payload);
       await refreshAdminStatus();
+      finishOperatorRun(payload);
       if (payload?.ok && (broadcast || payload?.result?.winnersOut) && typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("renaiss:draw-winners-updated", {
           detail: {
@@ -767,8 +953,10 @@ function DrawOperatorWallet({ activeDraw, t }) {
         }));
       }
     } catch (error) {
-      setIssue(error?.payload?.error || error?.message || t("draw.operatorDrawFailed"));
-      if (error?.payload) setRunResult(error.payload);
+      const payload = error?.payload || null;
+      setIssue(payload?.error || error?.message || t("draw.operatorDrawFailed"));
+      if (payload) setRunResult(payload);
+      finishOperatorRun(payload, error);
     } finally {
       setBusyAction("");
     }
@@ -794,21 +982,26 @@ function DrawOperatorWallet({ activeDraw, t }) {
     }
   }
 
-  const activeRoundLedger = roundLedgerSummaryFor(adminStatus, activeDraw.id);
+  const currentAdminStatus = statusForSelectedNetwork(adminStatus, selectedNetworkKey);
+  const networkOptions = drawNetworkOptions(adminStatus);
+  const targetNetworkLabel = drawNetworkLabel(selectedNetwork, t);
+  const operationBusy = Boolean(busyAction || currentAdminStatus?.running);
+  const roundReadiness = drawRoundReadinessSnapshot();
+  const activeRoundLedger = roundLedgerSummaryFor(currentAdminStatus, activeDraw.id);
   const ledgerLocked = Boolean(activeRoundLedger);
-  const adminBaseReady = Boolean(adminStatus?.enabled && adminStatus?.allowlistConfigured);
+  const adminBaseReady = Boolean(currentAdminStatus?.enabled && currentAdminStatus?.allowlistConfigured);
   const contractExecutionReady = Boolean(
-    adminStatus?.enabled
-    && adminStatus?.contractConfigured
-    && adminStatus?.rpcConfigured
-    && adminStatus?.broadcasterConfigured
-    && adminStatus?.allowlistConfigured,
+    currentAdminStatus?.enabled
+    && currentAdminStatus?.contractConfigured
+    && currentAdminStatus?.rpcConfigured
+    && currentAdminStatus?.broadcasterConfigured
+    && currentAdminStatus?.allowlistConfigured,
   );
   const adminReady = contractExecutionReady && ledgerLocked;
-  const canLockLedger = connected && targetMatched && adminBaseReady && activeDraw.officialFinalsComplete && !busyAction;
-  const canRunDraw = connected && targetMatched && adminReady && !busyAction;
-  const canBroadcastDraw = canRunDraw && activeDraw.officialFinalsComplete;
-  const readinessItems = drawAdminReadinessItems(adminStatus, activeDraw.id, t);
+  const canLockLedger = connected && targetMatched && adminBaseReady && roundReadiness.complete && !operationBusy;
+  const canRunDraw = connected && targetMatched && adminReady && !operationBusy;
+  const canBroadcastDraw = canRunDraw && roundReadiness.complete;
+  const readinessItems = drawAdminReadinessItems(currentAdminStatus, activeDraw.id, t);
   const missingReadinessItems = readinessItems.filter((item) => !item.ready);
   const adminStatusCopy = adminStatusIssue
     || (missingReadinessItems.length > 0
@@ -816,18 +1009,39 @@ function DrawOperatorWallet({ activeDraw, t }) {
         items: missingReadinessItems.map((item) => item.label).join(" · "),
       })
       : t("draw.operatorDrawAllReady"));
-  const finalsNotice = activeDraw.officialFinalsComplete
+  const finalsNotice = roundReadiness.complete
     ? t("draw.operatorDrawFinalsReady", {
-      finals: formatNumber(activeDraw.officialFinalCount),
-      matches: formatNumber(activeDraw.matchCount),
+      finals: formatNumber(roundReadiness.confirmedCount),
+      matches: formatNumber(roundReadiness.expectedCount),
     })
     : t("draw.operatorDrawFinalsPending", {
-      finals: formatNumber(activeDraw.officialFinalCount),
-      matches: formatNumber(activeDraw.matchCount),
-      remaining: formatNumber(activeDraw.officialFinalsRemaining),
+      finals: formatNumber(roundReadiness.confirmedCount),
+      matches: formatNumber(roundReadiness.expectedCount),
+      remaining: formatNumber(roundReadiness.missingCount),
     });
-  const plannedSteps = Array.isArray(runResult?.result?.plannedSteps) ? runResult.result.plannedSteps : [];
-  const txs = Array.isArray(runResult?.result?.txs) ? runResult.result.txs : [];
+  const runPayloadResult = runResult?.result || currentAdminStatus?.lastRun?.result || null;
+  const plannedSteps = Array.isArray(runPayloadResult?.plannedSteps) ? runPayloadResult.plannedSteps : [];
+  const txs = Array.isArray(runPayloadResult?.txs) ? runPayloadResult.txs : [];
+  const lastRun = currentAdminStatus?.lastRun?.startedAt ? currentAdminStatus.lastRun : null;
+  const visibleRun = activeRun || lastRun;
+  const runIsRunning = activeRun?.status === "running" || Boolean(currentAdminStatus?.running);
+  const runElapsedSeconds = runIsRunning
+    ? (currentAdminStatus?.runningElapsedSeconds ?? elapsedSecondsSince(visibleRun?.startedAt, nowMs))
+    : (visibleRun?.durationSeconds ?? durationSecondsBetween(visibleRun?.startedAt, visibleRun?.finishedAt));
+  const runStatusLabel = runIsRunning
+    ? t("draw.operatorRunRunning")
+    : visibleRun?.ok
+      ? t("draw.operatorRunCompleted")
+      : visibleRun
+        ? t("draw.operatorRunFailed")
+        : t("draw.operatorRunIdle");
+  const runTone = runIsRunning ? "is-running" : visibleRun?.ok ? "is-ready" : visibleRun ? "is-warning" : "";
+  const resultDetails = [
+    runResult?.code ? `${t("draw.operatorRunCode")}: ${runResult.code}` : "",
+    runResult?.error || "",
+    runResult?.stderr || "",
+    runResult?.stdout || "",
+  ].filter(Boolean);
 
   return (
     <section className="draw-operator-wallet" aria-label={t("draw.operatorWalletAria")}>
@@ -839,6 +1053,32 @@ function DrawOperatorWallet({ activeDraw, t }) {
         <strong>{connected ? compactAddress(connectedWallet.address) : t("draw.operatorWalletDisconnected")}</strong>
       </header>
       <p>{t("draw.operatorWalletBody")}</p>
+
+      <section className="draw-operator-wallet__network" aria-label={t("draw.operatorNetworkMode")}>
+        <header>
+          <span>{t("draw.operatorNetworkMode")}</span>
+          <strong>{targetNetworkLabel}</strong>
+        </header>
+        <div className="draw-operator-wallet__network-options" role="tablist" aria-label={t("draw.operatorNetworkMode")}>
+          {networkOptions.map((network) => {
+            const active = network.key === selectedNetworkKey;
+            return (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={active ? "is-active" : ""}
+                disabled={operationBusy}
+                key={network.key}
+                onClick={() => selectDrawNetwork(network.key)}
+              >
+                <Network size={14} strokeWidth={2.2} />
+                <span>{drawNetworkLabel(network, t)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {connected ? (
         <dl>
@@ -855,7 +1095,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           </div>
           <div>
             <dt>{t("draw.operatorWalletTarget")}</dt>
-            <dd>{targetChainLabel(t)}</dd>
+            <dd>{targetNetworkLabel}</dd>
           </div>
         </dl>
       ) : null}
@@ -867,7 +1107,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
             <button
               key={walletProvider.id}
               type="button"
-              disabled={Boolean(busyAction)}
+              disabled={operationBusy}
               onClick={() => connectDrawWallet(walletProvider)}
             >
               {busy ? <Loader2 className="is-spinning" size={15} /> : <WalletCards size={15} strokeWidth={2.2} />}
@@ -881,9 +1121,9 @@ function DrawOperatorWallet({ activeDraw, t }) {
           </button>
         )}
         {connected && !targetMatched ? (
-          <button type="button" disabled={Boolean(busyAction)} onClick={switchTargetChain}>
+          <button type="button" disabled={operationBusy} onClick={switchTargetChain}>
             {busyAction === "switch-chain" ? <Loader2 className="is-spinning" size={15} /> : <Network size={15} strokeWidth={2.2} />}
-            <span>{t("draw.operatorWalletSwitch", { chain: targetChainLabel(t) })}</span>
+            <span>{t("draw.operatorWalletSwitch", { chain: targetNetworkLabel })}</span>
           </button>
         ) : null}
       </div>
@@ -905,11 +1145,14 @@ function DrawOperatorWallet({ activeDraw, t }) {
             ))}
           </ul>
         ) : null}
-        {adminStatus?.contractAddress ? (
-          <code>{compactAddress(adminStatus.contractAddress)}</code>
+        {currentAdminStatus?.contractAddress ? (
+          <code>{targetNetworkLabel} · {compactAddress(currentAdminStatus.contractAddress)}</code>
         ) : null}
-        <p className={["draw-operator-wallet__finals", activeDraw.officialFinalsComplete ? "is-ready" : "is-warning"].join(" ")}>
+        <p className={["draw-operator-wallet__finals", roundReadiness.complete ? "is-ready" : "is-warning"].join(" ")}>
           {finalsNotice}
+          {!roundReadiness.complete && roundReadiness.missingMatchIds.length > 0 ? (
+            <span>{t("draw.operatorDrawReadinessMissing", { matches: roundReadiness.missingMatchIds.join(", ") })}</span>
+          ) : null}
         </p>
         <div className="draw-operator-wallet__actions">
           <button
@@ -940,6 +1183,49 @@ function DrawOperatorWallet({ activeDraw, t }) {
         </div>
       </section>
 
+      <section className={["draw-operator-wallet__run", runTone].filter(Boolean).join(" ")} aria-label={t("draw.operatorRunLog")}>
+        <header>
+          <span>{t("draw.operatorRunLog")}</span>
+          <strong>{runStatusLabel}</strong>
+        </header>
+        <div className="draw-operator-wallet__run-grid">
+          <div>
+            <span>{t("draw.operatorRunAction")}</span>
+            <strong>{visibleRun?.action || "-"}</strong>
+          </div>
+          <div>
+            <span>{t("draw.operatorRunNetwork")}</span>
+            <strong>{visibleRun?.networkLabel || targetNetworkLabel}</strong>
+          </div>
+          <div>
+            <span>{t("draw.operatorRunElapsed")}</span>
+            <strong>{formatDurationSeconds(runElapsedSeconds)}</strong>
+          </div>
+          <div>
+            <span>{t("draw.operatorRunStarted")}</span>
+            <strong>{formatRunTimestamp(visibleRun?.startedAt)}</strong>
+          </div>
+          <div>
+            <span>{t("draw.operatorRunFinished")}</span>
+            <strong>{formatRunTimestamp(visibleRun?.finishedAt)}</strong>
+          </div>
+          <div>
+            <span>{t("draw.operatorRunCode")}</span>
+            <strong>{(runResult?.code || visibleRun?.code || visibleRun?.exitCode) ?? "-"}</strong>
+          </div>
+        </div>
+        <p>{txs.length > 0 ? t("draw.operatorRunTransactions") : t("draw.operatorRunNoTransactions")}</p>
+        {txs.length > 0 ? (
+          <ol>
+            {txs.map((tx, index) => (
+              <li key={`${tx.hash || tx.step || "tx"}-${index}`}>
+                {tx.step || t("common.status")} · {compactAddress(tx.hash || "")}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </section>
+
       {runResult ? (
         <section className={["draw-operator-wallet__result", runResult.ok ? "is-ready" : "is-warning"].filter(Boolean).join(" ")}>
           <strong>{runResult.ok ? t("draw.operatorDrawRunOk") : t("draw.operatorDrawRunFailed")}</strong>
@@ -968,6 +1254,9 @@ function DrawOperatorWallet({ activeDraw, t }) {
                 </li>
               ))}
             </ol>
+          ) : null}
+          {resultDetails.length > 0 ? (
+            <pre>{resultDetails.join("\n")}</pre>
           ) : null}
         </section>
       ) : null}

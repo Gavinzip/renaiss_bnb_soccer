@@ -15248,8 +15248,57 @@ body {
   background: rgba(180, 69, 69, 0.18);
 }
 
+.draw-operator-wallet__network {
+  display: grid;
+  gap: 8px;
+}
+
+.draw-operator-wallet__network header strong {
+  color: rgba(129, 245, 207, 0.9);
+  font-family: inherit;
+}
+
+.draw-operator-wallet__network-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.draw-operator-wallet__network-options button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(245, 246, 241, 0.14);
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: rgba(245, 246, 241, 0.68);
+  background: rgba(245, 246, 241, 0.04);
+  font-size: 0.72rem;
+  font-weight: 860;
+}
+
+.draw-operator-wallet__network-options button:not(:disabled):hover,
+.draw-operator-wallet__network-options button:not(:disabled):focus-visible {
+  border-color: rgba(129, 245, 207, 0.34);
+  color: rgba(218, 255, 242, 0.94);
+  background: rgba(66, 148, 111, 0.11);
+}
+
+.draw-operator-wallet__network-options button.is-active {
+  border-color: rgba(129, 245, 207, 0.42);
+  color: rgba(129, 245, 207, 0.95);
+  background: rgba(66, 148, 111, 0.15);
+}
+
+.draw-operator-wallet__network-options button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .draw-operator-wallet__admin,
-.draw-operator-wallet__result {
+.draw-operator-wallet__result,
+.draw-operator-wallet__run {
   display: grid;
   gap: 10px;
   border: 1px solid rgba(245, 246, 241, 0.1);
@@ -15259,7 +15308,8 @@ body {
 }
 
 .draw-operator-wallet__admin header,
-.draw-operator-wallet__result header {
+.draw-operator-wallet__result header,
+.draw-operator-wallet__run header {
   gap: 8px;
 }
 
@@ -15323,18 +15373,73 @@ body {
   background: rgba(66, 148, 111, 0.075);
 }
 
+.draw-operator-wallet__run.is-running {
+  border-color: rgba(129, 245, 207, 0.24);
+  background: rgba(66, 148, 111, 0.07);
+}
+
+.draw-operator-wallet__run.is-ready {
+  border-color: rgba(129, 245, 207, 0.22);
+  background: rgba(66, 148, 111, 0.075);
+}
+
+.draw-operator-wallet__run.is-warning {
+  border-color: rgba(255, 143, 143, 0.26);
+  background: rgba(180, 69, 69, 0.085);
+}
+
+.draw-operator-wallet__run-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(245, 246, 241, 0.08);
+  border-radius: 12px;
+  background: rgba(245, 246, 241, 0.08);
+}
+
+.draw-operator-wallet__run-grid div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.draw-operator-wallet__run-grid span {
+  overflow: hidden;
+  color: rgba(245, 246, 241, 0.42);
+  font-size: 0.64rem;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draw-operator-wallet__run-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(245, 246, 241, 0.86);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.68rem;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .draw-operator-wallet__result.is-warning {
   border-color: rgba(255, 143, 143, 0.26);
   background: rgba(180, 69, 69, 0.085);
 }
 
-.draw-operator-wallet__result strong {
+.draw-operator-wallet__result strong,
+.draw-operator-wallet__run > header strong {
   color: rgba(245, 246, 241, 0.92);
   font-size: 0.84rem;
   font-weight: 900;
 }
 
-.draw-operator-wallet__result ol {
+.draw-operator-wallet__result ol,
+.draw-operator-wallet__run ol {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -15343,7 +15448,8 @@ body {
   list-style: none;
 }
 
-.draw-operator-wallet__result li {
+.draw-operator-wallet__result li,
+.draw-operator-wallet__run li {
   border: 1px solid rgba(245, 246, 241, 0.12);
   border-radius: 999px;
   padding: 5px 8px;
@@ -15354,11 +15460,34 @@ body {
   font-weight: 780;
 }
 
+.draw-operator-wallet__result pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid rgba(255, 143, 143, 0.18);
+  border-radius: 10px;
+  padding: 9px;
+  color: rgba(255, 218, 214, 0.9);
+  background: rgba(0, 0, 0, 0.28);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .draw-operator-wallet__finals {
   border: 1px solid rgba(245, 246, 241, 0.1);
   border-radius: 12px;
   padding: 10px 11px;
   background: rgba(0, 0, 0, 0.15);
+}
+
+.draw-operator-wallet__finals span {
+  display: block;
+  margin-top: 4px;
+  color: rgba(245, 246, 241, 0.58);
+  font-size: 0.7rem;
 }
 
 .draw-operator-wallet__finals.is-ready {

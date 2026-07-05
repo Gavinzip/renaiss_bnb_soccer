@@ -122,6 +122,11 @@ const drawAdminScriptTimeoutSeconds = readIntegerEnv('DRAW_ADMIN_SCRIPT_TIMEOUT_
 const drawAdminScriptTimeoutMs = drawAdminScriptTimeoutSeconds * 1000
 const drawAdminOutputLimitBytes = readIntegerEnv('DRAW_ADMIN_OUTPUT_LIMIT_BYTES', 512 * 1024, 16 * 1024)
 const drawAdminRoundIds = new Set(roundDefinitions.map((round) => String(round.id || '').trim()).filter(Boolean))
+const drawNetworkDefinitions = [
+  { key: 'mainnet', label: 'BNB Chain', chainId: '56', chainIdHex: '0x38' },
+  { key: 'testnet', label: 'BNB Testnet', chainId: '97', chainIdHex: '0x61' },
+]
+const drawDefaultNetworkKey = normalizeDrawNetworkKey(process.env.DRAW_NETWORK || process.env.DRAW_DEFAULT_NETWORK || 'mainnet')
 const drawAdminChallenges = new Map()
 let drawAdminRunRunning = false
 let lastDrawAdminRun = {
@@ -132,6 +137,10 @@ let lastDrawAdminRun = {
   exitCode: null,
   error: null,
   trigger: null,
+  networkKey: null,
+  action: null,
+  roundId: null,
+  result: null,
 }
 const rateLimitEnabled = process.env.HTTP_RATE_LIMIT_ENABLED !== '0'
 const rateLimiter = createMemoryRateLimiter({
@@ -525,19 +534,72 @@ function normalizeDrawAdminWalletAddress(value) {
   return /^0x[a-f0-9]{40}$/i.test(address) ? address.toLowerCase() : ''
 }
 
-function drawAdminAllowedAddresses() {
+function normalizeDrawNetworkKey(value) {
+  const key = String(value || '').trim().toLowerCase()
+  if (!key || key === 'mainnet' || key === 'bsc' || key === 'bnb' || key === '56' || key === '0x38') return 'mainnet'
+  if (key === 'testnet' || key === 'bsc-testnet' || key === 'bnb-testnet' || key === '97' || key === '0x61') return 'testnet'
+  throw Object.assign(new Error('Unsupported draw network.'), {
+    statusCode: 400,
+    code: 'draw_network_invalid',
+  })
+}
+
+function normalizeOptionalDrawNetworkKey(value) {
+  const raw = String(value || '').trim()
+  return raw ? normalizeDrawNetworkKey(raw) : drawDefaultNetworkKey
+}
+
+function drawNetworkDefinition(networkKey = drawDefaultNetworkKey) {
+  const key = normalizeDrawNetworkKey(networkKey)
+  return drawNetworkDefinitions.find((network) => network.key === key) || drawNetworkDefinitions[0]
+}
+
+function readEnvString(name) {
+  return String(process.env[name] || '').trim()
+}
+
+function drawNetworkEnv(networkKey = drawDefaultNetworkKey) {
+  const network = drawNetworkDefinition(networkKey)
+  if (network.key === 'testnet') {
+    return {
+      ...network,
+      chainId: readEnvString('DRAW_TESTNET_CHAIN_ID') || readEnvString('BSC_TESTNET_CHAIN_ID') || network.chainId,
+      contractAddress: readEnvString('DRAW_TESTNET_CONTRACT_ADDRESS') || readEnvString('VITE_DRAW_TESTNET_CONTRACT'),
+      rpcUrl: readEnvString('BSC_TESTNET_RPC_URL') || readEnvString('DRAW_TESTNET_RPC_URL'),
+      privateKey: readEnvString('BSC_TESTNET_DEPLOYER_PRIVATE_KEY') || readEnvString('DRAW_TESTNET_DEPLOYER_PRIVATE_KEY'),
+      ownerAddress: readEnvString('DRAW_TESTNET_OWNER_ADDRESS'),
+      operatorAddress: readEnvString('DRAW_TESTNET_OPERATOR_ADDRESS'),
+      adminAddresses: readEnvString('DRAW_TESTNET_ADMIN_ADDRESSES'),
+      envFile: readEnvString('DRAW_TESTNET_CONTRACT_ENV_FILE') || 'config/draw-contract.testnet.env.local',
+    }
+  }
+  return {
+    ...network,
+    chainId: readEnvString('DRAW_CHAIN_ID') || readEnvString('BSC_CHAIN_ID') || network.chainId,
+    contractAddress: readEnvString('DRAW_CONTRACT_ADDRESS') || readEnvString('VITE_DRAW_CONTRACT'),
+    rpcUrl: readEnvString('BSC_RPC_URL'),
+    privateKey: readEnvString('BSC_DEPLOYER_PRIVATE_KEY'),
+    ownerAddress: readEnvString('DRAW_OWNER_ADDRESS'),
+    operatorAddress: readEnvString('DRAW_OPERATOR_ADDRESS'),
+    adminAddresses: readEnvString('DRAW_ADMIN_ADDRESSES'),
+    envFile: readEnvString('DRAW_CONTRACT_ENV_FILE') || 'config/draw-contract.env.local',
+  }
+}
+
+function drawAdminAllowedAddresses(networkKey = drawDefaultNetworkKey) {
+  const env = drawNetworkEnv(networkKey)
   return [
-    process.env.DRAW_OWNER_ADDRESS,
-    process.env.DRAW_OPERATOR_ADDRESS,
-    process.env.DRAW_ADMIN_ADDRESSES,
+    env.ownerAddress,
+    env.operatorAddress,
+    env.adminAddresses,
   ]
     .flatMap((value) => String(value || '').split(/[,\s]+/))
     .map(normalizeDrawAdminWalletAddress)
     .filter(Boolean)
 }
 
-function drawContractAddress() {
-  return normalizeDrawAdminWalletAddress(process.env.DRAW_CONTRACT_ADDRESS)
+function drawContractAddress(networkKey = drawDefaultNetworkKey) {
+  return normalizeDrawAdminWalletAddress(drawNetworkEnv(networkKey).contractAddress)
 }
 
 function publicAppOrigin() {
@@ -551,8 +613,9 @@ function publicMatchDrawLedgerUri() {
   return origin ? `${origin}/match-draw-ledger.json` : matchDrawLedgerPath
 }
 
-function drawExpectedChainId() {
-  return String(process.env.BSC_CHAIN_ID || '56').trim() || '56'
+function drawExpectedChainId(networkKey = drawDefaultNetworkKey) {
+  const network = drawNetworkEnv(networkKey)
+  return String(network.chainId || drawNetworkDefinition(networkKey).chainId).trim() || drawNetworkDefinition(networkKey).chainId
 }
 
 function expectedRoundMatchIds(roundId) {
@@ -644,22 +707,50 @@ function normalizeDrawAdminAction(value, broadcast) {
   })
 }
 
-function drawAdminStatusPayload({ includeLastRun = false, includePrivate = false } = {}) {
-  const allowedAddresses = drawAdminAllowedAddresses()
-  const payload = {
-    ok: true,
-    enabled: drawAdminApiEnabled,
-    chainId: drawExpectedChainId(),
-    contractAddress: drawContractAddress() || null,
-    contractConfigured: Boolean(drawContractAddress()),
-    rpcConfigured: Boolean(process.env.BSC_RPC_URL),
-    broadcasterConfigured: Boolean(process.env.BSC_DEPLOYER_PRIVATE_KEY),
+function drawNetworkStatusPayload(networkKey = drawDefaultNetworkKey, { roundId = '' } = {}) {
+  const network = drawNetworkEnv(networkKey)
+  const contractAddress = drawContractAddress(network.key)
+  const allowedAddresses = drawAdminAllowedAddresses(network.key)
+  const chainId = drawExpectedChainId(network.key)
+  const roundReadiness = roundId ? roundResultReadiness(roundId) : null
+  return {
+    key: network.key,
+    label: network.label,
+    chainId,
+    chainIdHex: network.chainIdHex,
+    contractAddress: contractAddress || null,
+    contractConfigured: Boolean(contractAddress),
+    rpcConfigured: Boolean(network.rpcUrl),
+    broadcasterConfigured: Boolean(network.privateKey),
     allowlistConfigured: allowedAddresses.length > 0,
     matchDrawLedgerExists: existsSync(matchDrawLedgerPath),
     matchDrawLedger: readMatchDrawLedgerSummary(),
     drawWinnersExists: existsSync(drawWinnersPath),
+    ...(roundReadiness ? { roundReadiness } : {}),
+  }
+}
+
+function drawAdminStatusPayload({
+  includeLastRun = false,
+  includePrivate = false,
+  networkKey = drawDefaultNetworkKey,
+  roundId = '',
+} = {}) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const networks = drawNetworkDefinitions.map((network) => drawNetworkStatusPayload(network.key, { roundId }))
+  const selectedNetwork = networks.find((network) => network.key === selectedNetworkKey) || networks[0]
+  const runningElapsedSeconds = drawAdminRunRunning && lastDrawAdminRun?.startedAt
+    ? durationSeconds(lastDrawAdminRun.startedAt, new Date().toISOString())
+    : null
+  const payload = {
+    ok: true,
+    enabled: drawAdminApiEnabled,
+    networkKey: selectedNetwork.key,
+    networks,
+    ...selectedNetwork,
     challengeTtlSeconds: drawAdminChallengeTtlSeconds,
     running: drawAdminRunRunning,
+    runningElapsedSeconds,
   }
   return {
     ...payload,
@@ -678,28 +769,30 @@ function drawAdminDisabledError() {
   return null
 }
 
-function assertDrawAdminReady({ requireBroadcast = false, roundId = '' } = {}) {
+function assertDrawAdminReady({ requireBroadcast = false, roundId = '', networkKey = drawDefaultNetworkKey } = {}) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const network = drawNetworkEnv(selectedNetworkKey)
   const disabled = drawAdminDisabledError()
   if (disabled) throw disabled
-  if (!drawContractAddress()) {
+  if (!drawContractAddress(selectedNetworkKey)) {
     throw Object.assign(new Error('Draw contract address is not configured.'), {
       statusCode: 503,
       code: 'draw_contract_missing',
     })
   }
-  if (!process.env.BSC_RPC_URL) {
+  if (!network.rpcUrl) {
     throw Object.assign(new Error('BSC RPC URL is not configured.'), {
       statusCode: 503,
       code: 'draw_rpc_missing',
     })
   }
-  if (requireBroadcast && !process.env.BSC_DEPLOYER_PRIVATE_KEY) {
+  if (requireBroadcast && !network.privateKey) {
     throw Object.assign(new Error('Draw broadcaster private key is not configured.'), {
       statusCode: 503,
       code: 'draw_broadcaster_missing',
     })
   }
-  if (drawAdminAllowedAddresses().length === 0) {
+  if (drawAdminAllowedAddresses(selectedNetworkKey).length === 0) {
     throw Object.assign(new Error('Draw admin wallet allowlist is not configured.'), {
       statusCode: 503,
       code: 'draw_allowlist_missing',
@@ -719,10 +812,11 @@ function assertDrawAdminReady({ requireBroadcast = false, roundId = '' } = {}) {
   }
 }
 
-function assertDrawAdminBaseReady() {
+function assertDrawAdminBaseReady(networkKey = drawDefaultNetworkKey) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const disabled = drawAdminDisabledError()
   if (disabled) throw disabled
-  if (drawAdminAllowedAddresses().length === 0) {
+  if (drawAdminAllowedAddresses(selectedNetworkKey).length === 0) {
     throw Object.assign(new Error('Draw admin wallet allowlist is not configured.'), {
       statusCode: 503,
       code: 'draw_allowlist_missing',
@@ -730,8 +824,8 @@ function assertDrawAdminBaseReady() {
   }
 }
 
-function assertDrawLedgerBuildReady(roundId) {
-  assertDrawAdminBaseReady()
+function assertDrawLedgerBuildReady(roundId, { networkKey = drawDefaultNetworkKey } = {}) {
+  assertDrawAdminBaseReady(networkKey)
   if (!existsSync(ledgerPath)) {
     throw Object.assign(new Error('Base ticket ledger is not ready.'), {
       statusCode: 503,
@@ -767,9 +861,9 @@ function assertDrawLedgerBuildReady(roundId) {
   return readiness
 }
 
-function drawAdminRateLimitRules(request, address, action) {
+function drawAdminRateLimitRules(request, address, action, networkKey = drawDefaultNetworkKey) {
   const ip = clientIp(request)
-  const subject = `${address || 'wallet-missing'}:${action || 'unknown'}`
+  const subject = `${normalizeOptionalDrawNetworkKey(networkKey)}:${address || 'wallet-missing'}:${action || 'unknown'}`
   return [
     {
       scope: 'draw_admin_subject_10m',
@@ -786,7 +880,8 @@ function drawAdminRateLimitRules(request, address, action) {
   ]
 }
 
-function assertDrawAdminWalletAllowed(address) {
+function assertDrawAdminWalletAllowed(address, networkKey = drawDefaultNetworkKey) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const normalized = normalizeDrawAdminWalletAddress(address)
   if (!normalized) {
     throw Object.assign(new Error('Valid operator wallet address is required.'), {
@@ -794,7 +889,7 @@ function assertDrawAdminWalletAllowed(address) {
       code: 'draw_wallet_invalid',
     })
   }
-  if (!drawAdminAllowedAddresses().includes(normalized)) {
+  if (!drawAdminAllowedAddresses(selectedNetworkKey).includes(normalized)) {
     throw Object.assign(new Error('This wallet is not allowed to run the draw.'), {
       statusCode: 403,
       code: 'draw_wallet_not_allowed',
@@ -803,29 +898,39 @@ function assertDrawAdminWalletAllowed(address) {
   return normalized
 }
 
-function createDrawAdminMessage({ address, action, roundId, nonce, issuedAt }) {
+function createDrawAdminMessage({ address, action, roundId, nonce, issuedAt, networkKey }) {
   return [
     'Renaiss World Cup draw authorization',
     `Address: ${address}`,
     `Action: ${action}`,
     `Round: ${roundId}`,
-    `Chain ID: ${drawExpectedChainId()}`,
-    `Contract: ${drawContractAddress()}`,
+    `Network: ${networkKey}`,
+    `Chain ID: ${drawExpectedChainId(networkKey)}`,
+    `Contract: ${drawContractAddress(networkKey)}`,
     `Nonce: ${nonce}`,
     `Issued At: ${issuedAt}`,
     'Only sign this from the official Renaiss draw room.',
   ].join('\n')
 }
 
-function createDrawAdminChallenge({ address, action, roundId }) {
+function createDrawAdminChallenge({ address, action, roundId, networkKey }) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const nonce = randomUUID()
   const issuedAt = new Date().toISOString()
   const expiresAtMs = Date.now() + drawAdminChallengeTtlMs
-  const message = createDrawAdminMessage({ address, action, roundId, nonce, issuedAt })
+  const message = createDrawAdminMessage({
+    address,
+    action,
+    roundId,
+    networkKey: selectedNetworkKey,
+    nonce,
+    issuedAt,
+  })
   drawAdminChallenges.set(nonce, {
     address,
     action,
     roundId,
+    networkKey: selectedNetworkKey,
     nonce,
     issuedAt,
     expiresAtMs,
@@ -835,6 +940,7 @@ function createDrawAdminChallenge({ address, action, roundId }) {
     address,
     action,
     roundId,
+    networkKey: selectedNetworkKey,
     nonce,
     issuedAt,
     expiresAt: new Date(expiresAtMs).toISOString(),
@@ -842,8 +948,9 @@ function createDrawAdminChallenge({ address, action, roundId }) {
   }
 }
 
-function verifyDrawAdminChallenge({ address, action, roundId, nonce, signature }) {
-  const normalizedAddress = assertDrawAdminWalletAllowed(address)
+function verifyDrawAdminChallenge({ address, action, roundId, networkKey, nonce, signature }) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const normalizedAddress = assertDrawAdminWalletAllowed(address, selectedNetworkKey)
   const challenge = drawAdminChallenges.get(String(nonce || ''))
   drawAdminChallenges.delete(String(nonce || ''))
 
@@ -859,7 +966,12 @@ function verifyDrawAdminChallenge({ address, action, roundId, nonce, signature }
       code: 'draw_challenge_expired',
     })
   }
-  if (challenge.address !== normalizedAddress || challenge.action !== action || challenge.roundId !== roundId) {
+  if (
+    challenge.address !== normalizedAddress
+    || challenge.action !== action
+    || challenge.roundId !== roundId
+    || challenge.networkKey !== selectedNetworkKey
+  ) {
     throw Object.assign(new Error('Draw authorization challenge does not match this request.'), {
       statusCode: 401,
       code: 'draw_challenge_mismatch',
@@ -894,7 +1006,8 @@ function parseDrawScriptOutput(stdout) {
   return JSON.parse(text)
 }
 
-function runDrawAdminLedger({ roundId }) {
+function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const startedAt = new Date().toISOString()
   const args = [
     fileURLToPath(new URL('./build-match-draw-ledger.mjs', import.meta.url)),
@@ -924,7 +1037,11 @@ function runDrawAdminLedger({ roundId }) {
     durationSeconds: null,
     exitCode: null,
     error: null,
-    trigger: `draw-admin:ledger:${roundId}`,
+    trigger: `draw-admin:${selectedNetworkKey}:ledger:${roundId}`,
+    networkKey: selectedNetworkKey,
+    action: 'ledger',
+    roundId,
+    result: null,
   }
 
   return new Promise((resolvePromise, rejectPromise) => {
@@ -1001,6 +1118,7 @@ function runDrawAdminLedger({ roundId }) {
         error: code === 0 && !parseError
           ? null
           : parseError?.message || `draw ledger script exited with code ${code}`,
+        result: code === 0 && !parseError ? payload : null,
       }
       drawAdminRunRunning = false
 
@@ -1010,8 +1128,9 @@ function runDrawAdminLedger({ roundId }) {
           ok: true,
           action: 'ledger',
           roundId,
+          networkKey: selectedNetworkKey,
           result: payload,
-          status: drawAdminStatusPayload({ includeLastRun: true }),
+          status: drawAdminStatusPayload({ includeLastRun: true, networkKey: selectedNetworkKey, roundId }),
           stderr: stderr.trim() || null,
           lastRun: lastDrawAdminRun,
         })
@@ -1021,22 +1140,41 @@ function runDrawAdminLedger({ roundId }) {
       rejectPromise(Object.assign(new Error(lastDrawAdminRun.error || 'Draw ledger script failed.'), {
         statusCode: 500,
         code: parseError ? 'draw_ledger_script_output_invalid' : 'draw_ledger_script_failed',
-        stdout,
-        stderr,
+        stdout: stdout.trim() || null,
+        stderr: stderr.trim() || null,
       }))
     })
   })
 }
 
-function runDrawAdminRound({ roundId, action }) {
+function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const network = drawNetworkEnv(selectedNetworkKey)
+  const contractAddress = drawContractAddress(selectedNetworkKey)
+  return {
+    ...process.env,
+    BSC_CHAIN_ID: drawExpectedChainId(selectedNetworkKey),
+    BSC_RPC_URL: network.rpcUrl,
+    BSC_DEPLOYER_PRIVATE_KEY: network.privateKey,
+    DRAW_CONTRACT_ADDRESS: contractAddress,
+    VITE_DRAW_CONTRACT: contractAddress,
+    DRAW_OWNER_ADDRESS: network.ownerAddress,
+    DRAW_OPERATOR_ADDRESS: network.operatorAddress,
+    DRAW_ADMIN_ADDRESSES: network.adminAddresses,
+  }
+}
+
+function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey }) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const network = drawNetworkEnv(selectedNetworkKey)
   const broadcast = action === 'broadcast'
   const startedAt = new Date().toISOString()
   const args = [
     fileURLToPath(new URL('./run-lucky-draw-round-level.mjs', import.meta.url)),
     '--env-file',
-    process.env.DRAW_CONTRACT_ENV_FILE || 'config/draw-contract.env.local',
+    network.envFile,
     '--contract',
-    drawContractAddress(),
+    drawContractAddress(selectedNetworkKey),
     '--ledger',
     matchDrawLedgerPath,
     '--winners-out',
@@ -1057,7 +1195,11 @@ function runDrawAdminRound({ roundId, action }) {
     durationSeconds: null,
     exitCode: null,
     error: null,
-    trigger: `draw-admin:${action}:${roundId}`,
+    trigger: `draw-admin:${selectedNetworkKey}:${action}:${roundId}`,
+    networkKey: selectedNetworkKey,
+    action,
+    roundId,
+    result: null,
   }
 
   return new Promise((resolvePromise, rejectPromise) => {
@@ -1066,7 +1208,7 @@ function runDrawAdminRound({ roundId, action }) {
     let settled = false
     const child = spawn(process.execPath, args, {
       cwd: repoRoot,
-      env: process.env,
+      env: drawNetworkChildEnv(selectedNetworkKey),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -1134,6 +1276,7 @@ function runDrawAdminRound({ roundId, action }) {
         error: code === 0 && !parseError
           ? null
           : parseError?.message || `draw script exited with code ${code}`,
+        result: code === 0 && !parseError ? payload : null,
       }
       drawAdminRunRunning = false
 
@@ -1143,9 +1286,11 @@ function runDrawAdminRound({ roundId, action }) {
           ok: true,
           action,
           roundId,
+          networkKey: selectedNetworkKey,
           result: payload,
           stderr: stderr.trim() || null,
           lastRun: lastDrawAdminRun,
+          status: drawAdminStatusPayload({ includeLastRun: true, networkKey: selectedNetworkKey, roundId }),
         })
         return
       }
@@ -2312,9 +2457,30 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === '/api/draw-admin/status') {
-    sendJson(request, response, 200, drawAdminStatusPayload(), {
-      'cache-control': 'no-store',
-    })
+    try {
+      const networkKey = normalizeOptionalDrawNetworkKey(url.searchParams.get('network'))
+      const roundIdValue = String(url.searchParams.get('roundId') || '').trim()
+      const roundId = roundIdValue ? normalizeDrawAdminRoundId(roundIdValue) : ''
+      sendJson(request, response, 200, drawAdminStatusPayload({
+        includeLastRun: true,
+        networkKey,
+        roundId,
+      }), {
+        'cache-control': 'no-store',
+      })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        Number(error?.statusCode || 500),
+        {
+          ok: false,
+          code: error?.code || 'draw_status_failed',
+          error: error instanceof Error ? error.message : 'Could not read draw backend status.',
+        },
+        { 'cache-control': 'no-store' },
+      )
+    }
     return
   }
 
@@ -2329,13 +2495,14 @@ const server = createServer(async (request, response) => {
       const body = await readJsonBody(request)
       const action = normalizeDrawAdminAction(body?.action, body?.broadcast)
       const roundId = normalizeDrawAdminRoundId(body?.roundId)
-      const address = assertDrawAdminWalletAllowed(body?.address)
+      const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
+      const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
       if (action === 'ledger') {
-        assertDrawLedgerBuildReady(roundId)
+        assertDrawLedgerBuildReady(roundId, { networkKey })
       } else {
-        assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId })
+        assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId, networkKey })
       }
-      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action))) return
+      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action, networkKey))) return
 
       sendJson(
         request,
@@ -2343,7 +2510,7 @@ const server = createServer(async (request, response) => {
         200,
         {
           ok: true,
-          ...createDrawAdminChallenge({ address, action, roundId }),
+          ...createDrawAdminChallenge({ address, action, roundId, networkKey }),
         },
         { 'cache-control': 'no-store' },
       )
@@ -2356,6 +2523,7 @@ const server = createServer(async (request, response) => {
           ok: false,
           code: error?.code || 'draw_challenge_failed',
           error: error instanceof Error ? error.message : 'Could not create draw authorization challenge.',
+          readiness: error?.readiness || undefined,
         },
         { 'cache-control': 'no-store' },
       )
@@ -2380,13 +2548,15 @@ const server = createServer(async (request, response) => {
         })
       }
       const roundId = normalizeDrawAdminRoundId(body?.roundId)
-      const address = assertDrawAdminWalletAllowed(body?.address)
-      const readiness = assertDrawLedgerBuildReady(roundId)
-      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action))) return
+      const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
+      const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
+      const readiness = assertDrawLedgerBuildReady(roundId, { networkKey })
+      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action, networkKey))) return
       verifyDrawAdminChallenge({
         address,
         action,
         roundId,
+        networkKey,
         nonce: body?.nonce,
         signature: body?.signature,
       })
@@ -2396,11 +2566,12 @@ const server = createServer(async (request, response) => {
           code: 'draw_admin_running',
           error: 'A draw operation is already running.',
           lastRun: lastDrawAdminRun,
+          runningElapsedSeconds: lastDrawAdminRun?.startedAt ? durationSeconds(lastDrawAdminRun.startedAt, new Date().toISOString()) : null,
         }, { 'cache-control': 'no-store' })
         return
       }
 
-      const result = await runDrawAdminLedger({ roundId })
+      const result = await runDrawAdminLedger({ roundId, networkKey })
       sendJson(request, response, 200, {
         ...result,
         readiness,
@@ -2418,6 +2589,9 @@ const server = createServer(async (request, response) => {
           stdout: error?.stdout || undefined,
           stderr: error?.stderr || undefined,
           lastRun: lastDrawAdminRun,
+          runningElapsedSeconds: drawAdminRunRunning && lastDrawAdminRun?.startedAt
+            ? durationSeconds(lastDrawAdminRun.startedAt, new Date().toISOString())
+            : null,
         },
         { 'cache-control': 'no-store' },
       )
@@ -2442,13 +2616,15 @@ const server = createServer(async (request, response) => {
         })
       }
       const roundId = normalizeDrawAdminRoundId(body?.roundId)
-      const address = assertDrawAdminWalletAllowed(body?.address)
-      assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId })
-      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action))) return
+      const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
+      const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
+      assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId, networkKey })
+      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action, networkKey))) return
       verifyDrawAdminChallenge({
         address,
         action,
         roundId,
+        networkKey,
         nonce: body?.nonce,
         signature: body?.signature,
       })
@@ -2458,11 +2634,12 @@ const server = createServer(async (request, response) => {
           code: 'draw_admin_running',
           error: 'A draw operation is already running.',
           lastRun: lastDrawAdminRun,
+          runningElapsedSeconds: lastDrawAdminRun?.startedAt ? durationSeconds(lastDrawAdminRun.startedAt, new Date().toISOString()) : null,
         }, { 'cache-control': 'no-store' })
         return
       }
 
-      const result = await runDrawAdminRound({ roundId, action })
+      const result = await runDrawAdminRound({ roundId, action, networkKey })
       sendJson(request, response, 200, result, { 'cache-control': 'no-store' })
     } catch (error) {
       sendJson(
@@ -2476,6 +2653,9 @@ const server = createServer(async (request, response) => {
           stdout: error?.stdout || undefined,
           stderr: error?.stderr || undefined,
           lastRun: lastDrawAdminRun,
+          runningElapsedSeconds: drawAdminRunRunning && lastDrawAdminRun?.startedAt
+            ? durationSeconds(lastDrawAdminRun.startedAt, new Date().toISOString())
+            : null,
         },
         { 'cache-control': 'no-store' },
       )
