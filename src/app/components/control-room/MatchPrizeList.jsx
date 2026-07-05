@@ -8,6 +8,7 @@ import { Fragment, useEffect, useRef } from "react";
 import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
 import { getMatchPrizeImage } from "../../data/matchPrizeImages";
 import { sameMatchId } from "../../data/matchIds.js";
+import { getMatchTeamVotes } from "../../data/matchVotes.js";
 import { estimateMultiPrizeChance, formatNumber } from "../../data/ticketMath";
 import { MatchPrizeImageDialog } from "./MatchPrizeImageDialog";
 
@@ -228,10 +229,11 @@ export function MatchPrizeList({
                   const isWinner = match.advancingTeamId === team.id;
                   const isEliminated = Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);
                   const voteOutcome = getTeamVoteOutcome(roundVoteOutcomes, match.id, team.id);
+                  const matchTeamVotes = getMatchTeamVotes(match, team);
                   const hitRate = voteOutcome
                     ? formatHitRate(estimateMultiPrizeChance(
                       voteOutcome.tickets,
-                      team.votes,
+                      matchTeamVotes,
                       activeRound?.matchPrizeSlotCount || 1,
                     ))
                     : "";
@@ -282,7 +284,7 @@ export function MatchPrizeList({
                               </span>
                             </b>
                           ) : null}
-                          <small>{compactVotes(team.votes)}</small>
+                          <small>{compactVotes(matchTeamVotes)}</small>
                         </span>
                       </button>
                       {teamIndex === 0 ? (

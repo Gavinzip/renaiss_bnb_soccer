@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Gift } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { sameMatchId } from "../../data/matchIds.js";
+import { getMatchTeamVotes } from "../../data/matchVotes.js";
 import { formatNumber } from "../../data/ticketMath";
 
 const swipeThreshold = 42;
@@ -222,7 +223,7 @@ export function PrizeMatchCarousel({
                           <img src={team.flagSrc} alt="" aria-hidden="true" />
                           <span>
                             <strong>{teamName(team)}</strong>
-                            <small>{compactVotes(team.votes)}</small>
+                            <small>{compactVotes(getMatchTeamVotes(match, team))}</small>
                           </span>
                         </button>
                         {teamIndex === 0 ? (

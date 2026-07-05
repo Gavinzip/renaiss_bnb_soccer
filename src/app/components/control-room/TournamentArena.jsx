@@ -16,6 +16,7 @@ import LightRays from "../LightRays/LightRays";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { sameMatchId } from "../../data/matchIds.js";
+import { getMatchTeamVotes, getMatchVoteTotal } from "../../data/matchVotes.js";
 
 const voteableStatuses = new Set(["open", "closing_soon"]);
 const trophyRouteSocket = {
@@ -45,7 +46,7 @@ export function preloadTournamentArenaAssets() {
 
 function displayPoolForMatch(match, teamsById) {
   const teams = match?.teams?.map((teamId) => teamsById.get(teamId)).filter(Boolean) ?? [];
-  const voteSignal = teams.reduce((total, team) => total + (team.votes ?? 0), 0);
+  const voteSignal = getMatchVoteTotal(match, teams);
   if (match?.realtimePreview) return voteSignal;
   if ((match?.poolEntries ?? 0) > 0) return match.poolEntries;
   return Math.max(4200, Math.round(voteSignal * 0.082));
@@ -448,7 +449,7 @@ function ArenaTeamCard({ match, team, side, allocation, selected, onPickTeam, co
       : voteableStatuses.has(match.status)
         ? Plus
         : LockKeyhole;
-  const teamMetric = liveQualification ? "" : compactVotes(team.votes);
+  const teamMetric = liveQualification ? "" : compactVotes(getMatchTeamVotes(match, team));
   const borderGlowHandlers = useBorderGlow({ edgeSensitivity: 30 });
 
   return (
@@ -664,8 +665,8 @@ function ArenaDetailPanel({
   const rightTeam = teamsById.get(detailMatch.teams?.[1]) ?? opponentTeam;
   if (!leftTeam || !rightTeam) return null;
 
-  const leftVotes = leftTeam.votes ?? 0;
-  const rightVotes = rightTeam.votes ?? 0;
+  const leftVotes = getMatchTeamVotes(detailMatch, leftTeam);
+  const rightVotes = getMatchTeamVotes(detailMatch, rightTeam);
   const displayPool = displayPoolForMatch(detailMatch, teamsById);
   const totalVotes = leftVotes + rightVotes;
   const leftShare = totalVotes > 0 ? Math.round((leftVotes / totalVotes) * 100) : 0;

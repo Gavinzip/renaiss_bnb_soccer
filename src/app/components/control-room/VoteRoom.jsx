@@ -14,6 +14,7 @@ import { sameMatchId } from "../../data/matchIds.js";
 import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
 import { preloadRoundPrizeImages } from "../../data/matchPrizeImages";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
+import { getMatchTeamVotes } from "../../data/matchVotes.js";
 import ElasticSlider from "../ElasticSlider/ElasticSlider";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
@@ -262,7 +263,7 @@ function MatchVoteGroup({
                 <strong>{teamName(team)}</strong>
                 <small>{stateText}</small>
               </span>
-              <em>{compactVotes(team.votes)}</em>
+              <em>{compactVotes(getMatchTeamVotes(match, team))}</em>
               {index === 0 ? <i className="vote-team-choice__join" aria-hidden="true" /> : null}
             </Magnet>
           );

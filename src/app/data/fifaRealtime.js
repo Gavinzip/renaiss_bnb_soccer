@@ -761,6 +761,16 @@ function findWinnerTeamId(fixture, homeTeamId, awayTeamId) {
   return null;
 }
 
+function withMatchVoteTotals(match, homeTeamId, homeVotes, awayTeamId, awayVotes) {
+  return {
+    ...match,
+    voteTotalsByTeamId: {
+      [homeTeamId]: homeVotes,
+      [awayTeamId]: awayVotes,
+    },
+  };
+}
+
 export function buildRealtimeRound32Preview({
   matches,
   teams,
@@ -825,25 +835,29 @@ export function buildRealtimeRound32Preview({
   const liveRound32Matches = new Map(round32Matches.map((match, index) => {
     const fixture = resolveFixtureForMatch(match, index);
     if (fixture) {
+      const homeTeamId = resolveLocalTeamId({
+        abbreviation: fixture.home.abbreviation,
+        teamName: fixture.home.name,
+      }, teamsById, teamsByName);
+      const awayTeamId = resolveLocalTeamId({
+        abbreviation: fixture.away.abbreviation,
+        teamName: fixture.away.name,
+      }, teamsById, teamsByName);
+      const homeVotes = getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], homeTeamId);
+      const awayVotes = getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], awayTeamId);
       const homeTeam = createTeamForFixtureTeam(
         fixture.home,
         "left",
         teamsById,
         teamsByName,
-        getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], resolveLocalTeamId({
-          abbreviation: fixture.home.abbreviation,
-          teamName: fixture.home.name,
-        }, teamsById, teamsByName)),
+        homeVotes,
       );
       const awayTeam = createTeamForFixtureTeam(
         fixture.away,
         "right",
         teamsById,
         teamsByName,
-        getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], resolveLocalTeamId({
-          abbreviation: fixture.away.abbreviation,
-          teamName: fixture.away.name,
-        }, teamsById, teamsByName)),
+        awayVotes,
       );
       liveTeamsById.set(homeTeam.id, homeTeam);
       liveTeamsById.set(awayTeam.id, awayTeam);
@@ -851,7 +865,7 @@ export function buildRealtimeRound32Preview({
         ? findWinnerTeamId(fixture, homeTeam.id, awayTeam.id)
         : null;
 
-      return [match.id, {
+      return [match.id, withMatchVoteTotals({
         ...match,
         status: fixture.status,
         displayCode: fixture.matchCode,
@@ -871,7 +885,7 @@ export function buildRealtimeRound32Preview({
         sourceUrl: sourceFixtures.sourceUrl,
         fetchedAt: sourceFixtures.fetchedAt,
         liveFixture: fixture,
-      }];
+      }, homeTeam.id, homeVotes, awayTeam.id, awayVotes)];
     }
 
     const leftSlot = createUnrevealedSlot(index * 2 + 1);
@@ -936,16 +950,23 @@ export function buildRealtimeRound32Preview({
         }];
       }
 
+      const homeTeamId = resolveLocalTeamId({
+        abbreviation: fixture.home.abbreviation,
+        teamName: fixture.home.name,
+      }, teamsById, teamsByName);
+      const awayTeamId = resolveLocalTeamId({
+        abbreviation: fixture.away.abbreviation,
+        teamName: fixture.away.name,
+      }, teamsById, teamsByName);
+      const homeVotes = getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], homeTeamId);
+      const awayVotes = getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], awayTeamId);
       const homeTeam = fixture.home.fifaTeamId
         ? createTeamForFixtureTeam(
           fixture.home,
           "left",
           teamsById,
           teamsByName,
-          getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], resolveLocalTeamId({
-            abbreviation: fixture.home.abbreviation,
-            teamName: fixture.home.name,
-          }, teamsById, teamsByName)),
+          homeVotes,
         )
         : createUnrevealedFixtureTeam(match, "home");
       const awayTeam = fixture.away.fifaTeamId
@@ -954,10 +975,7 @@ export function buildRealtimeRound32Preview({
           "right",
           teamsById,
           teamsByName,
-          getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], resolveLocalTeamId({
-            abbreviation: fixture.away.abbreviation,
-            teamName: fixture.away.name,
-          }, teamsById, teamsByName)),
+          awayVotes,
         )
         : createUnrevealedFixtureTeam(match, "away");
       liveTeamsById.set(homeTeam.id, homeTeam);
@@ -966,7 +984,7 @@ export function buildRealtimeRound32Preview({
         ? findWinnerTeamId(fixture, homeTeam.id, awayTeam.id)
         : null;
 
-      return [match.id, {
+      return [match.id, withMatchVoteTotals({
         ...match,
         status: fixture.status,
         displayCode: fixture.matchCode,
@@ -986,7 +1004,7 @@ export function buildRealtimeRound32Preview({
         sourceUrl,
         fetchedAt,
         liveFixture: fixture,
-      }];
+      }, homeTeam.id, homeVotes, awayTeam.id, awayVotes)];
     });
   };
 
