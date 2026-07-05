@@ -1,3 +1,5 @@
+import { canonicalMatchId } from "./matchIds";
+
 export const FIFA_WORLD_CUP_SOURCE = {
   competitionId: "17",
   seasonId: "285023",
@@ -661,14 +663,10 @@ function createTeamForSlot(slot, teamsById, teamsByName) {
   };
 }
 
-function canonicalVoteMatchId(matchId) {
-  return String(matchId || "").trim().toUpperCase();
-}
-
 function canonicalVoteMatchIds(matchIds) {
   const values = Array.isArray(matchIds) ? matchIds : [matchIds];
   return Array.from(new Set(values.flatMap((matchId) => {
-    const canonical = canonicalVoteMatchId(matchId);
+    const canonical = canonicalMatchId(matchId);
     return canonical ? [canonical] : [];
   })));
 }

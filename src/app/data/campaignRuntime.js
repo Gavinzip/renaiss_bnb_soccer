@@ -2,6 +2,7 @@ import { verifiedLedgerSnapshot } from "./ticketLedgerSnapshot";
 import { campaignMatches, roundDefinitions } from "./worldCupCampaign";
 import { estimateMultiPrizeChance } from "./ticketMath";
 import { toTicketInteger } from "./ticketEligibility";
+import { sameMatchId } from "./matchIds";
 
 export const DEFAULT_VIEW_ID = "home";
 export const DEFAULT_ROUND_ID = "round32";
@@ -215,7 +216,7 @@ export function getRoundById(roundId) {
 }
 
 export function getMatchById(matchId) {
-  return campaignMatches.find((match) => match.id === matchId) ?? campaignMatches[0];
+  return campaignMatches.find((match) => sameMatchId(match.id, matchId)) ?? campaignMatches[0];
 }
 
 export function summarizeRoundDraw(round, allocations, outcomeSummary = null, userOutcomeSummary = null) {

@@ -15,6 +15,7 @@ import { useBorderGlow } from "../BorderGlow";
 import LightRays from "../LightRays/LightRays";
 import { Magnet } from "../Magnet";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+import { sameMatchId } from "../../data/matchIds";
 
 const voteableStatuses = new Set(["open", "closing_soon"]);
 const trophyRouteSocket = {
@@ -69,7 +70,7 @@ function matchGmtDateTime(match, locale) {
 }
 
 function getTeamAllocation(match, team, allocations) {
-  return allocations.find((allocation) => allocation.matchId === match?.id && allocation.teamId === team?.id);
+  return allocations.find((allocation) => sameMatchId(allocation.matchId, match?.id) && allocation.teamId === team?.id);
 }
 
 function getTeamTone(match, team, allocation) {
@@ -200,12 +201,12 @@ function isSelectedCard(card, selectedDetail) {
     selectedDetail?.teamId
       && selectedDetail?.matchId
       && card.teamId === selectedDetail.teamId
-      && card.matchId === selectedDetail.matchId,
+      && sameMatchId(card.matchId, selectedDetail.matchId),
   );
 }
 
 function getPairActiveDepth(pair, selectedDetail) {
-  if (!selectedDetail?.teamId || pair.id !== selectedDetail.matchId) return -1;
+  if (!selectedDetail?.teamId || !sameMatchId(pair.id, selectedDetail.matchId)) return -1;
   const hasTeam = pair.cards.some((card) => card.teamId === selectedDetail.teamId);
   if (!hasTeam) return -1;
   return pair.advancingTeamId === selectedDetail.teamId ? 1 : 0;
@@ -526,7 +527,7 @@ function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, 
                 team={team}
                 side={side}
                 allocation={getTeamAllocation(match, team, allocations)}
-                selected={detail?.matchId === match.id && detail?.teamId === team.id}
+                selected={sameMatchId(detail?.matchId, match.id) && detail?.teamId === team.id}
                 onPickTeam={onPickTeam}
                 copy={copy}
               />
@@ -796,7 +797,7 @@ export function TournamentArena({
   const [detail, setDetail] = useState(null);
   const [routeSelection, setRouteSelection] = useState(externalRouteSelection);
   const visibleDetail = detail ?? routeSelection ?? { matchId: selectedRoundMatch?.id ?? "", teamId: fallbackTeamId };
-  const activeDetailMatch = roundMatches.find((match) => match.id === visibleDetail.matchId) ?? selectedRoundMatch;
+  const activeDetailMatch = roundMatches.find((match) => sameMatchId(match.id, visibleDetail.matchId)) ?? selectedRoundMatch;
   const activeDetailTeam = teamsById.get(visibleDetail.teamId) ?? teamsById.get(activeDetailMatch?.teams?.[0]);
   const opponentTeam = teamsById.get(activeDetailMatch?.teams?.find((teamId) => teamId !== activeDetailTeam?.id));
   const activeAllocation = getTeamAllocation(activeDetailMatch, activeDetailTeam, roundAllocations);

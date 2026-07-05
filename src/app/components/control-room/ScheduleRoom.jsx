@@ -1,4 +1,5 @@
 import { TournamentArena, preloadTournamentArenaAssets } from "./TournamentArena";
+import { sameMatchId } from "../../data/matchIds";
 
 export function preloadRoomAssets() {
   return preloadTournamentArenaAssets();
@@ -20,7 +21,7 @@ export function ScheduleRoom({
   onSelectView,
 }) {
   function handleOpenVote(matchId, teamId) {
-    const match = matches.find((entry) => entry.id === matchId);
+    const match = matches.find((entry) => sameMatchId(entry.id, matchId));
     if (match?.roundId) onSelectRound?.(match.roundId);
     onSelectMatch?.(matchId);
     onSelectTeam?.(teamId);

@@ -2,6 +2,7 @@ import { Award, CirclePlay, Gift, RotateCcw, Sparkles, Ticket } from "lucide-rea
 import { useEffect, useMemo, useRef, useState } from "react";
 import revealBackdrop from "../../assets/championship-trophy-renaiss-mark.webp";
 import { getMatchPrizeImageByMatchId, preloadRoundPrizeImages } from "../../data/matchPrizeImages";
+import { canonicalMatchId } from "../../data/matchIds";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import SideRays from "../SideRays/SideRays";
@@ -75,7 +76,7 @@ function buildWinnerRoundGroups(winners, rounds, matches, t, roundLabel) {
   const roundById = new Map(rounds.map((round) => [round.id, round]));
   const roundOrder = new Map(rounds.map((round, index) => [round.id, index]));
   const fallbackOrder = new Map(FALLBACK_ROUND_ORDER.map((roundId, index) => [roundId, index]));
-  const matchById = new Map(matches.map((match) => [match.id, match]));
+  const matchById = new Map(matches.map((match) => [canonicalMatchId(match.id), match]));
   const groupsById = new Map();
 
   winners.forEach((winner, globalIndex) => {
@@ -87,7 +88,7 @@ function buildWinnerRoundGroups(winners, rounds, matches, t, roundLabel) {
       order: roundOrder.get(roundId) ?? fallbackOrder.get(roundId) ?? 999,
       winners: [],
     };
-    const match = matchById.get(winner.matchId) || null;
+    const match = matchById.get(canonicalMatchId(winner.matchId)) || null;
 
     group.winners.push({
       winner,

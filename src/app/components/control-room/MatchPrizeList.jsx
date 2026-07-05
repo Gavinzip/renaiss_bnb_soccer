@@ -7,6 +7,7 @@ import {
 import { Fragment, useEffect, useRef } from "react";
 import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
 import { getMatchPrizeImage } from "../../data/matchPrizeImages";
+import { sameMatchId } from "../../data/matchIds";
 import { estimateMultiPrizeChance, formatNumber } from "../../data/ticketMath";
 import { MatchPrizeImageDialog } from "./MatchPrizeImageDialog";
 
@@ -72,22 +73,16 @@ function getMatchPhase(match) {
   };
 }
 
-function canonicalVoteMatchId(matchId) {
-  return String(matchId || "").trim().toUpperCase();
-}
-
 function getTeamVoteOutcome(roundVoteOutcomes, matchId, teamId) {
-  const canonicalMatchId = canonicalVoteMatchId(matchId);
   return roundVoteOutcomes.find((outcome) => (
-    canonicalVoteMatchId(outcome.matchId) === canonicalMatchId
+    sameMatchId(outcome.matchId, matchId)
     && outcome.teamId === teamId
   )) ?? null;
 }
 
 function getTeamAllocation(roundAllocations, matchId, teamId) {
-  const canonicalMatchId = canonicalVoteMatchId(matchId);
   return roundAllocations.find((entry) => (
-    canonicalVoteMatchId(entry.matchId) === canonicalMatchId
+    sameMatchId(entry.matchId, matchId)
     && entry.teamId === teamId
   )) ?? null;
 }
@@ -155,11 +150,9 @@ export function MatchPrizeList({
         {matches.map((match, matchIndex) => {
           const teamsHidden = isUnrevealedPrizePreviewMatch(match);
           const teams = teamsHidden ? [] : match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
-          const matchAllocations = roundAllocations.filter((entry) => (
-            canonicalVoteMatchId(entry.matchId) === canonicalVoteMatchId(match.id)
-          ));
+          const matchAllocations = roundAllocations.filter((entry) => sameMatchId(entry.matchId, match.id));
           const canPickMatch = isMatchVoteable(match);
-          const selected = selectedMatchId === match.id;
+          const selected = sameMatchId(selectedMatchId, match.id);
           const phase = getMatchPhase(match);
           const statusText = t(phase.labelKey);
           const statusTextCompact = phase.id === "voteable"

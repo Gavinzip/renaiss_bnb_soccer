@@ -10,6 +10,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
+import { sameMatchId } from "../../data/matchIds";
 import { isUnrevealedPrizePreviewMatch } from "../../data/matchReveal";
 import { preloadRoundPrizeImages } from "../../data/matchPrizeImages";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
@@ -172,7 +173,7 @@ function getTeamTone(match, team, allocation, selectedTeamId) {
 }
 
 function getTeamAllocation(roundAllocations, matchId, teamId) {
-  return roundAllocations.find((allocation) => allocation.matchId === matchId && allocation.teamId === teamId) ?? null;
+  return roundAllocations.find((allocation) => sameMatchId(allocation.matchId, matchId) && allocation.teamId === teamId) ?? null;
 }
 
 function MatchVoteGroup({
@@ -187,13 +188,13 @@ function MatchVoteGroup({
 }) {
   const { compactVotes, dateTime, t, teamName, venueName } = copy;
   const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
-  const matchAllocations = allocations.filter((entry) => entry.matchId === match.id);
+  const matchAllocations = allocations.filter((entry) => sameMatchId(entry.matchId, match.id));
   const matchTicketTotal = matchAllocations.reduce((total, entry) => total + entry.tickets, 0);
   const matchAllocationIndex = matchAllocations.length > 0
     ? allocations.findIndex((entry) => entry.id === matchAllocations[0].id)
     : -1;
   const canSelectTeam = isMatchVoteable(match);
-  const selected = selectedMatchId === match.id;
+  const selected = sameMatchId(selectedMatchId, match.id);
   const MatchIcon = getMatchIcon(match, matchAllocations[0]);
   const phase = getMatchPhase(match);
   const tone = getMatchTone(match);

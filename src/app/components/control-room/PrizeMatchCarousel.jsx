@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Gift } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { sameMatchId } from "../../data/matchIds";
 import { formatNumber } from "../../data/ticketMath";
 
 const swipeThreshold = 42;
@@ -23,7 +24,7 @@ function getMatchTeams(match, teamsById) {
 }
 
 function getTeamAllocation(roundAllocations, matchId, teamId) {
-  return roundAllocations.find((entry) => entry.matchId === matchId && entry.teamId === teamId) ?? null;
+  return roundAllocations.find((entry) => sameMatchId(entry.matchId, matchId) && entry.teamId === teamId) ?? null;
 }
 
 function matchDisplayCode(match) {
@@ -49,7 +50,7 @@ export function PrizeMatchCarousel({
   const pointerStartRef = useRef(null);
   const matchCount = matches.length;
   const selectedIndex = useMemo(
-    () => matches.findIndex((match) => match.id === selectedMatchId),
+    () => matches.findIndex((match) => sameMatchId(match.id, selectedMatchId)),
     [matches, selectedMatchId],
   );
 
@@ -141,7 +142,7 @@ export function PrizeMatchCarousel({
         >
           {matches.map((match, index) => {
             const teams = getMatchTeams(match, teamsById);
-            const matchAllocations = roundAllocations.filter((entry) => entry.matchId === match.id);
+            const matchAllocations = roundAllocations.filter((entry) => sameMatchId(entry.matchId, match.id));
             const matchTicketTotal = matchAllocations.reduce((total, entry) => total + entry.tickets, 0);
             const allocationIndex = matchAllocations.length > 0
               ? roundAllocations.findIndex((entry) => entry.id === matchAllocations[0].id)
@@ -194,7 +195,7 @@ export function PrizeMatchCarousel({
                   {teams.map((team, teamIndex) => {
                     const allocation = getTeamAllocation(roundAllocations, match.id, team.id);
                     const canPickTeam = canPickMatch;
-                    const isCurrentTeam = active && selectedMatchId === match.id && selectedTeamId === team.id;
+                    const isCurrentTeam = active && sameMatchId(selectedMatchId, match.id) && selectedTeamId === team.id;
                     const isAllocatedTeam = Boolean(allocation);
                     const isWinner = match.advancingTeamId === team.id;
                     const isEliminated = Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);

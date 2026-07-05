@@ -49,6 +49,7 @@ import { installGoogleAnalytics, trackEvent, trackPageView } from "./utils/analy
 import { fetchJsonWithTimeout, isRequestAbortError } from "./utils/httpClient";
 import { preloadImage } from "./utils/preloadAssets";
 import { requestRenaissProviderSignOut } from "./utils/renaissAuth";
+import { canonicalMatchId, sameMatchId } from "./data/matchIds";
 import { getRoundTicketAvailability } from "./data/ticketEligibility";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
@@ -251,13 +252,9 @@ function voteAllocationMergeKey(allocation) {
   return [
     allocation.walletAddress,
     allocation.roundId,
-    canonicalVoteMatchId(allocation.matchId),
+    canonicalMatchId(allocation.matchId),
     allocation.teamId,
   ].join(":");
-}
-
-function canonicalVoteMatchId(matchId) {
-  return String(matchId || "").trim().toUpperCase();
 }
 
 function buildLiveVoteStats(...sources) {
@@ -274,7 +271,7 @@ function buildLiveVoteStats(...sources) {
   const totalsByMatchTeam = new Map();
   const walletsByMatch = new Map();
   allocationsByKey.forEach((allocation) => {
-    const matchId = canonicalVoteMatchId(allocation.matchId);
+    const matchId = canonicalMatchId(allocation.matchId);
     if (!matchId) return;
     const key = `${matchId}:${allocation.teamId}`;
     totalsByMatchTeam.set(key, (totalsByMatchTeam.get(key) ?? 0) + allocation.tickets);
@@ -894,7 +891,7 @@ function AppContent() {
   const simulatedRound = useMemo(() => getRoundById(simulatedRoundId), [simulatedRoundId]);
   const activeRound = useMemo(() => getRoundById(activeRoundId), [activeRoundId]);
   const selectedMatch = useMemo(
-    () => matches.find((match) => match.id === selectedMatchId)
+    () => matches.find((match) => sameMatchId(match.id, selectedMatchId))
       ?? matches.find((match) => match.roundId === activeRoundId)
       ?? matches[0],
     [activeRoundId, matches, selectedMatchId],
@@ -946,7 +943,7 @@ function AppContent() {
   const visibleUsedRoundTickets = usedTicketPoolTickets;
   const visibleRemainingRoundTickets = remainingRoundTickets;
   const pendingVoteMatch = useMemo(
-    () => (pendingVote ? matches.find((match) => match.id === pendingVote.matchId) ?? null : null),
+    () => (pendingVote ? matches.find((match) => sameMatchId(match.id, pendingVote.matchId)) ?? null : null),
     [matches, pendingVote],
   );
   const pendingVoteTeam = useMemo(
@@ -1115,7 +1112,7 @@ function AppContent() {
   }
 
   function handleSelectMatch(matchId) {
-    const match = matches.find((entry) => entry.id === matchId);
+    const match = matches.find((entry) => sameMatchId(entry.id, matchId));
     if (match?.roundId && match.roundId !== activeRoundId) {
       setActiveRoundId(match.roundId);
     }
@@ -1185,7 +1182,7 @@ function AppContent() {
       const existingIndex = current.findIndex((allocation) => (
         allocation.walletAddress === selectedWallet
         && allocation.roundId === activeRoundId
-        && allocation.matchId === matchId
+        && sameMatchId(allocation.matchId, matchId)
         && allocation.teamId === teamId
       ));
 
@@ -1221,7 +1218,7 @@ function AppContent() {
     const request = typeof voteRequest === "object" && voteRequest
       ? voteRequest
       : { amount: voteRequest, matchId: selectedMatch?.id, teamId: selectedTeamId };
-    const targetMatch = matches.find((match) => match.id === request.matchId) ?? selectedMatch;
+    const targetMatch = matches.find((match) => sameMatchId(match.id, request.matchId)) ?? selectedMatch;
     const targetTeamId = String(request.teamId || selectedTeamId || "");
 
     if (!targetMatch?.id || !targetTeamId) {
