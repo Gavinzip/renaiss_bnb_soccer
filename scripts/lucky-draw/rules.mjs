@@ -27,6 +27,7 @@ export const EXTRA_LEGACY_PACKS_ENV = 'LUCKY_DRAW_EXTRA_LEGACY_PACKS'
 
 export const PACK_WEIGHTS = {
   omega: 1,
+  'renacrypt-pack': 2,
   eden: 3,
   'costume-pack': 2,
   magma: 2,
@@ -41,6 +42,15 @@ export const BUILTIN_PACK_EVENT_SOURCES = [
     pack: 'omega',
     label: 'OMEGA',
     ticketWeight: PACK_WEIGHTS.omega,
+    eventTopic: BUYBACK_EVENT_TOPIC,
+    eventKind: 'buyback-event',
+    configSource: 'built-in',
+  },
+  {
+    contract: '0xb2891022648c5fad3721c42c05d8d283d4d53080',
+    pack: 'renacrypt-pack',
+    label: 'RenaCrypt Pack',
+    ticketWeight: PACK_WEIGHTS['renacrypt-pack'],
     eventTopic: BUYBACK_EVENT_TOPIC,
     eventKind: 'buyback-event',
     configSource: 'built-in',

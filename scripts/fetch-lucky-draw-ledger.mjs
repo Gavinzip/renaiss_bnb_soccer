@@ -647,6 +647,7 @@ async function main() {
       'Legacy pack opens are matched to BuybackSuccessV3 logs on-chain by checkoutId.',
       'No Renaiss activity API fallback is used for ticket counting in this project.',
       'OMEGA buyback events count as 1 raw ticket.',
+      'RenaCrypt Pack buyback events count as 2 raw tickets.',
       'EDEN buyback events count as 3 raw tickets.',
       'Costume Pack, MAGMA, Starry Pack, and Plasma Pack matched buybacks count as 2 raw tickets.',
       extraPackRules.length > 0
