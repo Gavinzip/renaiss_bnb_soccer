@@ -857,6 +857,8 @@ export const enLocale = {
       "operatorRunCode": "Code",
       "operatorRunTransactions": "Transactions",
       "operatorRunNoTransactions": "No transactions yet",
+      "operatorRunWaitingRandomness": "Waiting for VRF randomness. Request ID: {requestId}",
+      "operatorRunWaitingRandomnessElapsed": "Waiting for VRF randomness, elapsed {elapsed}. Request ID: {requestId}",
       "operatorDrawBroadcasted": "Official on-chain draw flow was submitted.",
       "operatorDrawDryRun": "This was a check only. No transaction was sent.",
       "operatorDrawFinalsReady": "FIFA official sync: {finals}/{matches} final. Official draw is available.",

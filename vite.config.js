@@ -54,6 +54,7 @@ function readOnlyApiProxy(target) {
     "/api/live-round16-matches": createTarget(),
     "/api/live-future-knockout-matches": createTarget(),
     "/api/draw-winners": createTarget(),
+    "/api/draw-admin/status": createTarget(),
     "/api/auth/verification-stats": createTarget(),
     "/lucky-draw-ledger.json": createTarget(),
     "/match-draw-ledger.json": createTarget(),

@@ -15426,6 +15426,17 @@ body {
   white-space: nowrap;
 }
 
+.draw-operator-wallet__run-note {
+  margin: 0;
+  border: 1px solid rgba(129, 245, 207, 0.18);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: rgba(206, 255, 232, 0.9);
+  background: rgba(66, 148, 111, 0.08);
+  font-size: 0.72rem;
+  font-weight: 820;
+}
+
 .draw-operator-wallet__result.is-warning {
   border-color: rgba(255, 143, 143, 0.26);
   background: rgba(180, 69, 69, 0.085);
@@ -15460,7 +15471,8 @@ body {
   font-weight: 780;
 }
 
-.draw-operator-wallet__result pre {
+.draw-operator-wallet__result pre,
+.draw-operator-wallet__run pre {
   max-height: 180px;
   overflow: auto;
   margin: 0;

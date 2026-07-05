@@ -46,6 +46,14 @@ function jsonStringify(value) {
   )
 }
 
+function logProgress(message, details = {}) {
+  const suffix = Object.entries(details)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ')
+  console.error(`[draw-round] ${message}${suffix ? ` ${suffix}` : ''}`)
+}
+
 function normalizeBytes32(value) {
   const text = String(value || '').trim()
   return /^0x[a-fA-F0-9]{64}$/.test(text) ? text.toLowerCase() : ''
@@ -446,9 +454,20 @@ async function readRoundDrawStatus(contract, roundKey) {
 
 async function waitForRoundRandomnessReady(contract, roundKey, timeoutMs, intervalMs) {
   const startedAt = Date.now()
+  let lastLoggedBucket = -1
   while (Date.now() - startedAt < timeoutMs) {
     const status = await readRoundDrawStatus(contract, roundKey)
     if (status.randomnessReady || status.fulfilled) return status
+    const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000)
+    const bucket = Math.floor(elapsedSeconds / 30)
+    if (bucket !== lastLoggedBucket) {
+      lastLoggedBucket = bucket
+      logProgress('waitingForRoundRandomness', {
+        elapsedSeconds,
+        timeoutSeconds: Math.round(timeoutMs / 1000),
+        requestId: status.requestId,
+      })
+    }
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
   }
   throw new Error(`Timed out waiting for round VRF fulfillment after ${Math.round(timeoutMs / 1000)} seconds.`)
@@ -533,6 +552,11 @@ if (!broadcast || verifyOnly) {
 }
 
 if (!status.finalized) {
+  logProgress('finalizeRoundLedger:start', {
+    roundId: roundLedger.roundId,
+    matchCount: roundLedger.matches.length,
+    ledgerHash: roundLedger.ledgerHash,
+  })
   const finalizeTx = await raffle.finalizeRoundLedger(
     roundLedger.roundKey,
     roundLedger.ledgerHash,
@@ -540,7 +564,9 @@ if (!status.finalized) {
     roundLedger.ledgerUri,
   )
   txs.push({ step: 'finalizeRoundLedger', hash: finalizeTx.hash })
+  logProgress('finalizeRoundLedger:sent', { tx: finalizeTx.hash })
   await finalizeTx.wait()
+  logProgress('finalizeRoundLedger:confirmed', { tx: finalizeTx.hash })
   status = await readRoundDrawStatus(raffle, roundLedger.roundKey)
 }
 
@@ -549,19 +575,27 @@ if (status.ledgerHash.toLowerCase() !== roundLedger.ledgerHash.toLowerCase()) {
 }
 
 if (!status.requested) {
+  logProgress('requestRoundDraw:start', { roundId: roundLedger.roundId })
   const requestTx = await raffle.requestRoundDraw(roundLedger.roundKey)
   txs.push({ step: 'requestRoundDraw', hash: requestTx.hash })
+  logProgress('requestRoundDraw:sent', { tx: requestTx.hash })
   await requestTx.wait()
+  logProgress('requestRoundDraw:confirmed', { tx: requestTx.hash })
   status = await readRoundDrawStatus(raffle, roundLedger.roundKey)
 }
 
 if (!status.randomnessReady && !status.fulfilled) {
+  logProgress('waitForRoundRandomnessReady:start', {
+    roundId: roundLedger.roundId,
+    requestId: status.requestId,
+  })
   status = await waitForRoundRandomnessReady(
     raffle,
     roundLedger.roundKey,
     Number(argValue('--timeout-ms') || 10 * 60 * 1000),
     10_000,
   )
+  logProgress('waitForRoundRandomnessReady:ready', { requestId: status.requestId })
 }
 
 while (!status.fulfilled) {
@@ -583,7 +617,15 @@ while (!status.fulfilled) {
     matchIds: batch.map((match) => match.matchId),
     hash: tx.hash,
   })
+  logProgress(matchKeys.length === 1 ? 'revealRoundMatch:sent' : 'revealRoundMatches:sent', {
+    matchIds: batch.map((match) => match.matchId).join(','),
+    tx: tx.hash,
+  })
   await tx.wait()
+  logProgress(matchKeys.length === 1 ? 'revealRoundMatch:confirmed' : 'revealRoundMatches:confirmed', {
+    matchIds: batch.map((match) => match.matchId).join(','),
+    tx: tx.hash,
+  })
   status = await readRoundDrawStatus(raffle, roundLedger.roundKey)
 }
 

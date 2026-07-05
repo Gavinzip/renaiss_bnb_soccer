@@ -857,6 +857,8 @@ export const koLocale = {
       "operatorRunCode": "코드",
       "operatorRunTransactions": "트랜잭션 기록",
       "operatorRunNoTransactions": "아직 트랜잭션 없음",
+      "operatorRunWaitingRandomness": "VRF 난수 응답을 기다리는 중입니다. Request ID: {requestId}",
+      "operatorRunWaitingRandomnessElapsed": "VRF 난수 응답을 기다리는 중이며 {elapsed} 경과했습니다. Request ID: {requestId}",
       "operatorDrawBroadcasted": "공식 온체인 추첨 절차가 제출되었습니다.",
       "operatorDrawDryRun": "이번은 확인만 수행했으며 트랜잭션은 전송하지 않았습니다.",
       "operatorDrawFinalsReady": "FIFA 공식 동기화: {finals}/{matches} 경기 종료. 공식 추첨을 실행할 수 있습니다.",

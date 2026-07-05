@@ -857,6 +857,8 @@ export const zhHantLocale = {
       "operatorRunCode": "代碼",
       "operatorRunTransactions": "交易紀錄",
       "operatorRunNoTransactions": "尚無交易紀錄",
+      "operatorRunWaitingRandomness": "等待 VRF 隨機數回傳。Request ID: {requestId}",
+      "operatorRunWaitingRandomnessElapsed": "等待 VRF 隨機數回傳中，已等待 {elapsed}。Request ID: {requestId}",
       "operatorDrawBroadcasted": "已送出正式鏈上抽獎流程。",
       "operatorDrawDryRun": "這次只是檢查，沒有送出交易。",
       "operatorDrawFinalsReady": "FIFA 官方同步：{finals}/{matches} 完賽，可以正式抽獎。",

@@ -141,6 +141,7 @@ let lastDrawAdminRun = {
   action: null,
   roundId: null,
   result: null,
+  output: null,
 }
 const rateLimitEnabled = process.env.HTTP_RATE_LIMIT_ENABLED !== '0'
 const rateLimiter = createMemoryRateLimiter({
@@ -736,6 +737,39 @@ function drawNetworkStatusPayload(networkKey = drawDefaultNetworkKey, { roundId 
   }
 }
 
+function cleanDrawRunOutput(value) {
+  const text = String(value || '').trim()
+  if (!text) return null
+  return text.replace(/\u001b\[[0-9;]*m/g, '')
+}
+
+function drawRunOutputPayload(stdout, stderr) {
+  const output = {
+    stdout: cleanDrawRunOutput(stdout),
+    stderr: cleanDrawRunOutput(stderr),
+  }
+  return output.stdout || output.stderr ? output : null
+}
+
+function updateLastDrawRunOutput(stdout, stderr) {
+  lastDrawAdminRun = {
+    ...lastDrawAdminRun,
+    output: drawRunOutputPayload(stdout, stderr),
+  }
+}
+
+function summarizeDrawRunFailure({ stdout = '', stderr = '', parseError = null, code = null, fallback = 'Draw script failed.' } = {}) {
+  const output = cleanDrawRunOutput(`${stderr || ''}\n${stdout || ''}`) || ''
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const errorLine = lines.find((line) => /^Error[:\s]/i.test(line))
+    || lines.find((line) => /(timed out|timeout|revert|enoent|missing|failed)/i.test(line))
+    || lines[0]
+  return errorLine || parseError?.message || (code == null ? fallback : `draw script exited with code ${code}`)
+}
+
 function drawAdminStatusPayload({
   includeLastRun = false,
   includePrivate = false,
@@ -1048,6 +1082,7 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
     action: 'ledger',
     roundId,
     result: null,
+    output: null,
   }
 
   return new Promise((resolvePromise, rejectPromise) => {
@@ -1072,6 +1107,7 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
         durationSeconds: durationSeconds(startedAt, finishedAt),
         exitCode: null,
         error: `draw ledger script timed out after ${drawAdminScriptTimeoutSeconds} seconds`,
+        output: drawRunOutputPayload(stdout, stderr),
       }
       drawAdminRunRunning = false
       rejectPromise(Object.assign(new Error(lastDrawAdminRun.error), {
@@ -1082,9 +1118,17 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
 
     child.stdout.on('data', (chunk) => {
       stdout = appendLimitedOutput(stdout, chunk)
+      lastDrawAdminRun = {
+        ...lastDrawAdminRun,
+        output: drawRunOutputPayload(stdout, stderr),
+      }
     })
     child.stderr.on('data', (chunk) => {
       stderr = appendLimitedOutput(stderr, chunk)
+      lastDrawAdminRun = {
+        ...lastDrawAdminRun,
+        output: drawRunOutputPayload(stdout, stderr),
+      }
     })
     child.on('error', (error) => {
       if (settled) return
@@ -1098,6 +1142,7 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
         durationSeconds: durationSeconds(startedAt, finishedAt),
         exitCode: null,
         error: error.message,
+        output: drawRunOutputPayload(stdout, stderr),
       }
       drawAdminRunRunning = false
       rejectPromise(Object.assign(error, { statusCode: 500, code: 'draw_ledger_script_failed' }))
@@ -1123,8 +1168,9 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
         exitCode: code,
         error: code === 0 && !parseError
           ? null
-          : parseError?.message || `draw ledger script exited with code ${code}`,
+          : summarizeDrawRunFailure({ stdout, stderr, parseError, code, fallback: 'Draw ledger script failed.' }),
         result: code === 0 && !parseError ? payload : null,
+        output: drawRunOutputPayload(stdout, stderr),
       }
       drawAdminRunRunning = false
 
@@ -1215,6 +1261,7 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
     action,
     roundId,
     result: null,
+    output: null,
   }
 
   return new Promise((resolvePromise, rejectPromise) => {
@@ -1239,6 +1286,7 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
         durationSeconds: durationSeconds(startedAt, finishedAt),
         exitCode: null,
         error: `draw script timed out after ${drawAdminScriptTimeoutSeconds} seconds`,
+        output: drawRunOutputPayload(stdout, stderr),
       }
       drawAdminRunRunning = false
       rejectPromise(Object.assign(new Error(lastDrawAdminRun.error), {
@@ -1249,9 +1297,11 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
 
     child.stdout.on('data', (chunk) => {
       stdout = appendLimitedOutput(stdout, chunk)
+      updateLastDrawRunOutput(stdout, stderr)
     })
     child.stderr.on('data', (chunk) => {
       stderr = appendLimitedOutput(stderr, chunk)
+      updateLastDrawRunOutput(stdout, stderr)
     })
     child.on('error', (error) => {
       if (settled) return
@@ -1265,6 +1315,7 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
         durationSeconds: durationSeconds(startedAt, finishedAt),
         exitCode: null,
         error: error.message,
+        output: drawRunOutputPayload(stdout, stderr),
       }
       drawAdminRunRunning = false
       rejectPromise(Object.assign(error, { statusCode: 500, code: 'draw_script_failed' }))
@@ -1290,8 +1341,9 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
         exitCode: code,
         error: code === 0 && !parseError
           ? null
-          : parseError?.message || `draw script exited with code ${code}`,
+          : summarizeDrawRunFailure({ stdout, stderr, parseError, code }),
         result: code === 0 && !parseError ? payload : null,
+        output: drawRunOutputPayload(stdout, stderr),
       }
       drawAdminRunRunning = false
 

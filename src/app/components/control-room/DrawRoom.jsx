@@ -556,6 +556,76 @@ function formatRunTimestamp(value) {
   return date.toLocaleString();
 }
 
+function runOutputText(...sources) {
+  const chunks = [];
+  const seen = new Set();
+  for (const source of sources) {
+    const values = [
+      source?.stderr,
+      source?.stdout,
+      source?.output?.stderr,
+      source?.output?.stdout,
+    ];
+    for (const value of values) {
+      const text = String(value || "").trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      chunks.push(text);
+    }
+  }
+  const output = chunks.join("\n\n");
+  return output.length > 12000 ? output.slice(-12000) : output;
+}
+
+function extractRunOutputTransactions(output) {
+  const txs = [];
+  const seen = new Set();
+  const matcher = /\[draw-round\]\s+([^\s]+).*?\btx=(0x[a-fA-F0-9]{64})/g;
+  let match = matcher.exec(output || "");
+  while (match) {
+    const hash = match[2];
+    if (!seen.has(hash)) {
+      seen.add(hash);
+      txs.push({ step: match[1], hash });
+    }
+    match = matcher.exec(output || "");
+  }
+  return txs;
+}
+
+function mergeRunTransactions(primaryTxs, outputTxs) {
+  const merged = [];
+  const seen = new Set();
+  for (const tx of [...primaryTxs, ...outputTxs]) {
+    const key = tx?.hash || `${tx?.step || "tx"}-${merged.length}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(tx);
+  }
+  return merged;
+}
+
+function runStageCopy({ runPayloadResult, visibleRun, output, t }) {
+  const status = runPayloadResult?.status;
+  if (status?.requested && !status?.randomnessReady && !status?.fulfilled) {
+    return t("draw.operatorRunWaitingRandomness", { requestId: status.requestId || "-" });
+  }
+  const waitingLine = String(output || "")
+    .split(/\r?\n/)
+    .reverse()
+    .find((line) => line.includes("waitingForRoundRandomness"));
+  if (waitingLine) {
+    const requestId = waitingLine.match(/requestId=([^\s]+)/)?.[1] || "-";
+    const elapsedSeconds = waitingLine.match(/elapsedSeconds=([0-9]+)/)?.[1] || "";
+    return t("draw.operatorRunWaitingRandomnessElapsed", {
+      requestId,
+      elapsed: elapsedSeconds ? formatDurationSeconds(elapsedSeconds) : "-",
+    });
+  }
+  if (visibleRun?.error) return visibleRun.error;
+  return "";
+}
+
 function roundLedgerSummaryFor(adminStatus, roundId) {
   const roundDraws = Array.isArray(adminStatus?.matchDrawLedger?.roundDraws)
     ? adminStatus.matchDrawLedger.roundDraws
@@ -719,12 +789,13 @@ function DrawOperatorWallet({ activeDraw, t }) {
   }, [activeRun?.status, adminStatus?.running, busyAction]);
 
   useEffect(() => {
-    if (!adminStatus?.running) return undefined;
+    if (!adminStatus?.running && activeRun?.status !== "running") return undefined;
+    refreshAdminStatus();
     const timer = window.setInterval(() => {
       refreshAdminStatus();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [adminStatus?.running, selectedNetworkKey, activeDraw.id]);
+  }, [activeDraw.id, activeRun?.status, adminStatus?.running, selectedNetworkKey]);
 
   async function refreshAdminStatus() {
     try {
@@ -839,6 +910,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
     setSelectedNetworkKey(normalizeDrawNetworkKey(networkKey));
     setIssue("");
     setRunResult(null);
+    setActiveRun(null);
   }
 
   function beginOperatorRun(action, roundId) {
@@ -1090,12 +1162,16 @@ function DrawOperatorWallet({ activeDraw, t }) {
       matches: formatNumber(roundReadiness.expectedCount),
       remaining: formatNumber(roundReadiness.missingCount),
     });
-  const runPayloadResult = runResult?.result || currentAdminStatus?.lastRun?.result || null;
+  const serverLastRun = currentAdminStatus?.lastRun?.startedAt ? currentAdminStatus.lastRun : null;
+  const visibleRun = serverLastRun || activeRun;
+  const runPayloadResult = runResult?.result || serverLastRun?.result || null;
   const plannedSteps = Array.isArray(runPayloadResult?.plannedSteps) ? runPayloadResult.plannedSteps : [];
-  const txs = Array.isArray(runPayloadResult?.txs) ? runPayloadResult.txs : [];
-  const lastRun = currentAdminStatus?.lastRun?.startedAt ? currentAdminStatus.lastRun : null;
-  const visibleRun = activeRun || lastRun;
-  const runIsRunning = activeRun?.status === "running" || Boolean(currentAdminStatus?.running);
+  const outputText = runOutputText(runResult, activeRun, serverLastRun);
+  const txs = mergeRunTransactions(
+    Array.isArray(runPayloadResult?.txs) ? runPayloadResult.txs : [],
+    extractRunOutputTransactions(outputText),
+  );
+  const runIsRunning = Boolean(currentAdminStatus?.running) || (activeRun?.status === "running" && !serverLastRun?.finishedAt);
   const runElapsedSeconds = runIsRunning
     ? (currentAdminStatus?.runningElapsedSeconds ?? elapsedSecondsSince(visibleRun?.startedAt, nowMs))
     : (visibleRun?.durationSeconds ?? durationSecondsBetween(visibleRun?.startedAt, visibleRun?.finishedAt));
@@ -1107,11 +1183,12 @@ function DrawOperatorWallet({ activeDraw, t }) {
         ? t("draw.operatorRunFailed")
         : t("draw.operatorRunIdle");
   const runTone = runIsRunning ? "is-running" : visibleRun?.ok ? "is-ready" : visibleRun ? "is-warning" : "";
+  const runStage = runStageCopy({ runPayloadResult, visibleRun, output: outputText, t });
   const resultDetails = [
     runResult?.code ? `${t("draw.operatorRunCode")}: ${runResult.code}` : "",
     runResult?.error || "",
-    runResult?.stderr || "",
-    runResult?.stdout || "",
+    visibleRun?.error || "",
+    outputText,
   ].filter(Boolean);
 
   return (
@@ -1285,6 +1362,9 @@ function DrawOperatorWallet({ activeDraw, t }) {
             <strong>{(runResult?.code || visibleRun?.code || visibleRun?.exitCode) ?? "-"}</strong>
           </div>
         </div>
+        {runStage ? (
+          <p className="draw-operator-wallet__run-note">{runStage}</p>
+        ) : null}
         <p>{txs.length > 0 ? t("draw.operatorRunTransactions") : t("draw.operatorRunNoTransactions")}</p>
         {txs.length > 0 ? (
           <ol>
@@ -1294,6 +1374,9 @@ function DrawOperatorWallet({ activeDraw, t }) {
               </li>
             ))}
           </ol>
+        ) : null}
+        {outputText ? (
+          <pre>{outputText}</pre>
         ) : null}
       </section>
 
