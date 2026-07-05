@@ -28,6 +28,8 @@ COPY package*.json ./
 COPY --from=runtime-deps /app/node_modules ./node_modules
 
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/artifacts/contracts/RenaissLuckyDraw.sol/RenaissLuckyDraw.json ./artifacts/contracts/RenaissLuckyDraw.sol/RenaissLuckyDraw.json
+RUN node -e "const artifact=require('./artifacts/contracts/RenaissLuckyDraw.sol/RenaissLuckyDraw.json'); if (!Array.isArray(artifact.abi) || !artifact.abi.length) throw new Error('RenaissLuckyDraw artifact ABI missing')"
 COPY --from=build /app/config ./config
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/src/app/data ./src/app/data

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run contract:compile && vite build",
     "test": "hardhat test",
     "start": "node scripts/production-server.mjs",
     "local:seed": "node scripts/seed-local-round16-demo.mjs",
