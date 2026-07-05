@@ -661,21 +661,40 @@ function createTeamForSlot(slot, teamsById, teamsByName) {
   };
 }
 
-function getVoteTotal(voteTotalsByMatchTeam, matchId, teamId) {
-  const key = `${matchId}:${teamId}`;
-  const value = typeof voteTotalsByMatchTeam?.get === "function"
-    ? voteTotalsByMatchTeam.get(key)
-    : voteTotalsByMatchTeam?.[key];
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+function canonicalVoteMatchId(matchId) {
+  return String(matchId || "").trim().toUpperCase();
 }
 
-function getVoterCount(voterCountsByMatch, matchId) {
-  const value = typeof voterCountsByMatch?.get === "function"
-    ? voterCountsByMatch.get(matchId)
-    : voterCountsByMatch?.[matchId];
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+function canonicalVoteMatchIds(matchIds) {
+  const values = Array.isArray(matchIds) ? matchIds : [matchIds];
+  return Array.from(new Set(values.flatMap((matchId) => {
+    const canonical = canonicalVoteMatchId(matchId);
+    return canonical ? [canonical] : [];
+  })));
+}
+
+function readVoteLookupValue(source, key) {
+  return typeof source?.get === "function" ? source.get(key) : source?.[key];
+}
+
+function getVoteTotal(voteTotalsByMatchTeam, matchIds, teamId) {
+  for (const matchId of canonicalVoteMatchIds(matchIds)) {
+    const value = readVoteLookupValue(voteTotalsByMatchTeam, `${matchId}:${teamId}`);
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return Math.max(0, Math.floor(numeric));
+  }
+
+  return 0;
+}
+
+function getVoterCount(voterCountsByMatch, matchIds) {
+  for (const matchId of canonicalVoteMatchIds(matchIds)) {
+    const value = readVoteLookupValue(voterCountsByMatch, matchId);
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return Math.max(0, Math.floor(numeric));
+  }
+
+  return 0;
 }
 
 function normalizeMatchCode(value) {
@@ -813,7 +832,7 @@ export function buildRealtimeRound32Preview({
         "left",
         teamsById,
         teamsByName,
-        getVoteTotal(voteTotalsByMatchTeam, match.id, resolveLocalTeamId({
+        getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], resolveLocalTeamId({
           abbreviation: fixture.home.abbreviation,
           teamName: fixture.home.name,
         }, teamsById, teamsByName)),
@@ -823,7 +842,7 @@ export function buildRealtimeRound32Preview({
         "right",
         teamsById,
         teamsByName,
-        getVoteTotal(voteTotalsByMatchTeam, match.id, resolveLocalTeamId({
+        getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], resolveLocalTeamId({
           abbreviation: fixture.away.abbreviation,
           teamName: fixture.away.name,
         }, teamsById, teamsByName)),
@@ -847,7 +866,7 @@ export function buildRealtimeRound32Preview({
         advancingTeamId,
         awaitingOfficialResult: false,
         poolEntries: 0,
-        voterCount: getVoterCount(voterCountsByMatch, match.id),
+        voterCount: getVoterCount(voterCountsByMatch, [match.id, match.displayCode, fixture.matchCode]),
         resultSnapshotId: advancingTeamId ? `fifa-r32-${fixture.matchCode.toLowerCase()}` : null,
         realtimePreview: true,
         source: "fifa-calendar-fixture",
@@ -872,7 +891,7 @@ export function buildRealtimeRound32Preview({
       advancingTeamId: null,
       awaitingOfficialResult: false,
       poolEntries: 0,
-      voterCount: getVoterCount(voterCountsByMatch, match.id),
+      voterCount: getVoterCount(voterCountsByMatch, [match.id, match.displayCode]),
       resultSnapshotId: null,
       realtimePreview: true,
       source: "fifa-calendar-pending",
@@ -910,7 +929,7 @@ export function buildRealtimeRound32Preview({
           score: undefined,
           advancingTeamId: null,
           poolEntries: 0,
-          voterCount: getVoterCount(voterCountsByMatch, match.id),
+          voterCount: getVoterCount(voterCountsByMatch, [match.id, match.displayCode]),
           resultSnapshotId: null,
           realtimePreview: true,
           source: `fifa-${sourceKey}-pending`,
@@ -925,7 +944,7 @@ export function buildRealtimeRound32Preview({
           "left",
           teamsById,
           teamsByName,
-          getVoteTotal(voteTotalsByMatchTeam, match.id, resolveLocalTeamId({
+          getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], resolveLocalTeamId({
             abbreviation: fixture.home.abbreviation,
             teamName: fixture.home.name,
           }, teamsById, teamsByName)),
@@ -937,7 +956,7 @@ export function buildRealtimeRound32Preview({
           "right",
           teamsById,
           teamsByName,
-          getVoteTotal(voteTotalsByMatchTeam, match.id, resolveLocalTeamId({
+          getVoteTotal(voteTotalsByMatchTeam, [match.id, match.displayCode, fixture.matchCode], resolveLocalTeamId({
             abbreviation: fixture.away.abbreviation,
             teamName: fixture.away.name,
           }, teamsById, teamsByName)),
@@ -962,7 +981,7 @@ export function buildRealtimeRound32Preview({
         advancingTeamId,
         awaitingOfficialResult: false,
         poolEntries: 0,
-        voterCount: getVoterCount(voterCountsByMatch, match.id),
+        voterCount: getVoterCount(voterCountsByMatch, [match.id, match.displayCode, fixture.matchCode]),
         resultSnapshotId: advancingTeamId ? `fifa-${sourceKey}-${fixture.matchCode.toLowerCase()}` : null,
         realtimePreview: true,
         source: fixture.teamsConfirmed ? `fifa-${sourceKey}-fixture` : `fifa-${sourceKey}-pending-team`,

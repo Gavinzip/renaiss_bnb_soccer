@@ -251,9 +251,13 @@ function voteAllocationMergeKey(allocation) {
   return [
     allocation.walletAddress,
     allocation.roundId,
-    allocation.matchId,
+    canonicalVoteMatchId(allocation.matchId),
     allocation.teamId,
   ].join(":");
+}
+
+function canonicalVoteMatchId(matchId) {
+  return String(matchId || "").trim().toUpperCase();
 }
 
 function buildLiveVoteStats(...sources) {
@@ -270,13 +274,15 @@ function buildLiveVoteStats(...sources) {
   const totalsByMatchTeam = new Map();
   const walletsByMatch = new Map();
   allocationsByKey.forEach((allocation) => {
-    const key = `${allocation.matchId}:${allocation.teamId}`;
+    const matchId = canonicalVoteMatchId(allocation.matchId);
+    if (!matchId) return;
+    const key = `${matchId}:${allocation.teamId}`;
     totalsByMatchTeam.set(key, (totalsByMatchTeam.get(key) ?? 0) + allocation.tickets);
     const walletAddress = String(allocation.walletAddress || "").toLowerCase();
     if (walletAddress) {
-      const wallets = walletsByMatch.get(allocation.matchId) ?? new Set();
+      const wallets = walletsByMatch.get(matchId) ?? new Set();
       wallets.add(walletAddress);
-      walletsByMatch.set(allocation.matchId, wallets);
+      walletsByMatch.set(matchId, wallets);
     }
   });
 

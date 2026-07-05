@@ -72,12 +72,24 @@ function getMatchPhase(match) {
   };
 }
 
+function canonicalVoteMatchId(matchId) {
+  return String(matchId || "").trim().toUpperCase();
+}
+
 function getTeamVoteOutcome(roundVoteOutcomes, matchId, teamId) {
-  return roundVoteOutcomes.find((outcome) => outcome.matchId === matchId && outcome.teamId === teamId) ?? null;
+  const canonicalMatchId = canonicalVoteMatchId(matchId);
+  return roundVoteOutcomes.find((outcome) => (
+    canonicalVoteMatchId(outcome.matchId) === canonicalMatchId
+    && outcome.teamId === teamId
+  )) ?? null;
 }
 
 function getTeamAllocation(roundAllocations, matchId, teamId) {
-  return roundAllocations.find((entry) => entry.matchId === matchId && entry.teamId === teamId) ?? null;
+  const canonicalMatchId = canonicalVoteMatchId(matchId);
+  return roundAllocations.find((entry) => (
+    canonicalVoteMatchId(entry.matchId) === canonicalMatchId
+    && entry.teamId === teamId
+  )) ?? null;
 }
 
 function matchDisplayCode(match) {
@@ -143,7 +155,9 @@ export function MatchPrizeList({
         {matches.map((match, matchIndex) => {
           const teamsHidden = isUnrevealedPrizePreviewMatch(match);
           const teams = teamsHidden ? [] : match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
-          const matchAllocations = roundAllocations.filter((entry) => entry.matchId === match.id);
+          const matchAllocations = roundAllocations.filter((entry) => (
+            canonicalVoteMatchId(entry.matchId) === canonicalVoteMatchId(match.id)
+          ));
           const canPickMatch = isMatchVoteable(match);
           const selected = selectedMatchId === match.id;
           const phase = getMatchPhase(match);
