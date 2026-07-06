@@ -618,6 +618,38 @@ function mergeRunTransactions(primaryTxs, outputTxs) {
   return merged;
 }
 
+function drawRunMatches(run, drawRoundId, networkKey) {
+  if (!run) return false;
+  const runDrawRoundId = String(run.drawRoundId || run.roundId || "");
+  const runNetworkKey = normalizeDrawNetworkKey(run.networkKey || run.network || "");
+  return runDrawRoundId === String(drawRoundId || "") && runNetworkKey === normalizeDrawNetworkKey(networkKey);
+}
+
+function drawRunSucceeded(run, action, drawRoundId, networkKey) {
+  return Boolean(run?.ok && run.action === action && drawRunMatches(run, drawRoundId, networkKey));
+}
+
+function drawFailureText(payload, error) {
+  return [
+    payload?.error,
+    payload?.stderr,
+    payload?.stdout,
+    payload?.output?.stderr,
+    payload?.output?.stdout,
+    payload?.lastRun?.error,
+    payload?.lastRun?.output?.stderr,
+    payload?.lastRun?.output?.stdout,
+    error?.message,
+  ].filter(Boolean).join("\n");
+}
+
+function shouldAutoRedrawAfterFailure(action, payload, error) {
+  if (action !== "verify" && action !== "broadcast") return false;
+  const text = drawFailureText(payload, error).toLowerCase();
+  if (!text) return false;
+  return /ledger hash .*does not match|does not match .*ledger hash|waitingforroundrandomness|randomness.*timed out|draw script timed out|already requested|request.*already exists|pending request|vrf.*timeout/.test(text);
+}
+
 function runStageCopy({ runPayloadResult, visibleRun, output, t }) {
   const status = runPayloadResult?.status;
   if (status?.requested && !status?.randomnessReady && !status?.fulfilled) {
@@ -955,6 +987,14 @@ function DrawOperatorWallet({ activeDraw, t }) {
     setActiveRun(null);
   }
 
+  function enableNextRedrawVersion() {
+    const nextAttempt = redrawEnabled ? normalizeRedrawAttempt(redrawAttempt + 1) : normalizeRedrawAttempt(redrawAttempt);
+    const nextDrawRoundId = drawRoundIdFor(sourceRoundId, true, nextAttempt);
+    setRedrawEnabled(true);
+    setRedrawAttempt(nextAttempt);
+    return nextDrawRoundId;
+  }
+
   function beginOperatorRun(action, roundId, nextDrawRoundId = roundId) {
     const startedAt = new Date().toISOString();
     setNowMs(Date.now());
@@ -1156,7 +1196,11 @@ function DrawOperatorWallet({ activeDraw, t }) {
       }
     } catch (error) {
       const payload = error?.payload || null;
-      setIssue(payload?.error || error?.message || t("draw.operatorDrawFailed"));
+      const failureMessage = payload?.error || error?.message || t("draw.operatorDrawFailed");
+      const nextRedrawRoundId = shouldAutoRedrawAfterFailure(action, payload, error) ? enableNextRedrawVersion() : "";
+      setIssue(nextRedrawRoundId
+        ? `${failureMessage} ${t("draw.operatorDrawAutoRedrawEnabled", { drawRound: nextRedrawRoundId })}`
+        : failureMessage);
       if (payload) setRunResult(payload);
       finishOperatorRun(payload, error);
     } finally {
@@ -1239,6 +1283,88 @@ function DrawOperatorWallet({ activeDraw, t }) {
     visibleRun?.error || "",
     outputText,
   ].filter(Boolean);
+  const currentBroadcastCompleted = drawRunSucceeded(runResult, "broadcast", drawRoundId, selectedNetworkKey)
+    || drawRunSucceeded(visibleRun, "broadcast", drawRoundId, selectedNetworkKey);
+  const primaryDrawStep = (() => {
+    if (operationBusy) {
+      return {
+        action: "running",
+        disabled: true,
+        Icon: Loader2,
+        iconClassName: "is-spinning",
+        label: t("draw.operatorDrawPrimaryRunning"),
+        className: "is-primary",
+      };
+    }
+    if (!connected) {
+      return {
+        action: "connect",
+        disabled: true,
+        Icon: WalletCards,
+        label: t("draw.operatorDrawPrimaryConnectWallet"),
+        className: "is-primary",
+      };
+    }
+    if (!targetMatched) {
+      return {
+        action: "switch-chain",
+        disabled: false,
+        Icon: Network,
+        label: t("draw.operatorWalletSwitch", { chain: targetNetworkLabel }),
+        className: "is-primary",
+      };
+    }
+    if (!roundReadiness.complete) {
+      return {
+        action: "waiting-finals",
+        disabled: true,
+        Icon: Clock3,
+        label: t("draw.operatorDrawPrimaryWaitingFinals"),
+        className: "is-primary",
+      };
+    }
+    if (!ledgerLocked) {
+      return {
+        action: "ledger",
+        disabled: !canLockLedger,
+        Icon: LockKeyhole,
+        label: t("draw.operatorDrawLockLedger"),
+        className: "is-primary",
+      };
+    }
+    if (!currentBroadcastCompleted) {
+      return {
+        action: "broadcast",
+        disabled: !canBroadcastDraw,
+        Icon: Award,
+        label: t("draw.operatorDrawBroadcast"),
+        className: "is-danger",
+      };
+    }
+    return {
+      action: "complete",
+      disabled: true,
+      Icon: CheckCircle2,
+      label: t("draw.operatorDrawPrimaryComplete"),
+      className: "is-primary",
+    };
+  })();
+  const PrimaryDrawIcon = primaryDrawStep.Icon;
+
+  async function runPrimaryDrawStep() {
+    if (primaryDrawStep.disabled) return;
+    if (primaryDrawStep.action === "switch-chain") {
+      await switchTargetChain();
+      return;
+    }
+    if (primaryDrawStep.action === "ledger") {
+      await lockDrawLedger();
+      return;
+    }
+    if (primaryDrawStep.action === "verify" || primaryDrawStep.action === "broadcast") {
+      await runDrawAction(primaryDrawStep.action);
+    }
+  }
 
   return (
     <section className="draw-operator-wallet" aria-label={t("draw.operatorWalletAria")}>
@@ -1388,28 +1514,12 @@ function DrawOperatorWallet({ activeDraw, t }) {
         <div className="draw-operator-wallet__actions">
           <button
             type="button"
-            disabled={!canLockLedger}
-            onClick={lockDrawLedger}
+            className={["draw-operator-wallet__primary-action", primaryDrawStep.className].filter(Boolean).join(" ")}
+            disabled={primaryDrawStep.disabled}
+            onClick={runPrimaryDrawStep}
           >
-            {busyAction === "draw:ledger" ? <Loader2 className="is-spinning" size={15} /> : <LockKeyhole size={15} strokeWidth={2.2} />}
-            <span>{t("draw.operatorDrawLockLedger")}</span>
-          </button>
-          <button
-            type="button"
-            disabled={!canRunDraw}
-            onClick={() => runDrawAction("verify")}
-          >
-            {busyAction === "draw:verify" ? <Loader2 className="is-spinning" size={15} /> : <ShieldCheck size={15} strokeWidth={2.2} />}
-            <span>{t("draw.operatorDrawVerify")}</span>
-          </button>
-          <button
-            type="button"
-            className="is-danger"
-            disabled={!canBroadcastDraw}
-            onClick={() => runDrawAction("broadcast")}
-          >
-            {busyAction === "draw:broadcast" ? <Loader2 className="is-spinning" size={15} /> : <Award size={15} strokeWidth={2.2} />}
-            <span>{t("draw.operatorDrawBroadcast")}</span>
+            <PrimaryDrawIcon className={primaryDrawStep.iconClassName || ""} size={15} strokeWidth={2.2} />
+            <span>{primaryDrawStep.label}</span>
           </button>
         </div>
       </section>

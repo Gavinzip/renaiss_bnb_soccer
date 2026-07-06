@@ -211,7 +211,6 @@ export function WinnersRoom({
   rounds = [],
   matches = [],
   currentWalletAddress = "",
-  currentUserWinnerCount = 0,
   onRevealStateChange,
 }) {
   const { t, roundLabel } = useCampaignCopy();
@@ -242,6 +241,10 @@ export function WinnersRoom({
     || null;
   const selectedRoundWinners = selectedRound?.winners || [];
   const selectedRoundHasWinners = hasOfficialWinners && selectedRoundWinners.length > 0;
+  const selectedRoundCurrentUserWinnerCount = useMemo(() => {
+    if (!selectedRoundHasWinners || !currentWalletAddress) return 0;
+    return selectedRoundWinners.filter(({ winner }) => isCurrentUserWinner(winner, currentWalletAddress)).length;
+  }, [currentWalletAddress, selectedRoundHasWinners, selectedRoundWinners]);
   const autoActiveRowIndex = selectedRoundHasWinners
     ? Math.max(0, Math.min(visibleCount - 1, selectedRoundWinners.length - 1))
     : -1;
@@ -404,10 +407,10 @@ export function WinnersRoom({
           </section>
         ) : null}
         <section className="winner-stage-board" aria-label={t("winnerReveal.listAria")}>
-          {currentUserWinnerCount > 0 ? (
+          {selectedRoundCurrentUserWinnerCount > 0 ? (
             <section className="winner-current-user-callout" aria-label={t("winnerReveal.currentUserAria")}>
               <Sparkles size={16} strokeWidth={2.35} />
-              <span>{t("winnerReveal.currentUserWinner", { count: formatNumber(currentUserWinnerCount) })}</span>
+              <span>{t("winnerReveal.currentUserWinner", { count: formatNumber(selectedRoundCurrentUserWinnerCount) })}</span>
             </section>
           ) : null}
           {selectedRoundHasWinners ? (
