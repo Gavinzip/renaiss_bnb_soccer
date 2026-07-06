@@ -273,9 +273,9 @@ function getMilestoneNodePosition(index, totalMilestones) {
   return MILESTONE_NODE_START + ((MILESTONE_NODE_END - MILESTONE_NODE_START) * step);
 }
 
-function getMilestoneVisualRatio(ratio) {
+function getMilestoneLinearRatio(ratio) {
   const clamped = clampPercent(ratio * 100) / 100;
-  return 1 - Math.pow(1 - clamped, 2.15);
+  return clamped;
 }
 
 function getMilestoneRailProgress(milestoneSnapshot, currentValue) {
@@ -287,8 +287,8 @@ function getMilestoneRailProgress(milestoneSnapshot, currentValue) {
   const firstPosition = getMilestoneNodePosition(0, sorted.length);
 
   if (value <= firstMilestone.threshold) {
-    const firstRatio = getMilestoneVisualRatio(firstMilestone.threshold > 0 ? value / firstMilestone.threshold : 1);
-    return MILESTONE_RAIL_START + ((firstPosition - MILESTONE_RAIL_START) * clampPercent(firstRatio * 100) / 100);
+    const firstRatio = getMilestoneLinearRatio(firstMilestone.threshold > 0 ? value / firstMilestone.threshold : 1);
+    return MILESTONE_RAIL_START + ((firstPosition - MILESTONE_RAIL_START) * firstRatio);
   }
 
   for (let index = 1; index < sorted.length; index += 1) {
@@ -298,7 +298,7 @@ function getMilestoneRailProgress(milestoneSnapshot, currentValue) {
       const previousPosition = getMilestoneNodePosition(index - 1, sorted.length);
       const nextPosition = getMilestoneNodePosition(index, sorted.length);
       const segmentRange = Math.max(1, nextMilestone.threshold - previousMilestone.threshold);
-      const segmentRatio = getMilestoneVisualRatio((value - previousMilestone.threshold) / segmentRange);
+      const segmentRatio = getMilestoneLinearRatio((value - previousMilestone.threshold) / segmentRange);
       return previousPosition + ((nextPosition - previousPosition) * segmentRatio);
     }
   }
@@ -317,7 +317,7 @@ function HeroMilestoneCommand({ milestoneSnapshot, currentValue, heroMilestoneTi
   const focusedReward = formatMilestoneReward(focusedMilestone);
   const focusedSlots = focusedMilestone?.rewardSlots ?? 0;
   const campaignProgress = getMilestoneRailProgress(milestoneSnapshot, currentValue);
-  const revealRatio = 1 - Math.pow(1 - scrollRatio, 2.4);
+  const revealRatio = scrollRatio;
   const visualProgress = MILESTONE_RAIL_START + ((campaignProgress - MILESTONE_RAIL_START) * revealRatio);
   const railFill = Math.min(
     MILESTONE_RAIL_END - MILESTONE_RAIL_START,

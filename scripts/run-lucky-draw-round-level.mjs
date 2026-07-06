@@ -150,6 +150,7 @@ function normalizeRoundLedger({ ledger, env, ledgerPath }) {
   if (!row) throw new Error('Ledger must contain a roundDraw row matching this round id/key.')
 
   const roundId = String(row.roundId || row.round_id || identity.roundId || '').trim()
+  const sourceRoundId = String(row.sourceRoundId || row.source_round_id || row.redrawOf || row.redraw_of || roundId).trim()
   const roundKey = normalizeBytes32(identity.roundKey) || normalizeBytes32(row.roundKey) || normalizeBytes32(row.round_key)
   const ledgerHash = String(readFirstDefined(row, ['ledgerHash', 'ledger_hash', 'hash']) || '')
   const ledgerUri = String(readFirstDefined(row, ['ledgerUri', 'ledger_uri', 'uri']) || `${ledgerPath}#${roundId || roundKey}`)
@@ -203,6 +204,7 @@ function normalizeRoundLedger({ ledger, env, ledgerPath }) {
 
   return {
     roundId,
+    sourceRoundId,
     roundKey,
     ledgerHash,
     ledgerUri,
@@ -361,7 +363,8 @@ async function readRoundWinners({ contract, roundLedger }) {
     draws.push({
       matchId: matchLedger.matchId,
       matchKey: matchLedger.matchKey,
-      roundId: roundLedger.roundId,
+      roundId: roundLedger.sourceRoundId || roundLedger.roundId,
+      drawRoundId: roundLedger.roundId,
       ledgerHash: matchLedger.ledgerHash,
       ledgerUri: matchLedger.ledgerUri,
       totalTickets: matchLedger.totalTickets.toString(),
@@ -391,7 +394,9 @@ function buildRoundWinnersSnapshot({ env, network, contractAddress, roundLedger,
     network: network.name || `chain-${network.chainId}`,
     chainId: network.chainId.toString(),
     contract: contractAddress,
-    roundId: roundLedger.roundId,
+    roundId: roundLedger.sourceRoundId || roundLedger.roundId,
+    sourceRoundId: roundLedger.sourceRoundId || roundLedger.roundId,
+    drawRoundId: roundLedger.roundId,
     roundKey: roundLedger.roundKey,
     ledgerHash: roundLedger.ledgerHash,
     ledgerUri: roundLedger.ledgerUri,

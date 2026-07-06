@@ -15337,6 +15337,63 @@ body {
   white-space: nowrap;
 }
 
+.draw-operator-wallet__redraw {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid rgba(245, 246, 241, 0.08);
+  padding-top: 10px;
+}
+
+.draw-operator-wallet__redraw-toggle,
+.draw-operator-wallet__redraw-version {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  color: rgba(245, 246, 241, 0.82);
+  font-size: 0.72rem;
+  font-weight: 840;
+}
+
+.draw-operator-wallet__redraw-toggle input,
+.draw-operator-wallet__redraw-version input {
+  accent-color: rgb(129, 245, 207);
+}
+
+.draw-operator-wallet__redraw-toggle > span {
+  min-width: min(280px, 100%);
+  display: grid;
+  gap: 3px;
+}
+
+.draw-operator-wallet__redraw-toggle strong {
+  justify-self: start;
+  color: rgba(245, 246, 241, 0.9);
+  font-family: inherit;
+  font-size: 0.74rem;
+}
+
+.draw-operator-wallet__redraw-toggle small {
+  color: rgba(245, 246, 241, 0.52);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.draw-operator-wallet__redraw-version input {
+  width: 76px;
+  border: 1px solid rgba(245, 246, 241, 0.14);
+  border-radius: 10px;
+  padding: 7px 9px;
+  color: rgba(245, 246, 241, 0.9);
+  background: rgba(0, 0, 0, 0.24);
+  font: inherit;
+}
+
+.draw-operator-wallet__redraw code {
+  font-size: 0.68rem;
+}
+
 .draw-operator-wallet__readiness {
   display: flex;
   flex-wrap: wrap;

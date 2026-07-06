@@ -217,15 +217,17 @@ export function XFollowGate({
           : verifying
             ? t("xFollowGate.verifying")
             : t("xFollowGate.verify")
-        : verifyingEligibility
+        : eligibilityGatePassed
+          ? t("xFollowGate.eligibilityPassedButton")
+          : verifyingEligibility
           ? t("xFollowGate.verifyingEligibility")
           : t("xFollowGate.verifyEligibility"),
     indicators: [
       t("xFollowGate.stepConnect"),
       t("xFollowGate.stepVerify"),
-      t("xFollowGate.stepEligibility"),
+      eligibilityGatePassed ? t("xFollowGate.stepEligibilityComplete") : t("xFollowGate.stepEligibility"),
     ],
-  }), [activeStep, gate.gatePassed, t, verifying, verifyingEligibility]);
+  }), [activeStep, eligibilityGatePassed, gate.gatePassed, t, verifying, verifyingEligibility]);
 
   async function handleVerify() {
     if (!canVerify) return;
@@ -363,7 +365,7 @@ export function XFollowGate({
         onFinalStepCompleted={handleVerifyEligibility}
         backButtonText={stepLabels.back}
         nextButtonText={stepLabels.next}
-        footerContent={activeStep === 3 ? (
+        footerContent={activeStep === 3 && !eligibilityGatePassed ? (
           <a
             href="#x-follow-gate-uid-lookup"
             className="x-follow-gate__eligibility-note"
@@ -379,7 +381,10 @@ export function XFollowGate({
           </a>
         ) : null}
         disableStepIndicators
-        stepContainerClassName="x-follow-gate__step-tabs"
+        stepContainerClassName={[
+          "x-follow-gate__step-tabs",
+          eligibilityGatePassed ? "is-verified-complete" : "",
+        ].filter(Boolean).join(" ")}
         contentClassName="x-follow-gate__step-content"
         footerClassName="x-follow-gate__step-footer"
         renderStepIndicator={({ step, state }) => (
@@ -394,6 +399,7 @@ export function XFollowGate({
           </span>
         )}
         nextButtonProps={{
+          className: eligibilityGatePassed && activeStep === 3 ? "x-follow-gate__complete-button" : "",
           disabled: activeStep === 1
             ? !canContinueToFollow
             : activeStep === 2

@@ -248,6 +248,12 @@
   color: #dff7e7;
 }
 
+.x-follow-gate__step-tabs.is-verified-complete .rb-stepper__item.is-active .x-follow-gate__rail-node {
+  border-color: rgba(137, 185, 154, 0.72);
+  background: rgba(137, 185, 154, 0.16);
+  color: #dff7e7;
+}
+
 .rb-stepper__item.is-active .x-follow-gate__step-label,
 .rb-stepper__item.is-complete .x-follow-gate__step-label {
   color: rgba(245, 246, 241, 0.96);
@@ -259,6 +265,10 @@
 
 .rb-stepper__item.is-complete .x-follow-gate__step-state {
   color: rgba(137, 185, 154, 0.86);
+}
+
+.x-follow-gate__step-tabs.is-verified-complete .rb-stepper__item.is-active .x-follow-gate__step-state {
+  color: rgba(137, 185, 154, 0.9);
 }
 
 .x-follow-gate__step-content {
@@ -357,6 +367,14 @@
   box-shadow: none;
   opacity: 1;
   transform: none;
+}
+
+.x-follow-gate .rb-stepper__footer button.x-follow-gate__complete-button:disabled,
+.x-follow-gate .rb-stepper__footer button.x-follow-gate__complete-button:last-child:disabled {
+  border-color: rgba(137, 185, 154, 0.42);
+  background: rgba(137, 185, 154, 0.1);
+  color: #c8ead3;
+  cursor: default;
 }
 
 .x-follow-gate__step > span.is-complete {

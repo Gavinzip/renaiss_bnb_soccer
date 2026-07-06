@@ -140,6 +140,7 @@ let lastDrawAdminRun = {
   networkKey: null,
   action: null,
   roundId: null,
+  drawRoundId: null,
   result: null,
   output: null,
 }
@@ -670,6 +671,8 @@ function readMatchDrawLedgerSummary() {
       roundDrawCount: roundDraws.length,
       roundDraws: roundDraws.map((round) => ({
         roundId: round.roundId || '',
+        sourceRoundId: round.sourceRoundId || round.roundId || '',
+        redrawOf: round.redrawOf || null,
         roundKey: round.roundKey || '',
         ledgerHash: round.ledgerHash || '',
         matchCount: Number(round.matchCount || 0),
@@ -705,6 +708,33 @@ function normalizeDrawAdminRoundId(value) {
   return roundId
 }
 
+function normalizeDrawAdminDrawRoundId(value, sourceRoundId) {
+  const baseRoundId = normalizeDrawAdminRoundId(sourceRoundId)
+  const drawRoundId = String(value || baseRoundId).trim()
+  if (drawRoundId === baseRoundId) return drawRoundId
+  const redrawPrefix = `${baseRoundId}-redraw-`
+  if (!drawRoundId.startsWith(redrawPrefix)) {
+    throw Object.assign(new Error('Unsupported draw round identity.'), {
+      statusCode: 400,
+      code: 'draw_round_identity_invalid',
+    })
+  }
+  const redrawIndex = drawRoundId.slice(redrawPrefix.length)
+  if (!/^[1-9][0-9]{0,2}$/.test(redrawIndex)) {
+    throw Object.assign(new Error('Unsupported draw round redraw version.'), {
+      statusCode: 400,
+      code: 'draw_round_redraw_invalid',
+    })
+  }
+  return drawRoundId
+}
+
+function normalizeDrawAdminRoundRequest(sourceValue, drawValue) {
+  const roundId = normalizeDrawAdminRoundId(sourceValue)
+  const drawRoundId = normalizeDrawAdminDrawRoundId(drawValue, roundId)
+  return { roundId, drawRoundId, isRedraw: drawRoundId !== roundId }
+}
+
 function normalizeDrawAdminAction(value, broadcast) {
   const action = String(value || (broadcast ? 'broadcast' : 'verify')).trim().toLowerCase()
   if (action === 'ledger' || action === 'verify' || action === 'broadcast') return action
@@ -714,7 +744,7 @@ function normalizeDrawAdminAction(value, broadcast) {
   })
 }
 
-function drawNetworkStatusPayload(networkKey = drawDefaultNetworkKey, { roundId = '' } = {}) {
+function drawNetworkStatusPayload(networkKey = drawDefaultNetworkKey, { roundId = '', drawRoundId = roundId } = {}) {
   const network = drawNetworkEnv(networkKey)
   const contractAddress = drawContractAddress(network.key)
   const allowedAddresses = drawAdminAllowedAddresses(network.key)
@@ -732,6 +762,8 @@ function drawNetworkStatusPayload(networkKey = drawDefaultNetworkKey, { roundId 
     allowlistConfigured: allowedAddresses.length > 0,
     matchDrawLedgerExists: existsSync(matchDrawLedgerPath),
     matchDrawLedger: readMatchDrawLedgerSummary(),
+    roundId: roundId || null,
+    drawRoundId: drawRoundId || roundId || null,
     drawWinnersExists: existsSync(drawWinnersPath),
     ...(roundReadiness ? { roundReadiness } : {}),
   }
@@ -775,9 +807,10 @@ function drawAdminStatusPayload({
   includePrivate = false,
   networkKey = drawDefaultNetworkKey,
   roundId = '',
+  drawRoundId = roundId,
 } = {}) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
-  const networks = drawNetworkDefinitions.map((network) => drawNetworkStatusPayload(network.key, { roundId }))
+  const networks = drawNetworkDefinitions.map((network) => drawNetworkStatusPayload(network.key, { roundId, drawRoundId }))
   const selectedNetwork = networks.find((network) => network.key === selectedNetworkKey) || networks[0]
   const runningElapsedSeconds = drawAdminRunRunning && lastDrawAdminRun?.startedAt
     ? durationSeconds(lastDrawAdminRun.startedAt, new Date().toISOString())
@@ -809,7 +842,12 @@ function drawAdminDisabledError() {
   return null
 }
 
-function assertDrawAdminReady({ requireBroadcast = false, roundId = '', networkKey = drawDefaultNetworkKey } = {}) {
+function assertDrawAdminReady({
+  requireBroadcast = false,
+  roundId = '',
+  drawRoundId = roundId,
+  networkKey = drawDefaultNetworkKey,
+} = {}) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const network = drawNetworkEnv(selectedNetworkKey)
   const disabled = drawAdminDisabledError()
@@ -844,7 +882,7 @@ function assertDrawAdminReady({ requireBroadcast = false, roundId = '', networkK
       code: 'draw_ledger_missing',
     })
   }
-  if (roundId && !matchDrawLedgerContainsRound(roundId)) {
+  if (drawRoundId && !matchDrawLedgerContainsRound(drawRoundId)) {
     throw Object.assign(new Error('Match draw ledger does not include this round yet.'), {
       statusCode: 503,
       code: 'draw_ledger_round_missing',
@@ -938,12 +976,13 @@ function assertDrawAdminWalletAllowed(address, networkKey = drawDefaultNetworkKe
   return normalized
 }
 
-function createDrawAdminMessage({ address, action, roundId, nonce, issuedAt, networkKey }) {
+function createDrawAdminMessage({ address, action, roundId, drawRoundId, nonce, issuedAt, networkKey }) {
   return [
     'Renaiss World Cup draw authorization',
     `Address: ${address}`,
     `Action: ${action}`,
-    `Round: ${roundId}`,
+    `Source Round: ${roundId}`,
+    `Draw Round: ${drawRoundId || roundId}`,
     `Network: ${networkKey}`,
     `Chain ID: ${drawExpectedChainId(networkKey)}`,
     `Contract: ${drawContractAddress(networkKey)}`,
@@ -953,8 +992,9 @@ function createDrawAdminMessage({ address, action, roundId, nonce, issuedAt, net
   ].join('\n')
 }
 
-function createDrawAdminChallenge({ address, action, roundId, networkKey }) {
+function createDrawAdminChallenge({ address, action, roundId, drawRoundId, networkKey }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
   const nonce = randomUUID()
   const issuedAt = new Date().toISOString()
   const expiresAtMs = Date.now() + drawAdminChallengeTtlMs
@@ -962,6 +1002,7 @@ function createDrawAdminChallenge({ address, action, roundId, networkKey }) {
     address,
     action,
     roundId,
+    drawRoundId: normalizedDrawRoundId,
     networkKey: selectedNetworkKey,
     nonce,
     issuedAt,
@@ -970,6 +1011,7 @@ function createDrawAdminChallenge({ address, action, roundId, networkKey }) {
     address,
     action,
     roundId,
+    drawRoundId: normalizedDrawRoundId,
     networkKey: selectedNetworkKey,
     nonce,
     issuedAt,
@@ -980,6 +1022,7 @@ function createDrawAdminChallenge({ address, action, roundId, networkKey }) {
     address,
     action,
     roundId,
+    drawRoundId: normalizedDrawRoundId,
     networkKey: selectedNetworkKey,
     nonce,
     issuedAt,
@@ -988,9 +1031,10 @@ function createDrawAdminChallenge({ address, action, roundId, networkKey }) {
   }
 }
 
-function verifyDrawAdminChallenge({ address, action, roundId, networkKey, nonce, signature }) {
+function verifyDrawAdminChallenge({ address, action, roundId, drawRoundId, networkKey, nonce, signature }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const normalizedAddress = assertDrawAdminWalletAllowed(address, selectedNetworkKey)
+  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
   const challenge = drawAdminChallenges.get(String(nonce || ''))
   drawAdminChallenges.delete(String(nonce || ''))
 
@@ -1010,6 +1054,7 @@ function verifyDrawAdminChallenge({ address, action, roundId, networkKey, nonce,
     challenge.address !== normalizedAddress
     || challenge.action !== action
     || challenge.roundId !== roundId
+    || challenge.drawRoundId !== normalizedDrawRoundId
     || challenge.networkKey !== selectedNetworkKey
   ) {
     throw Object.assign(new Error('Draw authorization challenge does not match this request.'), {
@@ -1046,8 +1091,9 @@ function parseDrawScriptOutput(stdout) {
   return JSON.parse(text)
 }
 
-function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
+function runDrawAdminLedger({ roundId, drawRoundId = roundId, networkKey = drawDefaultNetworkKey }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
   const startedAt = new Date().toISOString()
   const args = [
     fileURLToPath(new URL('./build-match-draw-ledger.mjs', import.meta.url)),
@@ -1064,6 +1110,8 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
     '--out',
     matchDrawLedgerPath,
     '--round-id',
+    normalizedDrawRoundId,
+    '--source-round-id',
     roundId,
     '--ledger-uri-base',
     publicMatchDrawLedgerUri(),
@@ -1077,10 +1125,11 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
     durationSeconds: null,
     exitCode: null,
     error: null,
-    trigger: `draw-admin:${selectedNetworkKey}:ledger:${roundId}`,
+    trigger: `draw-admin:${selectedNetworkKey}:ledger:${normalizedDrawRoundId}`,
     networkKey: selectedNetworkKey,
     action: 'ledger',
     roundId,
+    drawRoundId: normalizedDrawRoundId,
     result: null,
     output: null,
   }
@@ -1175,14 +1224,20 @@ function runDrawAdminLedger({ roundId, networkKey = drawDefaultNetworkKey }) {
       drawAdminRunRunning = false
 
       if (code === 0 && !parseError) {
-        runDataBackup('draw-admin-ledger')
+        if (!payload?.writeSkipped || !payload?.lockedRoundWriteSkipped) runDataBackup('draw-admin-ledger')
         resolvePromise({
           ok: true,
           action: 'ledger',
           roundId,
+          drawRoundId: normalizedDrawRoundId,
           networkKey: selectedNetworkKey,
           result: payload,
-          status: drawAdminStatusPayload({ includeLastRun: true, networkKey: selectedNetworkKey, roundId }),
+          status: drawAdminStatusPayload({
+            includeLastRun: true,
+            networkKey: selectedNetworkKey,
+            roundId,
+            drawRoundId: normalizedDrawRoundId,
+          }),
           stderr: stderr.trim() || null,
           lastRun: lastDrawAdminRun,
         })
@@ -1223,9 +1278,10 @@ function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
   return childEnv
 }
 
-function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey }) {
+function runDrawAdminRound({ roundId, drawRoundId = roundId, action, networkKey = drawDefaultNetworkKey }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const network = drawNetworkEnv(selectedNetworkKey)
+  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
   const broadcast = action === 'broadcast'
   const winnersOutPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
   const startedAt = new Date().toISOString()
@@ -1238,7 +1294,7 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
     '--ledger',
     matchDrawLedgerPath,
     '--round-id',
-    roundId,
+    normalizedDrawRoundId,
   ]
   if (winnersOutPath) {
     args.push('--winners-out', winnersOutPath)
@@ -1256,10 +1312,11 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
     durationSeconds: null,
     exitCode: null,
     error: null,
-    trigger: `draw-admin:${selectedNetworkKey}:${action}:${roundId}`,
+    trigger: `draw-admin:${selectedNetworkKey}:${action}:${normalizedDrawRoundId}`,
     networkKey: selectedNetworkKey,
     action,
     roundId,
+    drawRoundId: normalizedDrawRoundId,
     result: null,
     output: null,
   }
@@ -1353,11 +1410,17 @@ function runDrawAdminRound({ roundId, action, networkKey = drawDefaultNetworkKey
           ok: true,
           action,
           roundId,
+          drawRoundId: normalizedDrawRoundId,
           networkKey: selectedNetworkKey,
           result: payload,
           stderr: stderr.trim() || null,
           lastRun: lastDrawAdminRun,
-          status: drawAdminStatusPayload({ includeLastRun: true, networkKey: selectedNetworkKey, roundId }),
+          status: drawAdminStatusPayload({
+            includeLastRun: true,
+            networkKey: selectedNetworkKey,
+            roundId,
+            drawRoundId: normalizedDrawRoundId,
+          }),
         })
         return
       }
@@ -2528,10 +2591,15 @@ const server = createServer(async (request, response) => {
       const networkKey = normalizeOptionalDrawNetworkKey(url.searchParams.get('network'))
       const roundIdValue = String(url.searchParams.get('roundId') || '').trim()
       const roundId = roundIdValue ? normalizeDrawAdminRoundId(roundIdValue) : ''
+      const drawRoundIdValue = String(url.searchParams.get('drawRoundId') || '').trim()
+      const drawRoundId = roundId && drawRoundIdValue
+        ? normalizeDrawAdminDrawRoundId(drawRoundIdValue, roundId)
+        : roundId
       sendJson(request, response, 200, drawAdminStatusPayload({
         includeLastRun: true,
         networkKey,
         roundId,
+        drawRoundId,
       }), {
         'cache-control': 'no-store',
       })
@@ -2561,13 +2629,13 @@ const server = createServer(async (request, response) => {
       if (!enforceUnsafeRequestOrigin(request, response)) return
       const body = await readJsonBody(request)
       const action = normalizeDrawAdminAction(body?.action, body?.broadcast)
-      const roundId = normalizeDrawAdminRoundId(body?.roundId)
+      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId)
       const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
       const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
       if (action === 'ledger') {
         assertDrawLedgerBuildReady(roundId, { networkKey })
       } else {
-        assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId, networkKey })
+        assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId, drawRoundId, networkKey })
       }
       if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action, networkKey))) return
 
@@ -2577,7 +2645,7 @@ const server = createServer(async (request, response) => {
         200,
         {
           ok: true,
-          ...createDrawAdminChallenge({ address, action, roundId, networkKey }),
+          ...createDrawAdminChallenge({ address, action, roundId, drawRoundId, networkKey }),
         },
         { 'cache-control': 'no-store' },
       )
@@ -2614,7 +2682,7 @@ const server = createServer(async (request, response) => {
           code: 'draw_action_invalid',
         })
       }
-      const roundId = normalizeDrawAdminRoundId(body?.roundId)
+      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId)
       const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
       const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
       const readiness = assertDrawLedgerBuildReady(roundId, { networkKey })
@@ -2623,6 +2691,7 @@ const server = createServer(async (request, response) => {
         address,
         action,
         roundId,
+        drawRoundId,
         networkKey,
         nonce: body?.nonce,
         signature: body?.signature,
@@ -2638,7 +2707,7 @@ const server = createServer(async (request, response) => {
         return
       }
 
-      const result = await runDrawAdminLedger({ roundId, networkKey })
+      const result = await runDrawAdminLedger({ roundId, drawRoundId, networkKey })
       sendJson(request, response, 200, {
         ...result,
         readiness,
@@ -2682,15 +2751,16 @@ const server = createServer(async (request, response) => {
           code: 'draw_action_invalid',
         })
       }
-      const roundId = normalizeDrawAdminRoundId(body?.roundId)
+      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId)
       const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
       const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
-      assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId, networkKey })
+      assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId, drawRoundId, networkKey })
       if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action, networkKey))) return
       verifyDrawAdminChallenge({
         address,
         action,
         roundId,
+        drawRoundId,
         networkKey,
         nonce: body?.nonce,
         signature: body?.signature,
@@ -2706,7 +2776,7 @@ const server = createServer(async (request, response) => {
         return
       }
 
-      const result = await runDrawAdminRound({ roundId, action, networkKey })
+      const result = await runDrawAdminRound({ roundId, drawRoundId, action, networkKey })
       sendJson(request, response, 200, result, { 'cache-control': 'no-store' })
     } catch (error) {
       sendJson(

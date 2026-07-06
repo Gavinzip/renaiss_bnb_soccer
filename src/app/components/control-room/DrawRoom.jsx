@@ -36,12 +36,25 @@ function drawAdminEndpoint(path) {
   return `${apiOrigin}${path}`;
 }
 
-function drawAdminStatusEndpoint(networkKey, roundId) {
+function drawAdminStatusEndpoint(networkKey, roundId, drawRoundId = roundId) {
   const params = new URLSearchParams();
   if (networkKey) params.set("network", networkKey);
   if (roundId) params.set("roundId", roundId);
+  if (drawRoundId && drawRoundId !== roundId) params.set("drawRoundId", drawRoundId);
   const query = params.toString();
   return drawAdminEndpoint(`/api/draw-admin/status${query ? `?${query}` : ""}`);
+}
+
+function normalizeRedrawAttempt(value) {
+  const number = Number(value || 1);
+  if (!Number.isFinite(number)) return 1;
+  return Math.min(999, Math.max(1, Math.floor(number)));
+}
+
+function drawRoundIdFor(baseRoundId, redrawEnabled, redrawAttempt) {
+  const sourceRoundId = String(baseRoundId || "").trim();
+  if (!sourceRoundId || !redrawEnabled) return sourceRoundId;
+  return `${sourceRoundId}-redraw-${normalizeRedrawAttempt(redrawAttempt)}`;
 }
 
 export function preloadRoomAssets() {
@@ -682,6 +695,8 @@ function DrawOperatorWallet({ activeDraw, t }) {
   const [adminStatusIssue, setAdminStatusIssue] = useState("");
   const [runResult, setRunResult] = useState(null);
   const [selectedNetworkKey, setSelectedNetworkKey] = useState(defaultDrawNetworkKey);
+  const [redrawEnabled, setRedrawEnabled] = useState(false);
+  const [redrawAttempt, setRedrawAttempt] = useState(1);
   const [activeRun, setActiveRun] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [connectedWallet, setConnectedWallet] = useState({
@@ -691,6 +706,9 @@ function DrawOperatorWallet({ activeDraw, t }) {
     provider: null,
   });
   const connected = Boolean(connectedWallet.address);
+  const sourceRoundId = activeDraw.id;
+  const drawRoundId = drawRoundIdFor(sourceRoundId, redrawEnabled, redrawAttempt);
+  const redrawActive = drawRoundId !== sourceRoundId;
   const selectedNetwork = selectedDrawNetwork(adminStatus, selectedNetworkKey);
   const targetDrawChainId = drawNetworkChainId(selectedNetwork);
   const targetMatched = connected && normalizeChainId(connectedWallet.chainId) === targetDrawChainId;
@@ -763,8 +781,16 @@ function DrawOperatorWallet({ activeDraw, t }) {
   }, [connectedWallet.provider]);
 
   useEffect(() => {
+    setRedrawEnabled(false);
+    setRedrawAttempt(1);
+    setIssue("");
+    setRunResult(null);
+    setActiveRun(null);
+  }, [sourceRoundId]);
+
+  useEffect(() => {
     let active = true;
-    fetchJsonWithTimeout(drawAdminStatusEndpoint(selectedNetworkKey, activeDraw.id), {
+    fetchJsonWithTimeout(drawAdminStatusEndpoint(selectedNetworkKey, sourceRoundId, drawRoundId), {
       timeoutMs: 10000,
     })
       .then(({ payload }) => {
@@ -780,7 +806,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
     return () => {
       active = false;
     };
-  }, [activeDraw.id, selectedNetworkKey, t]);
+  }, [drawRoundId, selectedNetworkKey, sourceRoundId, t]);
 
   useEffect(() => {
     if (!busyAction && !adminStatus?.running && activeRun?.status !== "running") return undefined;
@@ -795,11 +821,11 @@ function DrawOperatorWallet({ activeDraw, t }) {
       refreshAdminStatus();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [activeDraw.id, activeRun?.status, adminStatus?.running, selectedNetworkKey]);
+  }, [activeRun?.status, adminStatus?.running, drawRoundId, selectedNetworkKey, sourceRoundId]);
 
   async function refreshAdminStatus() {
     try {
-      const { payload } = await fetchJsonWithTimeout(drawAdminStatusEndpoint(selectedNetworkKey, activeDraw.id), {
+      const { payload } = await fetchJsonWithTimeout(drawAdminStatusEndpoint(selectedNetworkKey, sourceRoundId, drawRoundId), {
         timeoutMs: 10000,
       });
       setAdminStatus(payload);
@@ -913,12 +939,29 @@ function DrawOperatorWallet({ activeDraw, t }) {
     setActiveRun(null);
   }
 
-  function beginOperatorRun(action, roundId) {
+  function selectRedrawEnabled(value) {
+    if (busyAction || adminStatus?.running) return;
+    setRedrawEnabled(Boolean(value));
+    setIssue("");
+    setRunResult(null);
+    setActiveRun(null);
+  }
+
+  function updateRedrawAttempt(value) {
+    if (busyAction || adminStatus?.running) return;
+    setRedrawAttempt(normalizeRedrawAttempt(value));
+    setIssue("");
+    setRunResult(null);
+    setActiveRun(null);
+  }
+
+  function beginOperatorRun(action, roundId, nextDrawRoundId = roundId) {
     const startedAt = new Date().toISOString();
     setNowMs(Date.now());
     setActiveRun({
       action,
       roundId,
+      drawRoundId: nextDrawRoundId,
       networkKey: selectedNetworkKey,
       networkLabel: drawNetworkLabel(selectedNetwork, t),
       status: "running",
@@ -941,6 +984,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
         ...(current || {}),
         action: payload?.action || current?.action || lastRun?.action || "",
         roundId: payload?.roundId || current?.roundId || lastRun?.roundId || "",
+        drawRoundId: payload?.drawRoundId || current?.drawRoundId || lastRun?.drawRoundId || "",
         networkKey: payload?.networkKey || current?.networkKey || lastRun?.networkKey || selectedNetworkKey,
         networkLabel: current?.networkLabel || drawNetworkLabel(selectedNetwork, t),
         status: ok ? "completed" : "failed",
@@ -994,14 +1038,14 @@ function DrawOperatorWallet({ activeDraw, t }) {
       return;
     }
     if (typeof window !== "undefined") {
-      const confirmed = window.confirm(t("draw.operatorDrawLedgerConfirm", { round: activeDraw.id }));
+      const confirmed = window.confirm(t("draw.operatorDrawLedgerConfirm", { round: drawRoundId, sourceRound: sourceRoundId }));
       if (!confirmed) return;
     }
 
     setBusyAction("draw:ledger");
-    beginOperatorRun("ledger", activeDraw.id);
+    beginOperatorRun("ledger", sourceRoundId, drawRoundId);
     try {
-      const roundId = activeDraw.id;
+      const roundId = sourceRoundId;
       const { payload: challenge } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/challenge"), {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1009,6 +1053,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           address: connectedWallet.address,
           action: "ledger",
           roundId,
+          drawRoundId,
           network: selectedNetworkKey,
         }),
         timeoutMs: drawAdminCheckTimeoutMs,
@@ -1021,6 +1066,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           address: connectedWallet.address,
           action: "ledger",
           roundId,
+          drawRoundId,
           network: selectedNetworkKey,
           nonce: challenge.nonce,
           signature,
@@ -1060,14 +1106,14 @@ function DrawOperatorWallet({ activeDraw, t }) {
       return;
     }
     if (broadcast && typeof window !== "undefined") {
-      const confirmed = window.confirm(t("draw.operatorDrawBroadcastConfirm", { round: activeDraw.id }));
+      const confirmed = window.confirm(t("draw.operatorDrawBroadcastConfirm", { round: drawRoundId, sourceRound: sourceRoundId }));
       if (!confirmed) return;
     }
 
     setBusyAction(`draw:${action}`);
-    beginOperatorRun(action, activeDraw.id);
+    beginOperatorRun(action, sourceRoundId, drawRoundId);
     try {
-      const roundId = activeDraw.id;
+      const roundId = sourceRoundId;
       const { payload: challenge } = await fetchJsonWithTimeout(drawAdminEndpoint("/api/draw-admin/challenge"), {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1075,6 +1121,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           address: connectedWallet.address,
           action,
           roundId,
+          drawRoundId,
           network: selectedNetworkKey,
         }),
         timeoutMs: drawAdminCheckTimeoutMs,
@@ -1087,6 +1134,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
           address: connectedWallet.address,
           action,
           roundId,
+          drawRoundId,
           network: selectedNetworkKey,
           nonce: challenge.nonce,
           signature,
@@ -1100,6 +1148,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
         window.dispatchEvent(new CustomEvent("renaiss:draw-winners-updated", {
           detail: {
             roundId,
+            drawRoundId,
             action,
             generatedAt: payload?.result?.generatedAt || new Date().toISOString(),
           },
@@ -1130,7 +1179,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
   const targetNetworkLabel = drawNetworkLabel(selectedNetwork, t);
   const operationBusy = Boolean(busyAction || currentAdminStatus?.running);
   const roundReadiness = drawRoundReadinessSnapshot();
-  const activeRoundLedger = roundLedgerSummaryFor(currentAdminStatus, activeDraw.id);
+  const activeRoundLedger = roundLedgerSummaryFor(currentAdminStatus, drawRoundId);
   const ledgerLocked = Boolean(activeRoundLedger);
   const adminBaseReady = Boolean(currentAdminStatus?.enabled && currentAdminStatus?.allowlistConfigured);
   const contractExecutionReady = Boolean(
@@ -1144,7 +1193,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
   const canLockLedger = connected && adminBaseReady && roundReadiness.complete && !operationBusy;
   const canRunDraw = connected && adminReady && !operationBusy;
   const canBroadcastDraw = canRunDraw && roundReadiness.complete;
-  const readinessItems = drawAdminReadinessItems(currentAdminStatus, activeDraw.id, t);
+  const readinessItems = drawAdminReadinessItems(currentAdminStatus, drawRoundId, t);
   const missingReadinessItems = readinessItems.filter((item) => !item.ready);
   const adminStatusCopy = adminStatusIssue
     || (missingReadinessItems.length > 0
@@ -1296,6 +1345,40 @@ function DrawOperatorWallet({ activeDraw, t }) {
         {currentAdminStatus?.contractAddress ? (
           <code>{targetNetworkLabel} · {compactAddress(currentAdminStatus.contractAddress)}</code>
         ) : null}
+        <section className="draw-operator-wallet__redraw" aria-label={t("draw.operatorRedrawAria")}>
+          <label className="draw-operator-wallet__redraw-toggle">
+            <input
+              type="checkbox"
+              checked={redrawEnabled}
+              disabled={operationBusy}
+              onChange={(event) => selectRedrawEnabled(event.target.checked)}
+            />
+            <span>
+              <strong>{t("draw.operatorRedrawLabel")}</strong>
+              <small>{t("draw.operatorRedrawBody")}</small>
+            </span>
+          </label>
+          {redrawEnabled ? (
+            <label className="draw-operator-wallet__redraw-version">
+              <span>{t("draw.operatorRedrawAttempt")}</span>
+              <input
+                type="number"
+                min="1"
+                max="999"
+                step="1"
+                value={redrawAttempt}
+                disabled={operationBusy}
+                onChange={(event) => updateRedrawAttempt(event.target.value)}
+              />
+              <code>{drawRoundId}</code>
+            </label>
+          ) : (
+            <code>{drawRoundId}</code>
+          )}
+          {redrawActive ? (
+            <p>{t("draw.operatorRedrawWarning", { sourceRound: sourceRoundId, drawRound: drawRoundId })}</p>
+          ) : null}
+        </section>
         <p className={["draw-operator-wallet__finals", roundReadiness.complete ? "is-ready" : "is-warning"].join(" ")}>
           {finalsNotice}
           {!roundReadiness.complete && roundReadiness.missingMatchIds.length > 0 ? (
@@ -1344,6 +1427,10 @@ function DrawOperatorWallet({ activeDraw, t }) {
           <div>
             <span>{t("draw.operatorRunNetwork")}</span>
             <strong>{visibleRun?.networkLabel || targetNetworkLabel}</strong>
+          </div>
+          <div>
+            <span>{t("draw.operatorRunDrawRound")}</span>
+            <strong>{visibleRun?.drawRoundId || drawRoundId || "-"}</strong>
           </div>
           <div>
             <span>{t("draw.operatorRunElapsed")}</span>
