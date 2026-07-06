@@ -394,7 +394,6 @@ contract RenaissLuckyDraw is VRFConsumerBase {
             }
             if (randomWords.length == 0) revert InvalidRequest();
 
-            _resetRoundRevealStorage(round);
             round.randomWord = randomWords[0];
             round.revealedMatchCount = 0;
             round.state = DrawState.RandomnessReady;
@@ -818,16 +817,6 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         delete round.matchIds;
     }
 
-    function _resetRoundRevealStorage(RoundDraw storage round) internal {
-        for (uint256 index = 0; index < round.matchIds.length; index++) {
-            RoundMatchDraw storage matchDraw = round.matches[round.matchIds[index]];
-            matchDraw.revealed = false;
-            delete matchDraw.winnerTicketsBySlot;
-            delete matchDraw.alternateTicketsBySlot;
-            delete matchDraw.allComputedTickets;
-        }
-    }
-
     function _preparePrizeSlotStorage(Draw storage draw) internal {
         while (draw.winnerTicketsBySlot.length < draw.prizeSlotCount) {
             draw.winnerTicketsBySlot.push(0);
@@ -909,18 +898,14 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         view
         returns (uint256)
     {
-        uint256 nonce = 0;
-        while (nonce < matchDraw.totalTickets) {
-            uint256 candidate = (uint256(keccak256(abi.encode(seed, pickIndex, nonce))) % matchDraw.totalTickets) + 1;
-            bool duplicate = false;
-            for (uint256 existingIndex = 0; existingIndex < matchDraw.allComputedTickets.length; existingIndex++) {
-                if (matchDraw.allComputedTickets[existingIndex] == candidate) {
-                    duplicate = true;
-                    break;
-                }
-            }
-            if (!duplicate) return candidate;
-            nonce++;
+        uint256 remainingTickets = matchDraw.totalTickets - matchDraw.allComputedTickets.length;
+        if (remainingTickets == 0) revert InvalidPrizeSlots();
+
+        uint256 targetIndex = uint256(keccak256(abi.encode(seed, pickIndex))) % remainingTickets;
+        for (uint256 candidate = 1; candidate <= matchDraw.totalTickets; candidate++) {
+            if (_ticketAlreadyComputed(matchDraw.allComputedTickets, candidate)) continue;
+            if (targetIndex == 0) return candidate;
+            targetIndex--;
         }
         revert InvalidPrizeSlots();
     }
@@ -930,19 +915,22 @@ contract RenaissLuckyDraw is VRFConsumerBase {
         view
         returns (uint256)
     {
-        uint256 nonce = 0;
-        while (nonce < draw.totalTickets) {
-            uint256 candidate = (uint256(keccak256(abi.encode(seed, drawId, pickIndex, nonce))) % draw.totalTickets) + 1;
-            bool duplicate = false;
-            for (uint256 existingIndex = 0; existingIndex < draw.allComputedTickets.length; existingIndex++) {
-                if (draw.allComputedTickets[existingIndex] == candidate) {
-                    duplicate = true;
-                    break;
-                }
-            }
-            if (!duplicate) return candidate;
-            nonce++;
+        uint256 remainingTickets = draw.totalTickets - draw.allComputedTickets.length;
+        if (remainingTickets == 0) revert InvalidPrizeSlots();
+
+        uint256 targetIndex = uint256(keccak256(abi.encode(seed, drawId, pickIndex))) % remainingTickets;
+        for (uint256 candidate = 1; candidate <= draw.totalTickets; candidate++) {
+            if (_ticketAlreadyComputed(draw.allComputedTickets, candidate)) continue;
+            if (targetIndex == 0) return candidate;
+            targetIndex--;
         }
         revert InvalidPrizeSlots();
+    }
+
+    function _ticketAlreadyComputed(uint256[] storage computedTickets, uint256 ticket) internal view returns (bool) {
+        for (uint256 index = 0; index < computedTickets.length; index++) {
+            if (computedTickets[index] == ticket) return true;
+        }
+        return false;
     }
 }

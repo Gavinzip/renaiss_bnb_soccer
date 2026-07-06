@@ -115,6 +115,43 @@ describe("RenaissLuckyDraw round-level draws", function () {
     expect(status.revealedMatchCount).to.equal(2n);
   });
 
+  it("keeps the round VRF callback lightweight for a 16-match ledger", async function () {
+    const { coordinator, draw } = await deployDraw();
+    const drawAddress = await draw.getAddress();
+    const roundId = ethers.id("round32");
+    const matches = Array.from({ length: 16 }, (_, index) => roundMatchInput(`m${57 + index}`, 24n));
+
+    await draw.finalizeRoundLedger(roundId, ethers.id("round32-ledger"), matches, "/match-draw-ledger.json#round32");
+    await draw.requestRoundDraw(roundId);
+
+    const fulfillGas = await coordinator.fulfill.estimateGas(drawAddress, 1n, 987654321n);
+    expect(fulfillGas).to.be.lessThan(200_000n);
+
+    await coordinator.fulfill(drawAddress, 1n, 987654321n);
+    const status = await draw.roundDrawStatus(roundId);
+    expect(status.randomnessReady).to.equal(true);
+    expect(status.fulfilled).to.equal(false);
+    expect(status.revealedMatchCount).to.equal(0n);
+  });
+
+  it("reveals winners when a match has exactly enough tickets for winner and alternates", async function () {
+    const { coordinator, draw } = await deployDraw();
+    const drawAddress = await draw.getAddress();
+    const roundId = ethers.id("round32");
+    const exactPool = roundMatchInput("m57", 3n);
+
+    await draw.finalizeRoundLedger(roundId, ethers.id("round32-ledger"), [exactPool], "/match-draw-ledger.json#round32");
+    await draw.requestRoundDraw(roundId);
+    await coordinator.fulfill(drawAddress, 1n, 123456789n);
+    await draw.revealRoundMatch(roundId, exactPool.matchId);
+
+    const winners = await draw.roundMatchWinnerTicketsBySlot(roundId, exactPool.matchId);
+    const alternates = await draw.roundMatchAlternateTicketsBySlot(roundId, exactPool.matchId, 0);
+    expect(winners).to.have.length(1);
+    expect(alternates).to.have.length(2);
+    expect(uniqueTicketNumbers(winners, alternates).size).to.equal(3);
+  });
+
   it("rejects a match pool that cannot cover winners plus alternates", async function () {
     const { draw } = await deployDraw();
     const roundId = ethers.id("round16");
