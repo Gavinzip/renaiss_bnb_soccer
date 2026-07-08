@@ -58,6 +58,10 @@ const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i;
 const AUTH_REQUEST_TIMEOUT_MS = 10000;
 const DATA_REQUEST_TIMEOUT_MS = 12000;
 const VOTE_SUBMIT_TIMEOUT_MS = 15000;
+const voteableMatchStatuses = new Set(["open", "closing_soon"]);
+const publicVoteRoundIds = roundDefinitions
+  .map((round) => round.id)
+  .filter((roundId) => roundId !== "round32");
 
 const bundledMilestoneSummary = {
   milestones,
@@ -289,16 +293,49 @@ function buildLiveVoteStats(...sources) {
   };
 }
 
+function isVoteableMatch(match) {
+  return voteableMatchStatuses.has(match?.status);
+}
+
+function getPreferredRoundMatch(matches, roundId) {
+  return matches.find((match) => match.roundId === roundId && isVoteableMatch(match))
+    ?? matches.find((match) => match.roundId === roundId)
+    ?? null;
+}
+
+function hasVoteableMatchInRound(matches, roundId) {
+  return matches.some((match) => match.roundId === roundId && isVoteableMatch(match));
+}
+
+function getDefaultVoteRoundId(matches, currentRoundId) {
+  const currentIndex = publicVoteRoundIds.indexOf(currentRoundId);
+  if (currentIndex >= 0 && hasVoteableMatchInRound(matches, currentRoundId)) return currentRoundId;
+
+  const searchStart = currentIndex >= 0 ? currentIndex + 1 : 0;
+  const nextVoteableRoundId = publicVoteRoundIds
+    .slice(searchStart)
+    .find((roundId) => hasVoteableMatchInRound(matches, roundId));
+  if (nextVoteableRoundId) return nextVoteableRoundId;
+
+  if (currentIndex < 0) {
+    return publicVoteRoundIds.find((roundId) => hasVoteableMatchInRound(matches, roundId))
+      ?? publicVoteRoundIds[0]
+      ?? currentRoundId;
+  }
+
+  return currentRoundId;
+}
+
 function AppContent() {
   const copy = useCampaignCopy();
   const { t } = copy;
   const localTestOrigin = isLocalTestOrigin();
   const defaultLocalSimulationMode = normalizeLocalSimulationMode(import.meta.env.VITE_LOCAL_SIMULATION_MODE);
   const defaultSimulationMode = localTestOrigin ? defaultLocalSimulationMode : "realtime";
-  const initialRoundId = defaultSimulationMode === "scenario" ? DEFAULT_ROUND_ID : "round32";
+  const initialRoundId = defaultSimulationMode === "scenario" ? DEFAULT_ROUND_ID : "round16";
   const initialMatchId = localTestOrigin
     ? DEFAULT_MATCH_ID
-    : campaignMatches.find((match) => match.roundId === "round32")?.id ?? DEFAULT_MATCH_ID;
+    : campaignMatches.find((match) => match.roundId === initialRoundId)?.id ?? DEFAULT_MATCH_ID;
   const ledgerSummaryUrl = import.meta.env.VITE_LEDGER_SUMMARY_URL || (import.meta.env.PROD ? "/api/raffle-summary" : "");
   const ledgerEntryUrl = import.meta.env.VITE_LEDGER_ENTRY_URL || (import.meta.env.PROD ? "/api/raffle-entry" : "");
   const milestoneSummaryUrl = import.meta.env.VITE_MILESTONE_SUMMARY_URL || (import.meta.env.PROD ? "/api/milestones" : "");
@@ -383,6 +420,7 @@ function AppContent() {
   const [initialLoaderStartedAt] = useState(() => Date.now());
   const [matchStatusNow, setMatchStatusNow] = useState(() => Date.now());
   const trackedLoginKeyRef = useRef("");
+  const roundManuallySelectedRef = useRef(false);
   const voteSubmitNoticeTimerRef = useRef(0);
 
   const refreshAuthSession = useCallback(async () => {
@@ -1070,13 +1108,32 @@ function AppContent() {
     setTicketAmount((current) => Math.max(1, Math.min(current, Math.max(1, visibleRemainingRoundTickets))));
   }, [visibleRemainingRoundTickets]);
 
+  useEffect(() => {
+    if (activeViewId !== "vote") return;
+    if (simulationMode !== "realtime") return;
+    if (roundManuallySelectedRef.current) return;
+
+    const defaultVoteRoundId = getDefaultVoteRoundId(matches, activeRoundId);
+    if (!defaultVoteRoundId || defaultVoteRoundId === activeRoundId) return;
+
+    const nextMatch = getPreferredRoundMatch(matches, defaultVoteRoundId);
+    setActiveRoundId(defaultVoteRoundId);
+    setSelectedMatchId(nextMatch?.id ?? selectedMatchId);
+    setSelectedTeamId(null);
+    setTicketAmount(DEFAULT_TICKET_AMOUNT);
+  }, [activeRoundId, activeViewId, matches, selectedMatchId, simulationMode]);
+
   function handleSelectView(viewId) {
+    if (viewId === "vote" && activeViewId !== "vote") {
+      roundManuallySelectedRef.current = false;
+    }
     setActiveViewId(viewId);
     syncViewIdToUrl(viewId);
     setMobileNavOpen(false);
   }
 
   function handleSelectRound(roundId) {
+    roundManuallySelectedRef.current = true;
     const firstMatch = matches.find((match) => match.roundId === roundId);
     setActiveRoundId(roundId);
     setSelectedMatchId(firstMatch?.id ?? selectedMatchId);
@@ -1086,6 +1143,7 @@ function AppContent() {
 
   function handleSelectSimulatedRound(roundId) {
     if (!localTestOrigin) return;
+    roundManuallySelectedRef.current = true;
     const firstMatch = campaignMatches.find((match) => match.roundId === roundId);
     setLocalSimulationMode("scenario");
     setSimulatedRoundId(roundId);
@@ -1103,15 +1161,17 @@ function AppContent() {
     setTicketAmount(DEFAULT_TICKET_AMOUNT);
 
     if (nextMode === "realtime") {
-      const firstRound32Match = matches.find((match) => match.roundId === "round32")
-        ?? campaignMatches.find((match) => match.roundId === "round32");
-      setSimulatedRoundId("round32");
-      setActiveRoundId("round32");
-      setSelectedMatchId(firstRound32Match?.id ?? selectedMatchId);
+      roundManuallySelectedRef.current = false;
+      const defaultVoteRoundId = getDefaultVoteRoundId(matches, "round16");
+      const firstVoteMatch = getPreferredRoundMatch(matches, defaultVoteRoundId);
+      setSimulatedRoundId(defaultVoteRoundId);
+      setActiveRoundId(defaultVoteRoundId);
+      setSelectedMatchId(firstVoteMatch?.id ?? selectedMatchId);
     }
   }
 
-  function handleSelectMatch(matchId) {
+  function handleSelectMatch(matchId, options = {}) {
+    if (!options.automatic) roundManuallySelectedRef.current = true;
     const match = matches.find((entry) => sameMatchId(entry.id, matchId));
     if (match?.roundId && match.roundId !== activeRoundId) {
       setActiveRoundId(match.roundId);

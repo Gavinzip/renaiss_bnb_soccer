@@ -707,7 +707,7 @@ export function VoteRoom({
     if (!preferredRoundMatch || autoSelectedRoundRef.current === activeRoundId || selectedIsVoteable) return;
 
     autoSelectedRoundRef.current = activeRoundId;
-    onSelectMatch?.(preferredRoundMatch.id);
+    onSelectMatch?.(preferredRoundMatch.id, { automatic: true });
   }, [
     activeRoundId,
     onSelectMatch,
