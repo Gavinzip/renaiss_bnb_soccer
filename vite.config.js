@@ -24,6 +24,10 @@ function localApiProxy(target) {
       target,
       changeOrigin: true,
     },
+    "/match-draw-ledgers": {
+      target,
+      changeOrigin: true,
+    },
     "/draw-winners.json": {
       target,
       changeOrigin: true,
@@ -58,6 +62,7 @@ function readOnlyApiProxy(target) {
     "/api/auth/verification-stats": createTarget(),
     "/lucky-draw-ledger.json": createTarget(),
     "/match-draw-ledger.json": createTarget(),
+    "/match-draw-ledgers": createTarget(),
     "/draw-winners.json": createTarget(),
     "/vote-preview.json": createTarget(),
   };

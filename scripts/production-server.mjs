@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { createGzip } from 'node:zlib'
-import { verifyMessage } from 'ethers'
+import { Contract, JsonRpcProvider, verifyMessage } from 'ethers'
 
 import { campaignMatches, milestones, roundDefinitions } from '../src/app/data/worldCupCampaign.js'
 import {
@@ -62,6 +62,7 @@ const runtimeTarget = normalizeRuntimeTarget(process.env.SOCCER_RUNTIME_TARGET |
 applyRuntimeDefaults({ runtimeTarget, repoRoot, port })
 
 const distDir = resolve(repoRoot, 'dist')
+const drawContractArtifactPath = resolve(repoRoot, 'artifacts/contracts/RenaissLuckyDraw.sol/RenaissLuckyDraw.json')
 const dataDir = process.env.SOCCER_DATA_DIR || process.env.LUCKY_DRAW_DATA_DIR || '/data/soccer'
 const cacheDir = process.env.LUCKY_DRAW_CACHE_DIR || join(dataDir, 'cache')
 const ledgerPath = process.env.LUCKY_DRAW_LEDGER_PATH || join(dataDir, 'lucky-draw-ledger.json')
@@ -75,7 +76,10 @@ const voteDbPath = process.env.SOCCER_VOTE_DB_PATH || join(votesDir, 'vote-store
 const profileDbPath = process.env.SOCCER_PROFILE_DB_PATH || join(dataDir, 'profiles/user-profiles.sqlite')
 const matchResultsPath = process.env.SOCCER_MATCH_RESULTS_PATH || join(dataDir, 'match-results.json')
 const matchDrawLedgerPath = process.env.SOCCER_MATCH_DRAW_LEDGER_PATH || join(dataDir, 'match-draw-ledger.json')
+const matchDrawLedgerLockedDir = process.env.SOCCER_MATCH_DRAW_LEDGER_LOCKED_DIR || join(dirname(matchDrawLedgerPath), 'match-draw-ledgers')
 const drawWinnersPath = process.env.SOCCER_DRAW_WINNERS_PATH || join(dataDir, 'draw-winners.json')
+const drawWinnersProofPath = process.env.SOCCER_DRAW_WINNERS_PROOF_PATH || join(dataDir, 'draw-winners-proof.json')
+const bundledDrawWinnersProofPath = join(repoRoot, 'config/draw-winners-proof.production.json')
 const winnerRevealVideoUrl = process.env.WINNER_REVEAL_VIDEO_URL || process.env.VITE_WINNER_REVEAL_VIDEO_URL || ''
 const bundledFifaSourceMapPath = join(repoRoot, 'config/fifa-match-map.production.json')
 const fifaSourceMapPath = process.env.FIFA_RESULTS_SOURCE_MAP_PATH
@@ -272,6 +276,9 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
   applyDefaultEnv('SOCCER_MATCH_DRAW_LEDGER_PATH', join(localDataDir, 'match-draw-ledger.json'), {
     replace: localPathReplacements('match-draw-ledger.json'),
   })
+  applyDefaultEnv('SOCCER_MATCH_DRAW_LEDGER_LOCKED_DIR', join(localDataDir, 'match-draw-ledgers'), {
+    replace: localPathReplacements('match-draw-ledgers'),
+  })
   applyDefaultEnv('SOCCER_DRAW_WINNERS_PATH', join(localDataDir, 'draw-winners.json'), {
     replace: localPathReplacements('draw-winners.json'),
   })
@@ -347,6 +354,11 @@ let lastRestore = {
   trigger: null,
 }
 let restoreHistory = []
+let drawWinnersProofCache = {
+  key: '',
+  expiresAt: 0,
+  payload: null,
+}
 
 function readIntegerEnv(name, fallback, min = 0) {
   const raw = process.env[name]
@@ -658,7 +670,7 @@ function roundResultReadiness(roundId) {
 function readMatchDrawLedgerSummary() {
   if (!existsSync(matchDrawLedgerPath)) return null
   try {
-    const payload = JSON.parse(readFileSync(matchDrawLedgerPath, 'utf8'))
+    const payload = readMatchDrawLedgerPayload()
     const roundDraws = Array.isArray(payload.roundDraws) ? payload.roundDraws : []
     const draws = Array.isArray(payload.draws) ? payload.draws : []
     return {
@@ -686,6 +698,10 @@ function readMatchDrawLedgerSummary() {
       error: error instanceof Error ? error.message : 'Could not read match draw ledger.',
     }
   }
+}
+
+function readMatchDrawLedgerPayload() {
+  return JSON.parse(readFileSync(matchDrawLedgerPath, 'utf8'))
 }
 
 function matchDrawLedgerContainsRound(roundId) {
@@ -1109,6 +1125,8 @@ function runDrawAdminLedger({ roundId, drawRoundId = roundId, networkKey = drawD
     matchResultsPath,
     '--out',
     matchDrawLedgerPath,
+    '--locked-rounds-dir',
+    matchDrawLedgerLockedDir,
     '--round-id',
     normalizedDrawRoundId,
     '--source-round-id',
@@ -1644,7 +1662,7 @@ function readHealthMatchResultsSnapshot() {
   }
 }
 
-function readDrawWinnersSnapshot() {
+async function readDrawWinnersSnapshot() {
   if (!existsSync(drawWinnersPath)) {
     return enrichDrawWinnersPayload({
       version: 1,
@@ -1659,13 +1677,16 @@ function readDrawWinnersSnapshot() {
   }
 
   const payload = JSON.parse(readFileSync(drawWinnersPath, 'utf8'))
-  return enrichDrawWinnersPayload({
+  const enriched = enrichDrawWinnersPayload({
     videoUrl: payload.videoUrl || winnerRevealVideoUrl,
     winners: Array.isArray(payload.winners) ? payload.winners : [],
     winnersBySlot: Array.isArray(payload.winnersBySlot) ? payload.winnersBySlot : [],
     ...payload,
     videoUrl: payload.videoUrl || winnerRevealVideoUrl,
   })
+  const withLedgerDownloadState = withDrawWinnersLedgerDownloadState(enriched)
+  const withConfiguredProof = enrichDrawWinnersConfiguredProof(withLedgerDownloadState)
+  return enrichDrawWinnersChainProof(withConfiguredProof)
 }
 
 const WINNER_WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i
@@ -1759,6 +1780,402 @@ function enrichDrawWinnersPayload(payload) {
           : draw.prizeSlots,
       }))
       : payload.draws,
+  }
+}
+
+function normalizeProofHash(value) {
+  const hash = String(value || '').trim()
+  return /^0x[a-fA-F0-9]{64}$/.test(hash) ? hash : ''
+}
+
+function normalizeProofAddress(value) {
+  const address = String(value || '').trim()
+  return /^0x[a-fA-F0-9]{40}$/.test(address) ? address.toLowerCase() : ''
+}
+
+function safeDrawLedgerRoundId(value) {
+  const roundId = String(value || '').trim()
+  return /^[A-Za-z0-9_-]+$/.test(roundId) ? roundId : ''
+}
+
+function lockedRoundLedgerFilePath(roundId) {
+  const safeRoundId = safeDrawLedgerRoundId(roundId)
+  return safeRoundId ? join(matchDrawLedgerLockedDir, `${safeRoundId}.json`) : ''
+}
+
+function drawWinnersLedgerDownloadInfo(payload) {
+  const roundId = safeDrawLedgerRoundId(payload?.drawRoundId || payload?.draw_round_id || payload?.roundId || payload?.round_id)
+  const path = lockedRoundLedgerFilePath(roundId)
+  const available = Boolean(path && existsSync(path) && statSync(path).isFile())
+  return {
+    roundId,
+    available,
+    url: available ? `/match-draw-ledgers/${roundId}.json` : '',
+  }
+}
+
+function withDrawWinnersLedgerDownloadState(payload) {
+  const download = drawWinnersLedgerDownloadInfo(payload)
+  return {
+    ...payload,
+    proof: {
+      ...(payload.proof && typeof payload.proof === 'object' ? payload.proof : {}),
+      ledgerDownloadAvailable: download.available,
+      ledgerDownloadUrl: download.url,
+    },
+  }
+}
+
+function hasDrawWinnerProofTransactions(payload) {
+  const proof = payload?.proof && typeof payload.proof === 'object' ? payload.proof : {}
+  return [
+    payload?.transactions,
+    payload?.txs,
+    proof.transactions,
+    proof.roundTransactions,
+    proof.matchTransactions,
+  ].some((rows) => Array.isArray(rows) && rows.some((row) => normalizeProofHash(row?.hash || row?.transactionHash)))
+}
+
+function drawWinnerProofNetworkKey(payload) {
+  const chainId = String(payload?.chainId || payload?.chain_id || '').trim()
+  return chainId === '97' ? 'testnet' : 'mainnet'
+}
+
+function readDrawContractAbi() {
+  if (!existsSync(drawContractArtifactPath)) return []
+  const artifact = JSON.parse(readFileSync(drawContractArtifactPath, 'utf8'))
+  return Array.isArray(artifact.abi) ? artifact.abi : []
+}
+
+function drawProofCacheKey(payload) {
+  return [
+    payload?.chainId || '',
+    String(payload?.contract || '').toLowerCase(),
+    String(payload?.roundKey || payload?.round_key || '').toLowerCase(),
+    String(payload?.ledgerHash || payload?.ledger_hash || '').toLowerCase(),
+    payload?.generatedAt || payload?.generated_at || '',
+  ].join(':')
+}
+
+function drawProofMatchRows(payload) {
+  return (Array.isArray(payload?.draws) ? payload.draws : [])
+    .map((draw) => ({
+      matchId: String(draw?.matchId || draw?.match_id || '').trim(),
+      matchKey: normalizeProofHash(draw?.matchKey || draw?.match_key),
+    }))
+    .filter((draw) => draw.matchId && draw.matchKey)
+}
+
+function readOptionalJson(path) {
+  if (!path || !existsSync(path)) return null
+  return JSON.parse(readFileSync(path, 'utf8'))
+}
+
+function drawWinnersProofRecordsFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') return []
+  if (Array.isArray(payload.roundProofs)) return payload.roundProofs
+  if (Array.isArray(payload.proofs)) return payload.proofs
+  if (Array.isArray(payload.rounds)) return payload.rounds
+  return [payload]
+}
+
+function readDrawWinnersProofRecords() {
+  const paths = [...new Set([bundledDrawWinnersProofPath, drawWinnersProofPath].filter(Boolean))]
+  const records = []
+  for (const path of paths) {
+    try {
+      records.push(...drawWinnersProofRecordsFromPayload(readOptionalJson(path)))
+    } catch (error) {
+      console.warn(`[draw-winners-proof] ignored ${path}: ${error instanceof Error ? error.message : error}`)
+    }
+  }
+  return records
+}
+
+function sameOptionalProofValue(recordValue, payloadValue, normalizer = (value) => String(value || '').trim()) {
+  const recordNormalized = normalizer(recordValue)
+  if (!recordNormalized) return true
+  const payloadNormalized = normalizer(payloadValue)
+  return Boolean(payloadNormalized && recordNormalized === payloadNormalized)
+}
+
+function drawProofRecordMatchesPayload(record, payload) {
+  if (!record || typeof record !== 'object') return false
+  const payloadRoundIds = [
+    payload?.drawRoundId,
+    payload?.draw_round_id,
+    payload?.roundId,
+    payload?.round_id,
+    payload?.sourceRoundId,
+    payload?.source_round_id,
+  ].map((value) => String(value || '').trim()).filter(Boolean)
+  const recordRoundId = String(record.roundId || record.round_id || record.drawRoundId || record.draw_round_id || '').trim()
+  return (
+    sameOptionalProofValue(record.chainId || record.chain_id, payload?.chainId || payload?.chain_id)
+    && sameOptionalProofValue(record.contract, payload?.contract, normalizeProofAddress)
+    && sameOptionalProofValue(record.roundKey || record.round_key, payload?.roundKey || payload?.round_key, normalizeProofHash)
+    && sameOptionalProofValue(record.ledgerHash || record.ledger_hash, payload?.ledgerHash || payload?.ledger_hash, normalizeProofHash)
+    && (!recordRoundId || payloadRoundIds.includes(recordRoundId))
+  )
+}
+
+function normalizeProofTransactionRecord(row, index) {
+  if (!row || typeof row !== 'object') return null
+  const hash = normalizeProofHash(row.hash || row.txHash || row.tx_hash || row.transactionHash || row.transaction_hash)
+  if (!hash) return null
+  const step = String(row.step || row.action || 'transaction').trim() || 'transaction'
+  const matchIds = Array.isArray(row.matchIds || row.match_ids)
+    ? (row.matchIds || row.match_ids).map((matchId) => String(matchId || '').trim()).filter(Boolean)
+    : String(row.matchId || row.match_id || '')
+      .split(',')
+      .map((matchId) => matchId.trim())
+      .filter(Boolean)
+  return {
+    id: String(row.id || `${step}-${index}-${hash}`),
+    index: Number.isFinite(Number(row.index)) ? Number(row.index) : index,
+    step,
+    hash,
+    transactionHash: hash,
+    blockNumber: Number.isFinite(Number(row.blockNumber || row.block_number)) ? Number(row.blockNumber || row.block_number) : null,
+    logIndex: Number.isFinite(Number(row.logIndex || row.log_index)) ? Number(row.logIndex || row.log_index) : null,
+    matchIds,
+  }
+}
+
+function buildConfiguredDrawWinnerProof(record, payload) {
+  const transactions = (Array.isArray(record?.transactions) ? record.transactions : [])
+    .map(normalizeProofTransactionRecord)
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftBlock = left.blockNumber ?? Number.MAX_SAFE_INTEGER
+      const rightBlock = right.blockNumber ?? Number.MAX_SAFE_INTEGER
+      if (leftBlock !== rightBlock) return leftBlock - rightBlock
+      return left.index - right.index
+    })
+  if (!transactions.length) return null
+
+  const txByMatchId = new Map()
+  for (const tx of transactions.filter((item) => item.step.startsWith('revealRoundMatch') || item.matchIds.length > 0)) {
+    for (const matchId of tx.matchIds) {
+      const key = String(matchId || '').trim().toLowerCase()
+      if (key && !txByMatchId.has(key)) txByMatchId.set(key, tx)
+    }
+  }
+
+  return {
+    ticketNamespace: 'Ticket numbers are scoped per match. The same ticket number can exist in different matches, so matchId plus ticketNumber identifies the winning entry.',
+    source: record.source || 'configured-proof',
+    sourceStatus: 'available',
+    transactions,
+    roundTransactions: transactions.filter((tx) => !tx.step.startsWith('revealRoundMatch') && tx.matchIds.length === 0),
+    matchTransactions: drawProofMatchRows(payload).map((draw) => {
+      const tx = txByMatchId.get(draw.matchId.toLowerCase()) || null
+      return {
+        matchId: draw.matchId,
+        matchKey: draw.matchKey,
+        step: tx?.step || '',
+        hash: tx?.hash || '',
+        transactionHash: tx?.hash || '',
+        transactionIndex: tx?.index ?? null,
+      }
+    }),
+  }
+}
+
+function normalizeChainProofLog(log, step, matchIds = []) {
+  const logIndex = Number(log.index ?? log.logIndex ?? 0)
+  return {
+    id: `${step}-${log.blockNumber}-${logIndex}-${log.transactionHash}`,
+    index: logIndex,
+    step,
+    hash: log.transactionHash,
+    transactionHash: log.transactionHash,
+    blockNumber: log.blockNumber,
+    logIndex,
+    matchIds,
+  }
+}
+
+async function queryDrawProofLogs(contract, filter, fromBlock, toBlock) {
+  const chunkSize = readIntegerEnv('DRAW_WINNERS_PROOF_QUERY_CHUNK_BLOCKS', 1000, 50)
+  const logs = []
+  for (let start = fromBlock; start <= toBlock; start += chunkSize) {
+    const end = Math.min(toBlock, start + chunkSize - 1)
+    logs.push(...await contract.queryFilter(filter, start, end))
+  }
+  return logs
+}
+
+async function buildDrawWinnersChainProof(payload) {
+  const roundKey = normalizeProofHash(payload?.roundKey || payload?.round_key)
+  const contractAddress = String(payload?.contract || '').trim()
+  if (!roundKey || !/^0x[a-fA-F0-9]{40}$/.test(contractAddress)) return null
+
+  const networkKey = drawWinnerProofNetworkKey(payload)
+  const network = drawNetworkEnv(networkKey)
+  const rpcUrl = readEnvString(
+    networkKey === 'testnet'
+      ? 'DRAW_TESTNET_WINNERS_PROOF_RPC_URL'
+      : 'DRAW_WINNERS_PROOF_RPC_URL',
+  ) || readEnvString('DRAW_WINNERS_PROOF_RPC_URL') || network.rpcUrl || readEnvString('BSC_RPC_URL')
+  const abi = readDrawContractAbi()
+  if (!rpcUrl || abi.length === 0) return null
+
+  const provider = new JsonRpcProvider(rpcUrl, Number(network.chainId || payload.chainId || 56), {
+    batchMaxCount: 1,
+  })
+  const contract = new Contract(contractAddress, abi, provider)
+  const latestBlock = await provider.getBlockNumber()
+  const lookbackBlocks = readIntegerEnv('DRAW_WINNERS_PROOF_LOOKBACK_BLOCKS', 70000, 1000)
+  const fromBlock = Math.max(0, latestBlock - lookbackBlocks)
+  const finalizedLogs = await queryDrawProofLogs(contract, contract.filters.RoundLedgerFinalized(roundKey), fromBlock, latestBlock)
+  const requestedLogs = await queryDrawProofLogs(contract, contract.filters.RoundDrawRequested(roundKey), fromBlock, latestBlock)
+  const revealedLogs = await queryDrawProofLogs(contract, contract.filters.RoundMatchRevealed(roundKey), fromBlock, latestBlock)
+
+  const matchIdByKey = new Map(drawProofMatchRows(payload).map((draw) => [draw.matchKey.toLowerCase(), draw.matchId]))
+  const transactions = [
+    ...finalizedLogs.map((log) => normalizeChainProofLog(log, 'finalizeRoundLedger')),
+    ...requestedLogs.map((log) => normalizeChainProofLog(log, 'requestRoundDraw')),
+  ]
+
+  const revealTxByHash = new Map()
+  for (const log of revealedLogs) {
+    const matchKey = normalizeProofHash(log.args?.matchId)
+    const matchId = matchIdByKey.get(matchKey.toLowerCase()) || matchKey
+    const current = revealTxByHash.get(log.transactionHash) || {
+      log,
+      matchIds: [],
+    }
+    if (matchId && !current.matchIds.includes(matchId)) current.matchIds.push(matchId)
+    revealTxByHash.set(log.transactionHash, current)
+  }
+
+  for (const item of revealTxByHash.values()) {
+    transactions.push(normalizeChainProofLog(
+      item.log,
+      item.matchIds.length === 1 ? 'revealRoundMatch' : 'revealRoundMatches',
+      item.matchIds,
+    ))
+  }
+
+  transactions.sort((left, right) => left.blockNumber - right.blockNumber || left.logIndex - right.logIndex)
+  const revealByMatchId = new Map()
+  for (const tx of transactions.filter((item) => item.step.startsWith('revealRoundMatch'))) {
+    for (const matchId of tx.matchIds) revealByMatchId.set(String(matchId || '').toLowerCase(), tx)
+  }
+
+  return {
+    ticketNamespace: 'Ticket numbers are scoped per match. The same ticket number can exist in different matches, so matchId plus ticketNumber identifies the winning entry.',
+    source: 'chain-events',
+    fromBlock,
+    toBlock: latestBlock,
+    transactions,
+    roundTransactions: transactions.filter((tx) => !tx.step.startsWith('revealRoundMatch')),
+    matchTransactions: drawProofMatchRows(payload).map((draw) => {
+      const tx = revealByMatchId.get(draw.matchId.toLowerCase()) || null
+      return {
+        matchId: draw.matchId,
+        matchKey: draw.matchKey,
+        step: tx?.step || '',
+        hash: tx?.hash || '',
+        transactionHash: tx?.hash || '',
+        transactionIndex: tx?.index ?? null,
+      }
+    }),
+  }
+}
+
+function attachProofToWinnerPayload(payload, proof) {
+  if (!proof || !Array.isArray(proof.matchTransactions)) return payload
+  const mergedProof = {
+    ...(payload.proof && typeof payload.proof === 'object' ? payload.proof : {}),
+    ...proof,
+  }
+  const txByMatchId = new Map(
+    mergedProof.matchTransactions.map((tx) => [String(tx.matchId || '').toLowerCase(), normalizeProofHash(tx.hash || tx.transactionHash)]),
+  )
+  const attachRow = (row) => {
+    if (!row || typeof row !== 'object') return row
+    const txHash = txByMatchId.get(String(row.matchId || row.match_id || '').toLowerCase()) || ''
+    if (!txHash) return row
+    return {
+      ...row,
+      transactionHash: row.transactionHash || txHash,
+      revealTransactionHash: row.revealTransactionHash || txHash,
+    }
+  }
+  const attachRows = (rows) => (Array.isArray(rows) ? rows.map(attachRow) : rows)
+
+  return {
+    ...payload,
+    proof: mergedProof,
+    transactions: mergedProof.transactions,
+    txs: mergedProof.transactions,
+    winners: attachRows(payload.winners),
+    winnersBySlot: attachRows(payload.winnersBySlot),
+    winners_by_slot: attachRows(payload.winners_by_slot),
+    alternates: attachRows(payload.alternates),
+    draws: Array.isArray(payload.draws)
+      ? payload.draws.map((draw) => {
+        const txHash = txByMatchId.get(String(draw.matchId || draw.match_id || '').toLowerCase()) || ''
+        return {
+          ...draw,
+          transactionHash: draw.transactionHash || txHash,
+          revealTransactionHash: draw.revealTransactionHash || txHash,
+          winners: attachRows(draw.winners),
+          alternates: attachRows(draw.alternates),
+          prizeSlots: Array.isArray(draw.prizeSlots)
+            ? draw.prizeSlots.map((slot) => ({
+              ...slot,
+              winner: attachRow(slot.winner),
+              alternates: attachRows(slot.alternates),
+            }))
+            : draw.prizeSlots,
+        }
+      })
+      : payload.draws,
+  }
+}
+
+function enrichDrawWinnersConfiguredProof(payload) {
+  if (hasDrawWinnerProofTransactions(payload)) return payload
+  for (const record of readDrawWinnersProofRecords()) {
+    if (!drawProofRecordMatchesPayload(record, payload)) continue
+    const proof = buildConfiguredDrawWinnerProof(record, payload)
+    if (proof) return attachProofToWinnerPayload(payload, proof)
+  }
+  return payload
+}
+
+async function enrichDrawWinnersChainProof(payload) {
+  if (payload?.sourceStatus !== 'revealed' || hasDrawWinnerProofTransactions(payload)) return payload
+
+  const cacheKey = drawProofCacheKey(payload)
+  if (drawWinnersProofCache.key === cacheKey && drawWinnersProofCache.payload && Date.now() < drawWinnersProofCache.expiresAt) {
+    return drawWinnersProofCache.payload
+  }
+
+  try {
+    const proof = await buildDrawWinnersChainProof(payload)
+    if (!proof) return payload
+    const enriched = attachProofToWinnerPayload(payload, proof)
+    drawWinnersProofCache = {
+      key: cacheKey,
+      expiresAt: Date.now() + readIntegerEnv('DRAW_WINNERS_PROOF_CACHE_SECONDS', 120, 10) * 1000,
+      payload: enriched,
+    }
+    return enriched
+  } catch (error) {
+    return {
+      ...payload,
+      proof: {
+        ...(payload.proof && typeof payload.proof === 'object' ? payload.proof : {}),
+        source: 'chain-events',
+        sourceStatus: 'unavailable',
+        error: error instanceof Error ? error.message : 'Could not read draw winner transaction proof.',
+      },
+    }
   }
 }
 
@@ -2978,7 +3395,7 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === '/api/draw-winners') {
     try {
-      sendJson(request, response, 200, readDrawWinnersSnapshot(), {
+      sendJson(request, response, 200, await readDrawWinnersSnapshot(), {
         'cache-control': 'no-store',
       })
     } catch (error) {
@@ -3155,8 +3572,19 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  const lockedMatchDrawLedgerMatch = url.pathname.match(/^\/match-draw-ledgers\/([A-Za-z0-9_-]+)\.json$/)
+  if (lockedMatchDrawLedgerMatch) {
+    const roundId = lockedMatchDrawLedgerMatch[1]
+    sendFile(request, response, join(matchDrawLedgerLockedDir, `${roundId}.json`), {
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*',
+      'content-disposition': `attachment; filename="${roundId}-match-draw-ledger.json"`,
+    })
+    return
+  }
+
   if (url.pathname === '/draw-winners.json') {
-    sendJson(request, response, 200, readDrawWinnersSnapshot(), {
+    sendJson(request, response, 200, await readDrawWinnersSnapshot(), {
       'cache-control': 'no-store',
       'access-control-allow-origin': '*',
     })

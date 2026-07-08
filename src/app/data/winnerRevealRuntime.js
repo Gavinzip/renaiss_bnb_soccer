@@ -10,6 +10,15 @@ const emptyWinnerRevealData = {
   winnersBySlot: [],
   alternates: [],
   draws: [],
+  transactions: [],
+  txs: [],
+  proof: {
+    ledgerDownloadAvailable: false,
+    ledgerDownloadUrl: "",
+    transactions: [],
+    roundTransactions: [],
+    matchTransactions: [],
+  },
 };
 
 function normalizeInteger(value) {
@@ -42,6 +51,78 @@ function normalizeWinnerProfile(row) {
   };
 }
 
+function normalizeTransactionHash(value) {
+  const hash = String(value || "").trim();
+  return /^0x[a-fA-F0-9]{64}$/.test(hash) ? hash : "";
+}
+
+function normalizeMatchIds(value) {
+  if (Array.isArray(value)) {
+    return value.map((matchId) => String(matchId || "").trim()).filter(Boolean);
+  }
+  return String(value || "")
+    .split(",")
+    .map((matchId) => matchId.trim())
+    .filter(Boolean);
+}
+
+function normalizeProofTransaction(row, index) {
+  if (!row || typeof row !== "object") return null;
+  const hash = normalizeTransactionHash(row.hash ?? row.txHash ?? row.tx_hash ?? row.transactionHash ?? row.transaction_hash);
+  if (!hash) return null;
+  const step = String(row.step ?? row.action ?? "transaction").trim() || "transaction";
+  return {
+    id: String(row.id ?? `${step}-${index}-${hash}`),
+    index: normalizeInteger(row.index ?? index),
+    step,
+    hash,
+    transactionHash: hash,
+    matchIds: normalizeMatchIds(row.matchIds ?? row.match_ids ?? row.matchId ?? row.match_id),
+  };
+}
+
+function normalizeProofTransactionList(rows) {
+  return (Array.isArray(rows) ? rows : []).map(normalizeProofTransaction).filter(Boolean);
+}
+
+function normalizeMatchTransaction(row, index) {
+  if (!row || typeof row !== "object") return null;
+  const matchId = String(row.matchId ?? row.match_id ?? "").trim();
+  const hash = normalizeTransactionHash(row.hash ?? row.txHash ?? row.tx_hash ?? row.transactionHash ?? row.transaction_hash);
+  if (!matchId && !hash) return null;
+  return {
+    id: String(row.id ?? `${matchId || "match"}-${index}-${hash || "pending"}`),
+    index: normalizeInteger(row.index ?? row.transactionIndex ?? row.transaction_index ?? index),
+    matchId,
+    matchKey: row.matchKey ?? row.match_key ?? null,
+    step: String(row.step ?? row.action ?? "").trim(),
+    hash,
+    transactionHash: hash,
+  };
+}
+
+function normalizeMatchTransactionList(rows) {
+  return (Array.isArray(rows) ? rows : []).map(normalizeMatchTransaction).filter(Boolean);
+}
+
+function normalizeProof(payload) {
+  const proof = payload?.proof && typeof payload.proof === "object" ? payload.proof : {};
+  const transactions = normalizeProofTransactionList(proof.transactions ?? payload?.transactions ?? payload?.txs);
+  const roundTransactions = normalizeProofTransactionList(proof.roundTransactions ?? proof.round_transactions)
+    || transactions.filter((tx) => !tx.step.startsWith("revealRoundMatch"));
+  const matchTransactions = normalizeMatchTransactionList(proof.matchTransactions ?? proof.match_transactions);
+  return {
+    ledgerDownloadAvailable: proof.ledgerDownloadAvailable === true || proof.ledger_download_available === true,
+    ledgerDownloadUrl: String(proof.ledgerDownloadUrl ?? proof.ledger_download_url ?? "").trim(),
+    ticketNamespace: String(proof.ticketNamespace ?? proof.ticket_namespace ?? "").trim(),
+    transactions,
+    roundTransactions: roundTransactions.length
+      ? roundTransactions
+      : transactions.filter((tx) => !tx.step.startsWith("revealRoundMatch")),
+    matchTransactions,
+  };
+}
+
 function normalizeWinner(row, index) {
   if (!row || typeof row !== "object") return null;
   const ticketNumber = String(row.ticketNumber ?? row.ticket_number ?? "").trim();
@@ -62,6 +143,15 @@ function normalizeWinner(row, index) {
     roundId: String(row.roundId ?? row.round_id ?? ""),
     matchId: String(row.matchId ?? row.match_id ?? ""),
     teamId: String(row.teamId ?? row.team_id ?? ""),
+    transactionHash: normalizeTransactionHash(
+      row.transactionHash
+        ?? row.transaction_hash
+        ?? row.revealTransactionHash
+        ?? row.reveal_transaction_hash
+        ?? row.txHash
+        ?? row.tx_hash,
+    ),
+    revealTransactionHash: normalizeTransactionHash(row.revealTransactionHash ?? row.reveal_transaction_hash ?? row.transactionHash ?? row.transaction_hash),
     entryRank: row.entryRank ?? row.entry_rank ?? row.rank ?? null,
     interval: row.interval && typeof row.interval === "object" ? row.interval : null,
     profile: normalizeWinnerProfile(row.profile ?? row.userProfile ?? row.user_profile),
@@ -108,6 +198,15 @@ function normalizeDraw(row, index) {
     prizeSlotCount: normalizeInteger(row.prizeSlotCount ?? row.prize_slot_count),
     alternateCount: normalizeInteger(row.alternateCount ?? row.alternate_count),
     revealed: Boolean(row.revealed),
+    transactionHash: normalizeTransactionHash(
+      row.transactionHash
+        ?? row.transaction_hash
+        ?? row.revealTransactionHash
+        ?? row.reveal_transaction_hash
+        ?? row.txHash
+        ?? row.tx_hash,
+    ),
+    revealTransactionHash: normalizeTransactionHash(row.revealTransactionHash ?? row.reveal_transaction_hash ?? row.transactionHash ?? row.transaction_hash),
     result: row.result && typeof row.result === "object" ? row.result : null,
     prizeSlots: (Array.isArray(row.prizeSlots) ? row.prizeSlots : [])
       .map(normalizePrizeSlot)
@@ -131,6 +230,7 @@ export function normalizeWinnerRevealPayload(payload, fallbackVideoUrl = DEFAULT
   }
 
   const videoUrl = String(payload.videoUrl ?? payload.video_url ?? fallbackVideoUrl ?? DEFAULT_WINNER_REVEAL_VIDEO_URL).trim();
+  const proof = normalizeProof(payload);
 
   return {
     sourceLabel: String(payload.sourceLabel ?? payload.source_label ?? "on-chain-reveal"),
@@ -149,6 +249,9 @@ export function normalizeWinnerRevealPayload(payload, fallbackVideoUrl = DEFAULT
     ledgerHash: payload.ledgerHash ?? payload.ledger_hash ?? null,
     winnerCount: normalizeInteger(payload.winnerCount ?? payload.winner_count),
     alternateCount: normalizeInteger(payload.alternateCount ?? payload.alternate_count),
+    proof,
+    transactions: proof.transactions,
+    txs: proof.transactions,
     winners: normalizeWinnerList(payload.winners),
     winnersBySlot: normalizeWinnerList(payload.winnersBySlot ?? payload.winners_by_slot),
     alternates: normalizeWinnerList(payload.alternates),

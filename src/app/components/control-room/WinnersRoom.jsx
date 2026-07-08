@@ -1,4 +1,4 @@
-import { Award, CirclePlay, Gift, RotateCcw, Sparkles, Ticket } from "lucide-react";
+import { Award, ChevronDown, CirclePlay, Download, ExternalLink, Gift, RotateCcw, ShieldCheck, Sparkles, Ticket } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import revealBackdrop from "../../assets/championship-trophy-renaiss-mark.webp";
 import { getMatchPrizeImageByMatchId, preloadRoundPrizeImages } from "../../data/matchPrizeImages";
@@ -70,6 +70,128 @@ function winnerRoundGroupLabel(roundId, round, t, roundLabel) {
 
 function matchDisplayCode(match, fallbackMatchId = "") {
   return String(match?.displayCode || match?.id || fallbackMatchId || "").toUpperCase();
+}
+
+function normalizeHash(value) {
+  const hash = String(value || "").trim();
+  return /^0x[a-fA-F0-9]{64}$/.test(hash) ? hash : "";
+}
+
+function compactHash(value) {
+  const hash = normalizeHash(value);
+  return hash ? `${hash.slice(0, 10)}...${hash.slice(-6)}` : "";
+}
+
+function bscScanBase(chainId) {
+  return String(chainId || "") === "97" ? "https://testnet.bscscan.com" : "https://bscscan.com";
+}
+
+function transactionHref(hash, chainId) {
+  const txHash = normalizeHash(hash);
+  return txHash ? `${bscScanBase(chainId)}/tx/${txHash}` : "";
+}
+
+function localApiEndpoint(path) {
+  const apiOrigin = String(import.meta.env.VITE_LOCAL_API_ORIGIN || "").replace(/\/$/, "");
+  if (!apiOrigin || import.meta.env.PROD) return path;
+  return `${apiOrigin}${path}`;
+}
+
+function transactionStepLabel(step, t) {
+  const key = `winnerReveal.onChainProofStep.${step || "transaction"}`;
+  const label = t(key);
+  return label === key ? step || t("winnerReveal.onChainProofStep.transaction") : label;
+}
+
+function rowTicketNumbers(draw) {
+  const rows = Array.isArray(draw?.winners) && draw.winners.length
+    ? draw.winners
+    : (Array.isArray(draw?.prizeSlots) ? draw.prizeSlots.map((slot) => slot?.winner).filter(Boolean) : []);
+  return rows.map((winner) => String(winner?.ticketNumber || "").trim()).filter(Boolean);
+}
+
+function buildProofMatchRows({ winnerRevealData, selectedRound, matches }) {
+  const selectedRoundId = String(selectedRound?.id || "").trim();
+  const matchById = new Map(matches.map((match) => [canonicalMatchId(match.id), match]));
+  const proof = winnerRevealData?.proof || {};
+  const matchTxById = new Map();
+
+  (Array.isArray(proof.matchTransactions) ? proof.matchTransactions : []).forEach((tx) => {
+    const matchId = canonicalMatchId(tx?.matchId);
+    if (matchId && normalizeHash(tx?.hash || tx?.transactionHash)) matchTxById.set(matchId, tx);
+  });
+
+  (Array.isArray(proof.transactions) ? proof.transactions : []).forEach((tx) => {
+    const hash = normalizeHash(tx?.hash || tx?.transactionHash);
+    if (!hash || !Array.isArray(tx?.matchIds)) return;
+    tx.matchIds.forEach((matchIdValue) => {
+      const matchId = canonicalMatchId(matchIdValue);
+      if (matchId && !matchTxById.has(matchId)) matchTxById.set(matchId, { ...tx, matchId, hash });
+    });
+  });
+
+  return (Array.isArray(winnerRevealData?.draws) ? winnerRevealData.draws : [])
+    .filter((draw) => {
+      const drawRoundId = String(draw?.roundId || draw?.drawRoundId || "").trim();
+      return !selectedRoundId || drawRoundId === selectedRoundId;
+    })
+    .map((draw) => {
+      const matchId = canonicalMatchId(draw.matchId);
+      const match = matchById.get(matchId) || null;
+      const matchTx = matchTxById.get(matchId) || null;
+      const transactionHash = normalizeHash(
+        draw.transactionHash
+          || draw.revealTransactionHash
+          || matchTx?.hash
+          || matchTx?.transactionHash,
+      );
+      return {
+        matchId,
+        label: matchDisplayCode(match, draw.matchId),
+        ledgerHash: draw.ledgerHash || "",
+        drawRoundId: draw.drawRoundId || draw.roundId || "",
+        totalTickets: draw.totalTickets || "",
+        prizeSlotCount: draw.prizeSlotCount || 0,
+        ticketNumbers: rowTicketNumbers(draw),
+        transactionHash,
+        transactionStep: matchTx?.step || (transactionHash ? "revealRoundMatches" : ""),
+      };
+    });
+}
+
+function buildRoundProofSummary({ winnerRevealData, selectedRound, selectedActiveWinner, matches }) {
+  const selectedRoundId = String(selectedRound?.id || "").trim();
+  const proof = winnerRevealData?.proof || {};
+  const matchRows = buildProofMatchRows({ winnerRevealData, selectedRound, matches });
+  const drawRoundId = String(
+    matchRows[0]?.drawRoundId
+      || winnerRevealData?.drawRoundId
+      || selectedRoundId
+      || winnerRevealData?.roundId
+      || "",
+  ).trim();
+  const proofDownloadUrl = String(proof.ledgerDownloadUrl || "").trim();
+  const ledgerDownloadHref = proof.ledgerDownloadAvailable === true && /^[A-Za-z0-9_-]+$/.test(drawRoundId)
+    ? localApiEndpoint(proofDownloadUrl || `/match-draw-ledgers/${encodeURIComponent(drawRoundId)}.json`)
+    : "";
+  const roundTransactions = (Array.isArray(proof.roundTransactions) && proof.roundTransactions.length
+    ? proof.roundTransactions
+    : (Array.isArray(proof.transactions) ? proof.transactions : []).filter((tx) => !Array.isArray(tx.matchIds) || tx.matchIds.length === 0))
+    .filter((tx) => normalizeHash(tx?.hash || tx?.transactionHash));
+
+  return {
+    roundId: selectedRoundId,
+    drawRoundId,
+    ledgerHash: winnerRevealData?.ledgerHash || "",
+    roundKey: winnerRevealData?.roundKey || "",
+    chainId: winnerRevealData?.chainId || "",
+    contract: winnerRevealData?.contract || "",
+    ledgerDownloadHref,
+    roundTransactions,
+    matchRows,
+    selectedWinner: selectedActiveWinner?.winner || null,
+    selectedMatchLabel: selectedActiveWinner?.matchLabel || "",
+  };
 }
 
 function buildWinnerRoundGroups(winners, rounds, matches, t, roundLabel) {
@@ -204,6 +326,119 @@ function WinnerRevealRow({ winner, index, visible, active, selected, matchLabel,
   );
 }
 
+function WinnerOnChainProof({ winnerRevealData, selectedRound, selectedActiveWinner, matches, open, onToggle }) {
+  const { t } = useCampaignCopy();
+  const proof = useMemo(
+    () => buildRoundProofSummary({ winnerRevealData, selectedRound, selectedActiveWinner, matches }),
+    [matches, selectedActiveWinner, selectedRound, winnerRevealData],
+  );
+  const selectedTicketNumber = String(proof.selectedWinner?.ticketNumber || "").trim();
+  const hasMatchRows = proof.matchRows.length > 0;
+
+  if (!hasMatchRows) return null;
+
+  return (
+    <section className={open ? "winner-proof is-open" : "winner-proof"} aria-label={t("winnerReveal.onChainProofAria")}>
+      <button
+        type="button"
+        className="winner-proof__toggle"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <ShieldCheck size={15} strokeWidth={2.3} />
+        <span>{t("winnerReveal.onChainProofButton")}</span>
+        {proof.ledgerHash ? <code>{compactHash(proof.ledgerHash)}</code> : null}
+        <ChevronDown size={15} strokeWidth={2.3} aria-hidden="true" />
+      </button>
+
+      {open ? (
+        <div className="winner-proof__panel">
+          <header className="winner-proof__head">
+            <strong>{t("winnerReveal.onChainProofTitle", { round: selectedRound?.label || "" })}</strong>
+            <p>{t("winnerReveal.onChainProofBody")}</p>
+          </header>
+
+          <div className="winner-proof__summary">
+            <span>
+              <em>{t("winnerReveal.onChainProofLedgerHash")}</em>
+              <code>{proof.ledgerHash || "-"}</code>
+            </span>
+            <span>
+              <em>{t("winnerReveal.onChainProofRoundKey")}</em>
+              <code>{proof.roundKey || "-"}</code>
+            </span>
+            {proof.ledgerDownloadHref ? (
+              <a href={proof.ledgerDownloadHref} download>
+                <Download size={14} strokeWidth={2.3} />
+                {t("winnerReveal.onChainProofDownloadLedger")}
+              </a>
+            ) : null}
+          </div>
+
+          <p className="winner-proof__explain">
+            {selectedTicketNumber
+              ? t("winnerReveal.onChainProofTicketExample", {
+                ticket: selectedTicketNumber,
+                match: proof.selectedMatchLabel || proof.selectedWinner?.matchId || "",
+              })
+              : t("winnerReveal.onChainProofTicketBody")}
+          </p>
+
+          {proof.roundTransactions.length > 0 ? (
+            <section className="winner-proof__tx-group" aria-label={t("winnerReveal.onChainProofRoundTxAria")}>
+              <span>{t("winnerReveal.onChainProofRoundTxTitle")}</span>
+              <div>
+                {proof.roundTransactions.map((tx) => {
+                  const href = transactionHref(tx.hash || tx.transactionHash, proof.chainId);
+                  return (
+                    <a href={href} target="_blank" rel="noreferrer" key={tx.id || tx.hash}>
+                      {transactionStepLabel(tx.step, t)}
+                      <code>{compactHash(tx.hash || tx.transactionHash)}</code>
+                      <ExternalLink size={13} strokeWidth={2.3} />
+                    </a>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          <section className="winner-proof__matches" aria-label={t("winnerReveal.onChainProofMatchTxAria")}>
+            <span>{t("winnerReveal.onChainProofMatchTxTitle")}</span>
+            <div className="winner-proof__match-list">
+              {proof.matchRows.map((row) => {
+                const href = transactionHref(row.transactionHash, proof.chainId);
+                return (
+                  <article className="winner-proof__match-row" key={row.matchId}>
+                    <span>
+                      <strong>{row.label}</strong>
+                      <em>{t("winnerReveal.onChainProofTickets", { tickets: row.ticketNumbers.map((ticket) => `#${ticket}`).join(", ") || "-" })}</em>
+                    </span>
+                    <span className="winner-proof__match-hash">
+                      <em>{t("winnerReveal.onChainProofMatchLedgerHash")}</em>
+                      <code>{compactHash(row.ledgerHash) || "-"}</code>
+                    </span>
+                    {href ? (
+                      <a className="winner-proof__match-tx" href={href} target="_blank" rel="noreferrer">
+                        <em>{t("winnerReveal.onChainProofRevealTx")}</em>
+                        <span>
+                          <code>{compactHash(row.transactionHash)}</code>
+                          <ExternalLink size={13} strokeWidth={2.3} />
+                        </span>
+                      </a>
+                    ) : (
+                      <small>{t("winnerReveal.onChainProofTxUnavailable")}</small>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function WinnersRoom({
   activeRoundId = "",
   winnerRevealData,
@@ -220,6 +455,7 @@ export function WinnersRoom({
   const [visibleCount, setVisibleCount] = useState(0);
   const [mediaIssue, setMediaIssue] = useState("");
   const [selectedWinnerId, setSelectedWinnerId] = useState("");
+  const [proofOpen, setProofOpen] = useState(false);
   const winners = useMemo(() => winnerRevealData.winners || [], [winnerRevealData.winners]);
   const hasOfficialWinners = winnerRevealData.sourceStatus === "revealed" && winners.length > 0;
   const revealStarted = videoFinished;
@@ -251,13 +487,16 @@ export function WinnersRoom({
   const manuallySelectedRowIndex = selectedRoundHasWinners && selectedWinnerId
     ? selectedRoundWinners.findIndex(({ winner }) => winner.id === selectedWinnerId)
     : -1;
-  const selectedActiveRowIndex = manuallySelectedRowIndex >= 0 ? manuallySelectedRowIndex : autoActiveRowIndex;
+  const proofSelectedRowIndex = manuallySelectedRowIndex >= 0 ? manuallySelectedRowIndex : autoActiveRowIndex;
   const selectedActiveWinner = selectedRoundHasWinners
-    ? selectedRoundWinners[selectedActiveRowIndex] || selectedRoundWinners[0] || null
+    ? selectedRoundWinners[proofSelectedRowIndex] || selectedRoundWinners[0] || null
     : null;
-  const showPrizeCard = revealStarted && Boolean(selectedActiveWinner);
-  const activePrizeImage = selectedActiveWinner?.prizeImage || getMatchPrizeImageByMatchId("", matches, selectedRound?.id);
-  const activePrizeMatchLabel = selectedActiveWinner?.matchLabel || selectedRound?.label || "";
+  const displayActiveWinner = selectedRoundHasWinners
+    ? selectedRoundWinners[0] || null
+    : null;
+  const showPrizeCard = revealStarted && Boolean(displayActiveWinner);
+  const activePrizeImage = displayActiveWinner?.prizeImage || getMatchPrizeImageByMatchId("", matches, selectedRound?.id);
+  const activePrizeMatchLabel = displayActiveWinner?.matchLabel || selectedRound?.label || "";
   const activePrizeTitle = activePrizeMatchLabel
     ? t("winnerReveal.cardPrizeMatchTitle", { match: activePrizeMatchLabel })
     : t("winnerReveal.cardPrizeTitle");
@@ -271,7 +510,12 @@ export function WinnersRoom({
     setVisibleCount(0);
     setMediaIssue("");
     setSelectedWinnerId("");
+    setProofOpen(false);
   }, [winnerRevealData.videoUrl, winnerRevealData.drawId, winnerRevealData.generatedAt]);
+
+  useEffect(() => {
+    setProofOpen(false);
+  }, [selectedRound?.id]);
 
   useEffect(() => {
     onRevealStateChange?.(revealStarted);
@@ -433,8 +677,8 @@ export function WinnersRoom({
                       prizeImage={prizeImage}
                       currentUser={isCurrentUserWinner(winner, currentWalletAddress)}
                       visible={index < visibleCount}
-                      selected={index === selectedActiveRowIndex}
-                      active={index === selectedActiveRowIndex}
+                      selected={index === proofSelectedRowIndex}
+                      active={index === proofSelectedRowIndex}
                       onSelect={() => setSelectedWinnerId(winner.id)}
                       key={winner.id}
                     />
@@ -448,6 +692,16 @@ export function WinnersRoom({
               <p>{hasOfficialWinners ? t("winnerReveal.noRoundWinnersBody") : t("winnerReveal.noOfficialWinnersBody")}</p>
             </section>
           )}
+          {selectedRoundHasWinners ? (
+            <WinnerOnChainProof
+              winnerRevealData={winnerRevealData}
+              selectedRound={selectedRound}
+              selectedActiveWinner={selectedActiveWinner}
+              matches={matches}
+              open={proofOpen}
+              onToggle={() => setProofOpen((current) => !current)}
+            />
+          ) : null}
         </section>
       </section>
 

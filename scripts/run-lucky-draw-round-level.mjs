@@ -381,8 +381,108 @@ async function readRoundWinners({ contract, roundLedger }) {
   return { draws, winners, alternates }
 }
 
-function buildRoundWinnersSnapshot({ env, network, contractAddress, roundLedger, status, roundWinners }) {
+function normalizeTransactionHash(value) {
+  const hash = String(value || '').trim()
+  return /^0x[a-fA-F0-9]{64}$/.test(hash) ? hash : ''
+}
+
+function normalizeTransactionMatchIds(value) {
+  if (Array.isArray(value)) {
+    return value.map((matchId) => String(matchId || '').trim()).filter(Boolean)
+  }
+  return String(value || '')
+    .split(',')
+    .map((matchId) => matchId.trim())
+    .filter(Boolean)
+}
+
+function normalizeTransactionProofRecord(tx, index) {
+  const hash = normalizeTransactionHash(tx?.hash || tx?.txHash || tx?.transactionHash)
+  if (!hash) return null
+  const step = String(tx?.step || tx?.action || 'transaction').trim() || 'transaction'
+  const matchIds = normalizeTransactionMatchIds(tx?.matchIds || tx?.match_ids || tx?.matchId || tx?.match_id)
+  return {
+    id: `${step}-${index}-${hash}`,
+    index,
+    step,
+    hash,
+    transactionHash: hash,
+    matchIds,
+  }
+}
+
+function buildRoundTransactionProof({ txs, roundLedger }) {
+  const transactions = (Array.isArray(txs) ? txs : [])
+    .map(normalizeTransactionProofRecord)
+    .filter(Boolean)
+  const revealTransactions = transactions.filter((tx) => tx.step.startsWith('revealRoundMatch'))
+  const revealTxByMatchId = new Map()
+
+  for (const tx of revealTransactions) {
+    for (const matchId of tx.matchIds) {
+      revealTxByMatchId.set(String(matchId || '').trim().toLowerCase(), tx)
+    }
+  }
+
+  const matchTransactions = roundLedger.matches.map((match) => {
+    const tx = revealTxByMatchId.get(String(match.matchId || '').trim().toLowerCase()) || null
+    return {
+      matchId: match.matchId,
+      matchKey: match.matchKey,
+      step: tx?.step || '',
+      hash: tx?.hash || '',
+      transactionHash: tx?.hash || '',
+      transactionIndex: tx?.index ?? null,
+    }
+  })
+
+  return {
+    ticketNamespace: 'Ticket numbers are scoped per match. The same ticket number can exist in different matches, so matchId plus ticketNumber identifies the winning entry.',
+    transactions,
+    roundTransactions: transactions.filter((tx) => !tx.step.startsWith('revealRoundMatch')),
+    matchTransactions,
+  }
+}
+
+function attachRoundProofToWinners(roundWinners, proof) {
+  const matchTxById = new Map(
+    (Array.isArray(proof?.matchTransactions) ? proof.matchTransactions : [])
+      .map((tx) => [String(tx.matchId || '').trim().toLowerCase(), tx]),
+  )
+  const attach = (row) => {
+    const tx = matchTxById.get(String(row?.matchId || '').trim().toLowerCase()) || null
+    return {
+      ...row,
+      revealTransactionHash: tx?.hash || '',
+      transactionHash: tx?.hash || '',
+    }
+  }
+
+  return {
+    draws: roundWinners.draws.map((draw) => {
+      const tx = matchTxById.get(String(draw?.matchId || '').trim().toLowerCase()) || null
+      return {
+        ...draw,
+        revealTransactionHash: tx?.hash || '',
+        transactionHash: tx?.hash || '',
+        prizeSlots: draw.prizeSlots.map((slot) => ({
+          ...slot,
+          winner: slot.winner ? attach(slot.winner) : slot.winner,
+          alternates: slot.alternates.map(attach),
+        })),
+        winners: draw.winners.map(attach),
+        alternates: draw.alternates.map(attach),
+      }
+    }),
+    winners: roundWinners.winners.map(attach),
+    alternates: roundWinners.alternates.map(attach),
+  }
+}
+
+function buildRoundWinnersSnapshot({ env, network, contractAddress, roundLedger, status, roundWinners, txs = [] }) {
   const generatedAt = new Date().toISOString()
+  const proof = buildRoundTransactionProof({ txs, roundLedger })
+  const roundWinnersWithProof = attachRoundProofToWinners(roundWinners, proof)
   return {
     version: 2,
     mode: 'round-draw-winners',
@@ -401,16 +501,20 @@ function buildRoundWinnersSnapshot({ env, network, contractAddress, roundLedger,
     ledgerHash: roundLedger.ledgerHash,
     ledgerUri: roundLedger.ledgerUri,
     matchCount: roundLedger.matches.length,
-    winnerCount: roundWinners.winners.length,
-    alternateCount: roundWinners.alternates.length,
+    winnerCount: roundWinnersWithProof.winners.length,
+    alternateCount: roundWinnersWithProof.alternates.length,
     fulfilled: Boolean(status.fulfilled),
-    draws: roundWinners.draws,
-    winners: roundWinners.winners,
-    alternates: roundWinners.alternates,
+    proof,
+    transactions: proof.transactions,
+    txs: proof.transactions,
+    draws: roundWinnersWithProof.draws,
+    winners: roundWinnersWithProof.winners,
+    alternates: roundWinnersWithProof.alternates,
     notes: [
       'This snapshot is produced from one VRF random word at round level.',
       'Each match keeps an independent 1..N ticket namespace.',
       'Each prize slot has one winner and the configured alternate tickets.',
+      'Transaction proof rows map reveal transactions back to matchId; finalize/request transactions are round-level proof.',
     ],
   }
 }
@@ -545,6 +649,7 @@ if (!broadcast || verifyOnly) {
       roundLedger,
       status,
       roundWinners,
+      txs,
     })
     payload.winnerCount = winnersSnapshot.winnerCount
     payload.alternateCount = winnersSnapshot.alternateCount
@@ -642,6 +747,7 @@ const winnersSnapshot = buildRoundWinnersSnapshot({
   roundLedger,
   status,
   roundWinners,
+  txs,
 })
 const winnersOut = writeWinnersSnapshotIfConfigured(winnersOutPath, winnersSnapshot)
 

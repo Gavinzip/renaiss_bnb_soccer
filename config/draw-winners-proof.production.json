@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "mode": "draw-winner-proof-backfill",
+  "roundProofs": [
+    {
+      "source": "round16-operator-receipts",
+      "chainId": "56",
+      "contract": "0x78b79db5726700bedb18bc05aa612b11e33b00a9",
+      "operator": "0x88b620388698490764fd85cfa482b5e3a8ad63b5",
+      "roundId": "round16",
+      "drawRoundId": "round16",
+      "roundKey": "0xfb0e222adc2430afe8dd298f80a74b599a5416520de5e6e24d42e3d6bd168034",
+      "ledgerHash": "0x74f04f3de9034bc2d2a6b1c8f3460c9fce9c8056501db1b02fba0c13f0fd90ff",
+      "transactions": [
+        {
+          "step": "finalizeRoundLedger",
+          "hash": "0x27dd46d81f368ee5089ef180d8f3f8fb3f6c3668c4e8bcdfc44a4286deeb682b",
+          "blockNumber": 108759010
+        },
+        {
+          "step": "requestRoundDraw",
+          "hash": "0xbb525a4088e52435e9f0495cefc767354e857623d43f0266fb02ea322c7eb5a6",
+          "blockNumber": 108759020
+        },
+        {
+          "step": "revealRoundMatch",
+          "matchIds": ["M89"],
+          "hash": "0x1f84cc94b12b5990f32b657e519ad3f06180e24cd9fd497d55264d9c03e014e6",
+          "blockNumber": 108759030
+        },
+        {
+          "step": "revealRoundMatch",
+          "matchIds": ["M90"],
+          "hash": "0xcc5d6e34ebbf97951994b2a4ade2e5fd49af08fd8c41f449ce8332675cce6b8b",
+          "blockNumber": 108759040
+        },
+        {
+          "step": "revealRoundMatch",
+          "matchIds": ["M91"],
+          "hash": "0xa06a8d70625d953aa96af2b11ebe6b2f3001c371a8e749e414a093c395e02232",
+          "blockNumber": 108759049
+        },
+        {
+          "step": "revealRoundMatch",
+          "matchIds": ["M92"],
+          "hash": "0x34a89be3e04b9ea4d844430edfef072a33cf0bfc5c32b5fa1d0b834be8e54971",
+          "blockNumber": 108759059
+        },
+        {
+          "step": "revealRoundMatch",
+          "matchIds": ["M93"],
+          "hash": "0x2ced99044c39cdea548b341edbc5cef168a11e45866ffb20055d5fce4de3f66c",
+          "blockNumber": 108759069
+        },
+        {
+          "step": "revealRoundMatch",
+          "matchIds": ["M94"],
+          "hash": "0xd3b665787b46c4eb2d38e06d710e81ad4dfa81a65ff2d8008cfd62b32a72b220",
+          "blockNumber": 108759079
+        },
+        {
+          "step": "revealRoundMatch",
+          "matchIds": ["M95"],
+          "hash": "0x42de7f33f072f1643f5dd7f19f627842c3fd55b0ac0fd9001da37cb8f35f60df",
+          "blockNumber": 108759088
+        },
+        {
+          "step": "revealRoundMatch",
+          "matchIds": ["M96"],
+          "hash": "0x182ed76f38bcba79d502e58a33c40f40b214ed0a22a25f8097eea26c27ff8283",
+          "blockNumber": 108759098
+        }
+      ]
+    }
+  ]
+}
