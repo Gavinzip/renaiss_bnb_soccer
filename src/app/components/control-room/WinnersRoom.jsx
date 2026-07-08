@@ -491,12 +491,9 @@ export function WinnersRoom({
   const selectedActiveWinner = selectedRoundHasWinners
     ? selectedRoundWinners[proofSelectedRowIndex] || selectedRoundWinners[0] || null
     : null;
-  const displayActiveWinner = selectedRoundHasWinners
-    ? selectedRoundWinners[0] || null
-    : null;
-  const showPrizeCard = revealStarted && Boolean(displayActiveWinner);
-  const activePrizeImage = displayActiveWinner?.prizeImage || getMatchPrizeImageByMatchId("", matches, selectedRound?.id);
-  const activePrizeMatchLabel = displayActiveWinner?.matchLabel || selectedRound?.label || "";
+  const showPrizeCard = revealStarted && Boolean(selectedActiveWinner);
+  const activePrizeImage = selectedActiveWinner?.prizeImage || getMatchPrizeImageByMatchId("", matches, selectedRound?.id);
+  const activePrizeMatchLabel = selectedActiveWinner?.matchLabel || selectedRound?.label || "";
   const activePrizeTitle = activePrizeMatchLabel
     ? t("winnerReveal.cardPrizeMatchTitle", { match: activePrizeMatchLabel })
     : t("winnerReveal.cardPrizeTitle");
