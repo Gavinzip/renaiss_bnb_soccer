@@ -813,6 +813,7 @@ export const koLocale = {
       "operatorWalletDetecting": "지갑 감지 중",
       "operatorWalletMissing": "브라우저 지갑을 찾을 수 없음",
       "operatorWalletFailed": "추첨 지갑 연결에 실패했습니다.",
+      "operatorWalletDisconnect": "지갑 변경",
       "operatorWalletSwitch": "{chain}(으)로 전환",
       "operatorWalletChainUnknown": "알 수 없는 체인",
       "operatorWalletWrongChain": "먼저 {chain}(으)로 전환하세요.",

@@ -813,6 +813,7 @@ export const zhHantLocale = {
       "operatorWalletDetecting": "偵測錢包中",
       "operatorWalletMissing": "找不到瀏覽器錢包",
       "operatorWalletFailed": "抽獎錢包連接失敗。",
+      "operatorWalletDisconnect": "更換錢包",
       "operatorWalletSwitch": "切到 {chain}",
       "operatorWalletChainUnknown": "未知鏈",
       "operatorWalletWrongChain": "請先切到 {chain}。",

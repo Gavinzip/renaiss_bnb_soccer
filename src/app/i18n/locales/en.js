@@ -813,6 +813,7 @@ export const enLocale = {
       "operatorWalletDetecting": "Detecting wallets",
       "operatorWalletMissing": "No browser wallet found",
       "operatorWalletFailed": "Draw wallet connection failed.",
+      "operatorWalletDisconnect": "Change wallet",
       "operatorWalletSwitch": "Switch to {chain}",
       "operatorWalletChainUnknown": "Unknown chain",
       "operatorWalletWrongChain": "Switch to {chain} first.",

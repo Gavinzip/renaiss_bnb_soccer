@@ -362,6 +362,7 @@ function RoundDrawLedger({ drawStats, activeDraw, onSelectRound, copy }) {
 function DrawRoundRail({ drawStats, activeDraw, simulatedRoundId, onSelectRound, copy }) {
   const { roundLabel, t } = copy;
   const simulatedIndex = Math.max(0, drawStats.findIndex((round) => round.id === simulatedRoundId));
+  const activeIndex = Math.max(0, drawStats.findIndex((round) => round.id === activeDraw.id));
 
   return (
     <aside className="draw-round-rail" aria-label={t("draw.roundsAria")}>
@@ -372,8 +373,10 @@ function DrawRoundRail({ drawStats, activeDraw, simulatedRoundId, onSelectRound,
       <ol>
         {drawStats.map((round, index) => {
           const isActive = round.id === activeDraw.id;
-          const canInspect = index <= simulatedIndex;
           const stagedEntries = round.eligibleEntries + round.pendingEntries;
+          const canInspect = index <= Math.max(simulatedIndex, activeIndex)
+            || stagedEntries > 0
+            || round.officialFinalsComplete;
           const roundState = getDrawStateCopy(round, t);
 
           return (
@@ -893,6 +896,17 @@ function DrawOperatorWallet({ activeDraw, t }) {
     } finally {
       setBusyAction("");
     }
+  }
+
+  function disconnectDrawWallet() {
+    if (operationBusy) return;
+    setIssue("");
+    setConnectedWallet({
+      address: "",
+      chainId: "",
+      label: "",
+      provider: null,
+    });
   }
 
   async function signDrawMessage(message) {
@@ -1443,6 +1457,12 @@ function DrawOperatorWallet({ activeDraw, t }) {
             <span>{walletDetecting ? t("draw.operatorWalletDetecting") : t("draw.operatorWalletMissing")}</span>
           </button>
         )}
+        {connected ? (
+          <button type="button" disabled={operationBusy} onClick={disconnectDrawWallet}>
+            <RefreshCw size={15} strokeWidth={2.2} />
+            <span>{t("draw.operatorWalletDisconnect")}</span>
+          </button>
+        ) : null}
         {connected && !targetMatched ? (
           <button type="button" disabled={operationBusy} onClick={switchTargetChain}>
             {busyAction === "switch-chain" ? <Loader2 className="is-spinning" size={15} /> : <Network size={15} strokeWidth={2.2} />}
