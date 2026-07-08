@@ -326,6 +326,62 @@ function getDefaultVoteRoundId(matches, currentRoundId) {
   return currentRoundId;
 }
 
+function winnerRevealRoundId(row) {
+  return String(row?.roundId || row?.round_id || row?.round?.id || row?.match?.roundId || row?.draw?.roundId || "").trim();
+}
+
+function collectWinnerRevealRoundIds(winnerRevealData) {
+  if (winnerRevealData?.sourceStatus !== "revealed") return new Set();
+
+  const roundIds = new Set();
+  [
+    winnerRevealData.roundId,
+    winnerRevealData.sourceRoundId,
+    winnerRevealData.drawRoundId,
+  ].forEach((roundId) => {
+    const normalized = String(roundId || "").trim();
+    if (normalized) roundIds.add(normalized);
+  });
+
+  [
+    winnerRevealData.winners,
+    winnerRevealData.winnersBySlot,
+    winnerRevealData.alternates,
+  ].forEach((rows) => {
+    if (!Array.isArray(rows)) return;
+    rows.forEach((row) => {
+      const roundId = winnerRevealRoundId(row);
+      if (roundId) roundIds.add(roundId);
+    });
+  });
+
+  if (Array.isArray(winnerRevealData.draws)) {
+    winnerRevealData.draws.forEach((draw) => {
+      const drawRoundId = String(draw?.roundId || draw?.drawRoundId || "").trim();
+      const drawHasReveal = Boolean(draw?.revealed)
+        || (Array.isArray(draw?.winners) && draw.winners.length > 0)
+        || (Array.isArray(draw?.prizeSlots) && draw.prizeSlots.some((slot) => slot?.winner));
+      if (drawRoundId && drawHasReveal) roundIds.add(drawRoundId);
+    });
+  }
+
+  return roundIds;
+}
+
+function getLatestPrizeRoundId(winnerRevealData, currentRoundId) {
+  const revealedRoundIds = collectWinnerRevealRoundIds(winnerRevealData);
+  const latestRevealedRoundId = publicVoteRoundIds
+    .filter((roundId) => revealedRoundIds.has(roundId))
+    .at(-1);
+
+  if (latestRevealedRoundId) return latestRevealedRoundId;
+  return publicVoteRoundIds.includes(currentRoundId) ? currentRoundId : publicVoteRoundIds[0] ?? currentRoundId;
+}
+
+function isPrizeRoundView(viewId) {
+  return viewId === "winners" || viewId === "draw";
+}
+
 function AppContent() {
   const copy = useCampaignCopy();
   const { t } = copy;
@@ -421,6 +477,8 @@ function AppContent() {
   const [matchStatusNow, setMatchStatusNow] = useState(() => Date.now());
   const trackedLoginKeyRef = useRef("");
   const roundManuallySelectedRef = useRef(false);
+  const prizeRoundManuallySelectedRef = useRef(false);
+  const previousActiveViewIdRef = useRef(activeViewId);
   const voteSubmitNoticeTimerRef = useRef(0);
 
   const refreshAuthSession = useCallback(async () => {
@@ -1019,6 +1077,10 @@ function AppContent() {
     )),
     [globalPreviewVoteData, previewAllocations, previewVoteData],
   );
+  const latestPrizeRoundId = useMemo(
+    () => getLatestPrizeRoundId(winnerRevealData, activeRoundId),
+    [activeRoundId, winnerRevealData],
+  );
   const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalRawTickets ?? 0);
   const initialDataReady = ledgerReady && milestoneReady && previewVoteReady && globalPreviewVoteReady && winnerRevealReady && authReady;
   const initialCoverAssetsReady = initialDataReady && initialAssetsReady;
@@ -1109,6 +1171,17 @@ function AppContent() {
   }, [visibleRemainingRoundTickets]);
 
   useEffect(() => {
+    if (previousActiveViewIdRef.current === activeViewId) return;
+    if (activeViewId === "vote") {
+      roundManuallySelectedRef.current = false;
+    }
+    if (isPrizeRoundView(activeViewId)) {
+      prizeRoundManuallySelectedRef.current = false;
+    }
+    previousActiveViewIdRef.current = activeViewId;
+  }, [activeViewId]);
+
+  useEffect(() => {
     if (activeViewId !== "vote") return;
     if (simulationMode !== "realtime") return;
     if (roundManuallySelectedRef.current) return;
@@ -1123,9 +1196,24 @@ function AppContent() {
     setTicketAmount(DEFAULT_TICKET_AMOUNT);
   }, [activeRoundId, activeViewId, matches, selectedMatchId, simulationMode]);
 
+  useEffect(() => {
+    if (!isPrizeRoundView(activeViewId)) return;
+    if (prizeRoundManuallySelectedRef.current) return;
+    if (!latestPrizeRoundId || latestPrizeRoundId === activeRoundId) return;
+
+    const nextMatch = matches.find((match) => match.roundId === latestPrizeRoundId);
+    setActiveRoundId(latestPrizeRoundId);
+    setSelectedMatchId(nextMatch?.id ?? selectedMatchId);
+    setSelectedTeamId(null);
+    setTicketAmount(DEFAULT_TICKET_AMOUNT);
+  }, [activeRoundId, activeViewId, latestPrizeRoundId, matches, selectedMatchId]);
+
   function handleSelectView(viewId) {
     if (viewId === "vote" && activeViewId !== "vote") {
       roundManuallySelectedRef.current = false;
+    }
+    if (isPrizeRoundView(viewId) && activeViewId !== viewId) {
+      prizeRoundManuallySelectedRef.current = false;
     }
     setActiveViewId(viewId);
     syncViewIdToUrl(viewId);
@@ -1134,6 +1222,7 @@ function AppContent() {
 
   function handleSelectRound(roundId) {
     roundManuallySelectedRef.current = true;
+    prizeRoundManuallySelectedRef.current = true;
     const firstMatch = matches.find((match) => match.roundId === roundId);
     setActiveRoundId(roundId);
     setSelectedMatchId(firstMatch?.id ?? selectedMatchId);
@@ -1144,6 +1233,7 @@ function AppContent() {
   function handleSelectSimulatedRound(roundId) {
     if (!localTestOrigin) return;
     roundManuallySelectedRef.current = true;
+    prizeRoundManuallySelectedRef.current = true;
     const firstMatch = campaignMatches.find((match) => match.roundId === roundId);
     setLocalSimulationMode("scenario");
     setSimulatedRoundId(roundId);
@@ -1162,6 +1252,7 @@ function AppContent() {
 
     if (nextMode === "realtime") {
       roundManuallySelectedRef.current = false;
+      prizeRoundManuallySelectedRef.current = false;
       const defaultVoteRoundId = getDefaultVoteRoundId(matches, "round16");
       const firstVoteMatch = getPreferredRoundMatch(matches, defaultVoteRoundId);
       setSimulatedRoundId(defaultVoteRoundId);
@@ -1171,7 +1262,10 @@ function AppContent() {
   }
 
   function handleSelectMatch(matchId, options = {}) {
-    if (!options.automatic) roundManuallySelectedRef.current = true;
+    if (!options.automatic) {
+      roundManuallySelectedRef.current = true;
+      prizeRoundManuallySelectedRef.current = true;
+    }
     const match = matches.find((entry) => sameMatchId(entry.id, matchId));
     if (match?.roundId && match.roundId !== activeRoundId) {
       setActiveRoundId(match.roundId);
