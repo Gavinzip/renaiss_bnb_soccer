@@ -22,6 +22,8 @@ export const PLASMA_PACK_ID =
   '0xb67b65d4067ed41cbfc2c8c8456ade7bd0ccb1f527524f21f8726385f7a934ab'
 export const WORLD_CUP_PACK_ID =
   '0xa8de4cf14c21a325d4eebb540b60a92ff93e43fd347c7fc8b56eead2d3707de8'
+export const CHAMPION_PACK_ID =
+  '0xd8129cd1c2ac8629cc96b5c3dcc96cc7ebe74f341807697323950797cf030eec'
 export const LEGACY_PACK_OPEN_CONTRACT = '0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a'
 export const EXTRA_LEGACY_PACKS_ENV = 'LUCKY_DRAW_EXTRA_LEGACY_PACKS'
 
@@ -34,6 +36,7 @@ export const PACK_WEIGHTS = {
   'starry-pack': 2,
   'plasma-pack': 2,
   'world-cup-pack': 2,
+  'champion-pack': 2,
 }
 
 export const BUILTIN_PACK_EVENT_SOURCES = [
@@ -121,6 +124,18 @@ export const BUILTIN_PACK_EVENT_SOURCES = [
     eventTopic: LEGACY_PACK_OPEN_EVENT_TOPIC,
     topic2: WORLD_CUP_PACK_ID,
     packId: WORLD_CUP_PACK_ID,
+    eventKind: 'legacy-pack-open',
+    configSource: 'built-in',
+  },
+  {
+    contract: LEGACY_PACK_OPEN_CONTRACT,
+    buybackContract: LEGACY_PACK_OPEN_CONTRACT,
+    pack: 'champion-pack',
+    label: 'Champion Pack',
+    ticketWeight: PACK_WEIGHTS['champion-pack'],
+    eventTopic: LEGACY_PACK_OPEN_EVENT_TOPIC,
+    topic2: CHAMPION_PACK_ID,
+    packId: CHAMPION_PACK_ID,
     eventKind: 'legacy-pack-open',
     configSource: 'built-in',
   },
