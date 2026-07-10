@@ -523,12 +523,6 @@ function xEligibilityRateLimitRules(request, session, status) {
       windowMs: minuteWindow(10),
     },
     {
-      scope: 'x_eligibility_verify_subject_day',
-      key: subject,
-      limit: readIntegerEnv('X_ELIGIBILITY_VERIFY_RATE_LIMIT_PER_SUBJECT_DAY', 10, 1),
-      windowMs: dayWindow(1),
-    },
-    {
       scope: 'x_eligibility_verify_global_minute',
       key: 'global',
       limit: readIntegerEnv('X_ELIGIBILITY_VERIFY_RATE_LIMIT_GLOBAL_PER_MINUTE', 60, 1),
