@@ -167,6 +167,56 @@
       "fifaMatchNumber": 96,
       "teamIds": ["switzerland", "colombia"],
       "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M97",
+      "fifaMatchId": "400021536",
+      "fifaMatchNumber": 97,
+      "teamIds": ["france", "morocco"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M98",
+      "fifaMatchId": "400021538",
+      "fifaMatchNumber": 98,
+      "teamIds": ["spain", "belgium"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M99",
+      "fifaMatchId": "400021539",
+      "fifaMatchNumber": 99,
+      "teamIds": ["norway", "england"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M100",
+      "fifaMatchId": "400021537",
+      "fifaMatchNumber": 100,
+      "teamIds": ["argentina", "switzerland"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M101",
+      "fifaMatchId": "400021541",
+      "fifaMatchNumber": 101,
+      "teamIds": ["france", "spain"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M102",
+      "fifaMatchId": "400021540",
+      "fifaMatchNumber": 102,
+      "teamIds": ["england", "argentina"],
+      "enforceTeamMatch": true
+    },
+    {
+      "matchId": "M104",
+      "fifaMatchId": "400021543",
+      "fifaMatchNumber": 104,
+      "teamIds": [],
+      "enforceTeamMatch": true,
+      "note": "Finalists are determined by the official semi-final results; validate the fixed FIFA final match ID and official winner without retaining a stale predicted pairing."
     }
   ]
 }
