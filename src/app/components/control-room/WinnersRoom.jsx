@@ -455,6 +455,7 @@ export function WinnersRoom({
   const [visibleCount, setVisibleCount] = useState(0);
   const [mediaIssue, setMediaIssue] = useState("");
   const [selectedWinnerId, setSelectedWinnerId] = useState("");
+  const [inspectedRoundId, setInspectedRoundId] = useState("");
   const [proofOpen, setProofOpen] = useState(false);
   const winners = useMemo(() => winnerRevealData.winners || [], [winnerRevealData.winners]);
   const hasOfficialWinners = winnerRevealData.sourceStatus === "revealed" && winners.length > 0;
@@ -472,11 +473,14 @@ export function WinnersRoom({
     return revealedOptions[revealedOptions.length - 1]?.id || roundOptions[0]?.id || "";
   }, [roundOptions]);
   const activeRound = roundOptions.find((option) => option.id === activeRoundId);
-  const selectedRound = activeRound?.count > 0
+  const inspectedRound = roundOptions.find((option) => option.id === inspectedRoundId && option.count > 0);
+  const selectedRound = inspectedRound
+    || (activeRound?.count > 0
     ? activeRound
     : roundOptions.find((option) => option.id === latestRevealedRoundId)
     || roundOptions[0]
-    || null;
+    || null);
+  const revealedRoundGroups = winnerRoundGroups.filter((group) => group.winners.length > 0);
   const selectedWinnerRevealData = useMemo(() => {
     const selectedRoundId = String(selectedRound?.id || "").trim();
     if (!selectedRoundId) return winnerRevealData;
@@ -517,6 +521,7 @@ export function WinnersRoom({
     setVisibleCount(0);
     setMediaIssue("");
     setSelectedWinnerId("");
+    setInspectedRoundId("");
     setProofOpen(false);
   }, [winnerRevealData.videoUrl, winnerRevealData.drawId, winnerRevealData.generatedAt]);
 
@@ -667,31 +672,39 @@ export function WinnersRoom({
           {selectedRoundHasWinners ? (
             <section
               ref={listRef}
-              className={selectedRoundWinners.length > 9 ? "winner-reveal-list winner-reveal-list--dense" : "winner-reveal-list"}
-              aria-label={t("winnerReveal.selectedRoundListAria", { round: selectedRound?.label || "" })}
+              className={winners.length > 9 ? "winner-reveal-list winner-reveal-list--dense" : "winner-reveal-list"}
+              aria-label={t("winnerReveal.listAria")}
             >
-              <section className="winner-round-group" aria-label={selectedRound?.label || t("winnerReveal.unknownRound")}>
-                <header className="winner-round-group__head">
-                  <span>{selectedRound?.label || t("winnerReveal.unknownRound")}</span>
-                  <em>{t("winnerReveal.roundGroupCount", { count: formatNumber(selectedRoundWinners.length) })}</em>
-                </header>
-                <ol>
-                  {selectedRoundWinners.map(({ winner, matchLabel, prizeImage }, index) => (
-                    <WinnerRevealRow
-                      winner={winner}
-                      index={index}
-                      matchLabel={matchLabel}
-                      prizeImage={prizeImage}
-                      currentUser={isCurrentUserWinner(winner, currentWalletAddress)}
-                      visible={index < visibleCount}
-                      selected={index === proofSelectedRowIndex}
-                      active={index === proofSelectedRowIndex}
-                      onSelect={() => setSelectedWinnerId(winner.id)}
-                      key={winner.id}
-                    />
-                  ))}
-                </ol>
-              </section>
+              {revealedRoundGroups.map((group) => {
+                const groupIsSelected = group.id === selectedRound?.id;
+                return (
+                  <section className="winner-round-group" aria-label={group.label || t("winnerReveal.unknownRound")} key={group.id}>
+                    <header className="winner-round-group__head">
+                      <span>{group.label || t("winnerReveal.unknownRound")}</span>
+                      <em>{t("winnerReveal.roundGroupCount", { count: formatNumber(group.winners.length) })}</em>
+                    </header>
+                    <ol>
+                      {group.winners.map(({ winner, matchLabel, prizeImage }, index) => (
+                        <WinnerRevealRow
+                          winner={winner}
+                          index={index}
+                          matchLabel={matchLabel}
+                          prizeImage={prizeImage}
+                          currentUser={isCurrentUserWinner(winner, currentWalletAddress)}
+                          visible={!groupIsSelected || index < visibleCount}
+                          selected={groupIsSelected && index === proofSelectedRowIndex}
+                          active={groupIsSelected && index === proofSelectedRowIndex}
+                          onSelect={() => {
+                            setInspectedRoundId(group.id);
+                            setSelectedWinnerId(winner.id);
+                          }}
+                          key={winner.id}
+                        />
+                      ))}
+                    </ol>
+                  </section>
+                );
+              })}
             </section>
           ) : (
             <section className="winner-reveal-empty" aria-label={t("winnerReveal.pendingAria")}>
