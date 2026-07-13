@@ -26651,7 +26651,7 @@ body {
   width: min(100% - clamp(36px, 7vw, 120px), 1440px);
   min-height: 100dvh;
   margin: 0 auto;
-  padding: clamp(124px, 15vh, 174px) 0 clamp(66px, 9vh, 112px);
+  padding: clamp(160px, 18vh, 210px) 0 clamp(66px, 9vh, 112px);
   pointer-events: none;
   opacity: 0;
   transform: translateY(28px) scale(0.985);
