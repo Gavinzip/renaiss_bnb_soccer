@@ -78,6 +78,7 @@ const matchResultsPath = process.env.SOCCER_MATCH_RESULTS_PATH || join(dataDir, 
 const matchDrawLedgerPath = process.env.SOCCER_MATCH_DRAW_LEDGER_PATH || join(dataDir, 'match-draw-ledger.json')
 const matchDrawLedgerLockedDir = process.env.SOCCER_MATCH_DRAW_LEDGER_LOCKED_DIR || join(dirname(matchDrawLedgerPath), 'match-draw-ledgers')
 const drawWinnersPath = process.env.SOCCER_DRAW_WINNERS_PATH || join(dataDir, 'draw-winners.json')
+const drawWinnersArchiveDir = process.env.SOCCER_DRAW_WINNERS_ARCHIVE_DIR || join(dirname(drawWinnersPath), 'draw-winners-history')
 const drawWinnersProofPath = process.env.SOCCER_DRAW_WINNERS_PROOF_PATH || join(dataDir, 'draw-winners-proof.json')
 const bundledDrawWinnersProofPath = join(repoRoot, 'config/draw-winners-proof.production.json')
 const winnerRevealVideoUrl = process.env.WINNER_REVEAL_VIDEO_URL || process.env.VITE_WINNER_REVEAL_VIDEO_URL || ''
@@ -133,6 +134,7 @@ const drawNetworkDefinitions = [
 const drawDefaultNetworkKey = normalizeDrawNetworkKey(process.env.DRAW_NETWORK || process.env.DRAW_DEFAULT_NETWORK || 'mainnet')
 const drawAdminChallenges = new Map()
 let drawAdminRunRunning = false
+const drawWinnerHistoryTasks = new Map()
 let lastDrawAdminRun = {
   ok: false,
   startedAt: null,
@@ -632,6 +634,15 @@ function drawWinnersOutputPathForNetwork(networkKey = drawDefaultNetworkKey) {
   return readEnvString('DRAW_TESTNET_WINNERS_PATH') || readEnvString('SOCCER_TESTNET_DRAW_WINNERS_PATH')
 }
 
+function drawWinnersArchiveDirForNetwork(networkKey = drawDefaultNetworkKey) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  if (selectedNetworkKey === 'mainnet') return drawWinnersArchiveDir
+  const configured = readEnvString('DRAW_TESTNET_WINNERS_ARCHIVE_DIR') || readEnvString('SOCCER_TESTNET_DRAW_WINNERS_ARCHIVE_DIR')
+  if (configured) return configured
+  const winnersPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
+  return winnersPath ? join(dirname(winnersPath), 'draw-winners-history') : ''
+}
+
 function expectedRoundMatchIds(roundId) {
   return campaignMatches
     .filter((match) => String(match.roundId || '').trim() === roundId)
@@ -1089,10 +1100,14 @@ function verifyDrawAdminChallenge({ address, action, roundId, drawRoundId, netwo
   return challenge
 }
 
-function appendLimitedOutput(current, chunk) {
+function appendOutputWithLimit(current, chunk, limitBytes) {
   const next = `${current}${chunk}`
-  if (Buffer.byteLength(next) <= drawAdminOutputLimitBytes) return next
-  return next.slice(-drawAdminOutputLimitBytes)
+  if (Buffer.byteLength(next) <= limitBytes) return next
+  return next.slice(-limitBytes)
+}
+
+function appendLimitedOutput(current, chunk) {
+  return appendOutputWithLimit(current, chunk, drawAdminOutputLimitBytes)
 }
 
 function parseDrawScriptOutput(stdout) {
@@ -1271,6 +1286,7 @@ function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
   const network = drawNetworkEnv(selectedNetworkKey)
   const contractAddress = drawContractAddress(selectedNetworkKey)
   const winnersOutPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
+  const winnersArchiveDir = drawWinnersArchiveDirForNetwork(selectedNetworkKey)
   const childEnv = {
     ...process.env,
     BSC_CHAIN_ID: drawExpectedChainId(selectedNetworkKey),
@@ -1287,6 +1303,11 @@ function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
   } else {
     delete childEnv.SOCCER_DRAW_WINNERS_PATH
   }
+  if (winnersArchiveDir) {
+    childEnv.SOCCER_DRAW_WINNERS_HISTORY_DIR = winnersArchiveDir
+  } else {
+    delete childEnv.SOCCER_DRAW_WINNERS_HISTORY_DIR
+  }
   return childEnv
 }
 
@@ -1296,6 +1317,7 @@ function runDrawAdminRound({ roundId, drawRoundId = roundId, action, networkKey 
   const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
   const broadcast = action === 'broadcast'
   const winnersOutPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
+  const winnersArchiveDir = drawWinnersArchiveDirForNetwork(selectedNetworkKey)
   const startedAt = new Date().toISOString()
   const args = [
     fileURLToPath(new URL('./run-lucky-draw-round-level.mjs', import.meta.url)),
@@ -1310,6 +1332,9 @@ function runDrawAdminRound({ roundId, drawRoundId = roundId, action, networkKey 
   ]
   if (winnersOutPath) {
     args.push('--winners-out', winnersOutPath)
+  }
+  if (winnersArchiveDir) {
+    args.push('--winners-history-dir', winnersArchiveDir)
   }
   if (process.env.DRAW_MATCH_BATCH_SIZE) {
     args.push('--match-batch-size', process.env.DRAW_MATCH_BATCH_SIZE)
@@ -1656,31 +1681,191 @@ function readHealthMatchResultsSnapshot() {
   }
 }
 
-async function readDrawWinnersSnapshot() {
-  if (!existsSync(drawWinnersPath)) {
-    return enrichDrawWinnersPayload({
-      version: 1,
-      mode: 'draw-winners',
-      sourceLabel: 'on-chain-reveal',
-      sourceStatus: 'pending',
-      generatedAt: null,
-      videoUrl: winnerRevealVideoUrl,
-      winners: [],
-      winnersBySlot: [],
-    })
-  }
-
-  const payload = JSON.parse(readFileSync(drawWinnersPath, 'utf8'))
-  const enriched = enrichDrawWinnersPayload({
+function readDrawWinnersSnapshotFile(path) {
+  if (!path || !existsSync(path)) return null
+  const payload = JSON.parse(readFileSync(path, 'utf8'))
+  return {
     videoUrl: payload.videoUrl || winnerRevealVideoUrl,
     winners: Array.isArray(payload.winners) ? payload.winners : [],
     winnersBySlot: Array.isArray(payload.winnersBySlot) ? payload.winnersBySlot : [],
     ...payload,
     videoUrl: payload.videoUrl || winnerRevealVideoUrl,
+  }
+}
+
+function pendingDrawWinnersSnapshot() {
+  return {
+    version: 1,
+    mode: 'draw-winners',
+    sourceLabel: 'on-chain-reveal',
+    sourceStatus: 'pending',
+    generatedAt: null,
+    videoUrl: winnerRevealVideoUrl,
+    winners: [],
+    winnersBySlot: [],
+  }
+}
+
+function drawWinnerSnapshotRoundId(payload) {
+  return safeDrawLedgerRoundId(
+    payload?.drawRoundId
+    || payload?.draw_round_id
+    || payload?.roundId
+    || payload?.round_id
+    || payload?.sourceRoundId
+    || payload?.source_round_id,
+  )
+}
+
+function drawWinnersArchiveFilePath(roundId, networkKey = 'mainnet') {
+  const safeRoundId = safeDrawLedgerRoundId(roundId)
+  const directory = drawWinnersArchiveDirForNetwork(networkKey)
+  return safeRoundId && directory ? join(directory, `${safeRoundId}.json`) : ''
+}
+
+function priorDrawRoundIds(currentSnapshot) {
+  const currentRoundId = drawWinnerSnapshotRoundId(currentSnapshot)
+  const currentRoundIndex = roundDefinitions.findIndex((round) => String(round.id || '').trim() === currentRoundId)
+  if (currentRoundIndex <= 0) return []
+  return roundDefinitions
+    .slice(0, currentRoundIndex)
+    .map((round) => String(round.id || '').trim())
+    .filter((roundId) => drawAdminRoundIds.has(roundId) && matchDrawLedgerContainsRound(roundId))
+}
+
+function drawWinnersHistoryContractAddress(roundId, networkKey) {
+  const expectedChainId = drawExpectedChainId(networkKey)
+  const historicRecord = readDrawWinnersProofRecords().find((record) => {
+    const recordRoundId = String(record?.roundId || record?.round_id || record?.drawRoundId || record?.draw_round_id || '').trim()
+    return recordRoundId === roundId && String(record?.chainId || record?.chain_id || '').trim() === expectedChainId
   })
+  return normalizeProofAddress(historicRecord?.contract) || drawContractAddress(networkKey)
+}
+
+function rebuildDrawWinnersHistorySnapshot(roundId, networkKey = 'mainnet') {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const network = drawNetworkEnv(selectedNetworkKey)
+  const historyPath = drawWinnersArchiveFilePath(roundId, selectedNetworkKey)
+  const historyDirectory = drawWinnersArchiveDirForNetwork(selectedNetworkKey)
+  const args = [
+    fileURLToPath(new URL('./run-lucky-draw-round-level.mjs', import.meta.url)),
+    '--env-file',
+    network.envFile,
+    '--contract',
+    drawWinnersHistoryContractAddress(roundId, selectedNetworkKey),
+    '--ledger',
+    matchDrawLedgerPath,
+    '--round-id',
+    roundId,
+    '--verify-only',
+    '--winners-history-dir',
+    historyDirectory,
+    '--write-history-snapshot',
+  ]
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    let stdout = ''
+    let stderr = ''
+    const timeoutSeconds = readIntegerEnv('DRAW_WINNERS_HISTORY_REBUILD_TIMEOUT_SECONDS', 60, 10)
+    const child = spawn(process.execPath, ['--', ...args], {
+      cwd: repoRoot,
+      env: drawNetworkChildEnv(selectedNetworkKey),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const timeout = setTimeout(() => {
+      child.kill('SIGTERM')
+      rejectPromise(new Error(`Timed out rebuilding ${roundId} winner history after ${timeoutSeconds} seconds.`))
+    }, timeoutSeconds * 1000)
+
+    child.stdout.on('data', (chunk) => {
+      stdout = appendLimitedOutput(stdout, chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr = appendLimitedOutput(stderr, chunk)
+    })
+    child.on('error', (error) => {
+      clearTimeout(timeout)
+      rejectPromise(error)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timeout)
+      if (code !== 0) {
+        rejectPromise(new Error(stderr.trim() || `Winner history rebuild for ${roundId} exited with code ${code}.`))
+        return
+      }
+
+      try {
+        const result = JSON.parse(stdout)
+        if (!result?.winnersHistoryOut || !historyPath) {
+          resolvePromise(null)
+          return
+        }
+        const snapshot = readDrawWinnersSnapshotFile(historyPath)
+        if (!snapshot || snapshot.sourceStatus !== 'revealed' || !drawWinnerSnapshotRoundId(snapshot)) {
+          resolvePromise(null)
+          return
+        }
+        resolvePromise(snapshot)
+      } catch (error) {
+        rejectPromise(error)
+      }
+    })
+  })
+}
+
+async function readHistoricalDrawWinnersSnapshot(roundId, networkKey = 'mainnet') {
+  const historyPath = drawWinnersArchiveFilePath(roundId, networkKey)
+  const existing = readDrawWinnersSnapshotFile(historyPath)
+  if (existing) return existing
+
+  const taskKey = `${networkKey}:${roundId}`
+  if (!drawWinnerHistoryTasks.has(taskKey)) {
+    const task = rebuildDrawWinnersHistorySnapshot(roundId, networkKey)
+      .catch((error) => {
+        console.warn(`[draw-winners-history] ${roundId}: ${error instanceof Error ? error.message : error}`)
+        return null
+      })
+      .finally(() => drawWinnerHistoryTasks.delete(taskKey))
+    drawWinnerHistoryTasks.set(taskKey, task)
+  }
+  return drawWinnerHistoryTasks.get(taskKey)
+}
+
+async function enrichStoredDrawWinnersSnapshot(payload) {
+  const enriched = enrichDrawWinnersPayload(payload)
   const withLedgerDownloadState = withDrawWinnersLedgerDownloadState(enriched)
   const withConfiguredProof = enrichDrawWinnersConfiguredProof(withLedgerDownloadState)
   return enrichDrawWinnersChainProof(withConfiguredProof)
+}
+
+async function readDrawWinnersSnapshot() {
+  const currentSnapshot = readDrawWinnersSnapshotFile(drawWinnersPath) || pendingDrawWinnersSnapshot()
+  if (currentSnapshot.sourceStatus !== 'revealed') {
+    return enrichStoredDrawWinnersSnapshot(currentSnapshot)
+  }
+
+  const historicalSnapshots = await Promise.all(
+    priorDrawRoundIds(currentSnapshot).map((roundId) => readHistoricalDrawWinnersSnapshot(roundId)),
+  )
+  const snapshots = await Promise.all(
+    [...historicalSnapshots.filter(Boolean), currentSnapshot].map(enrichStoredDrawWinnersSnapshot),
+  )
+  const winners = snapshots.flatMap((snapshot) => Array.isArray(snapshot.winners) ? snapshot.winners : [])
+  const winnersBySlot = snapshots.flatMap((snapshot) => Array.isArray(snapshot.winnersBySlot) ? snapshot.winnersBySlot : [])
+  const alternates = snapshots.flatMap((snapshot) => Array.isArray(snapshot.alternates) ? snapshot.alternates : [])
+  const draws = snapshots.flatMap((snapshot) => Array.isArray(snapshot.draws) ? snapshot.draws : [])
+  const current = snapshots[snapshots.length - 1] || await enrichStoredDrawWinnersSnapshot(currentSnapshot)
+
+  return {
+    ...current,
+    winnerCount: winners.length,
+    alternateCount: alternates.length,
+    winners,
+    winnersBySlot,
+    alternates,
+    draws,
+    roundSnapshots: snapshots,
+  }
 }
 
 const WINNER_WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i

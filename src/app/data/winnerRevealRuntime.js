@@ -12,6 +12,7 @@ const emptyWinnerRevealData = {
   draws: [],
   transactions: [],
   txs: [],
+  roundSnapshots: [],
   proof: {
     ledgerDownloadAvailable: false,
     ledgerDownloadUrl: "",
@@ -221,7 +222,7 @@ function normalizeDrawList(rows) {
   return (Array.isArray(rows) ? rows : []).map(normalizeDraw).filter(Boolean);
 }
 
-export function normalizeWinnerRevealPayload(payload, fallbackVideoUrl = DEFAULT_WINNER_REVEAL_VIDEO_URL) {
+function normalizeWinnerRevealSnapshot(payload, fallbackVideoUrl = DEFAULT_WINNER_REVEAL_VIDEO_URL) {
   if (!payload || typeof payload !== "object") {
     return {
       ...emptyWinnerRevealData,
@@ -256,6 +257,18 @@ export function normalizeWinnerRevealPayload(payload, fallbackVideoUrl = DEFAULT
     winnersBySlot: normalizeWinnerList(payload.winnersBySlot ?? payload.winners_by_slot),
     alternates: normalizeWinnerList(payload.alternates),
     draws: normalizeDrawList(payload.draws),
+  };
+}
+
+export function normalizeWinnerRevealPayload(payload, fallbackVideoUrl = DEFAULT_WINNER_REVEAL_VIDEO_URL) {
+  const normalized = normalizeWinnerRevealSnapshot(payload, fallbackVideoUrl);
+  const roundSnapshots = (Array.isArray(payload?.roundSnapshots) ? payload.roundSnapshots : [])
+    .map((snapshot) => normalizeWinnerRevealSnapshot(snapshot, fallbackVideoUrl))
+    .filter((snapshot) => snapshot.sourceStatus === "revealed" && snapshot.roundId);
+
+  return {
+    ...normalized,
+    roundSnapshots,
   };
 }
 

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Contract, JsonRpcProvider, Wallet } from 'ethers'
@@ -526,6 +526,17 @@ function writeWinnersSnapshotIfConfigured(path, snapshot) {
   return out
 }
 
+function writeWinnersHistorySnapshotIfConfigured(directory, snapshot) {
+  const outputDirectory = resolveOutputPath(directory)
+  const roundId = String(snapshot?.roundId || '').trim()
+  if (!outputDirectory || !/^[a-zA-Z0-9_-]+$/.test(roundId)) return null
+
+  mkdirSync(outputDirectory, { recursive: true })
+  const out = resolve(outputDirectory, `${roundId}.json`)
+  writeJsonAtomic(out, snapshot)
+  return out
+}
+
 function plannedStepsForRoundStatus(status, roundLedger, batchSize) {
   const steps = []
   if (!status.finalized) {
@@ -586,9 +597,12 @@ const envFilePath = argValue('--env-file') || process.env.DEPLOY_ENV_FILE || 'co
 const env = { ...loadEnvFile(envFilePath), ...process.env }
 const ledgerPath = argValue('--ledger') || env.LUCKY_DRAW_LEDGER_PATH || env.SOCCER_MATCH_DRAW_LEDGER_PATH || 'public/lucky-draw-ledger.json'
 const winnersOutPath = argValue('--winners-out') || env.SOCCER_DRAW_WINNERS_PATH || ''
+const winnersHistoryDir = argValue('--winners-history-dir') || env.SOCCER_DRAW_WINNERS_HISTORY_DIR || ''
 const contractAddress = argValue('--contract') || env.DRAW_CONTRACT_ADDRESS || ''
 const broadcast = hasFlag('--broadcast')
 const verifyOnly = hasFlag('--verify-only')
+const emitSnapshot = hasFlag('--emit-snapshot')
+const writeHistorySnapshot = hasFlag('--write-history-snapshot')
 const matchBatchSize = normalizePositiveInteger(argValue('--match-batch-size') || env.DRAW_MATCH_BATCH_SIZE || 1, 'matchBatchSize')
 
 if (!contractAddress) {
@@ -654,7 +668,10 @@ if (!broadcast || verifyOnly) {
     payload.winnerCount = winnersSnapshot.winnerCount
     payload.alternateCount = winnersSnapshot.alternateCount
     payload.firstDraw = winnersSnapshot.draws[0] || null
-    payload.winnersOut = writeWinnersSnapshotIfConfigured(winnersOutPath, winnersSnapshot)
+    if (writeHistorySnapshot) {
+      payload.winnersHistoryOut = writeWinnersHistorySnapshotIfConfigured(winnersHistoryDir, winnersSnapshot)
+    }
+    if (emitSnapshot) payload.winnersSnapshot = winnersSnapshot
   }
 
   console.log(jsonStringify(payload))
@@ -750,6 +767,7 @@ const winnersSnapshot = buildRoundWinnersSnapshot({
   txs,
 })
 const winnersOut = writeWinnersSnapshotIfConfigured(winnersOutPath, winnersSnapshot)
+const winnersHistoryOut = writeWinnersHistorySnapshotIfConfigured(winnersHistoryDir, winnersSnapshot)
 
 console.log(jsonStringify({
   ok: true,
@@ -766,5 +784,6 @@ console.log(jsonStringify({
   alternateCount: winnersSnapshot.alternateCount,
   fulfilled: winnersSnapshot.fulfilled,
   winnersOut,
+  winnersHistoryOut,
   txs,
 }))

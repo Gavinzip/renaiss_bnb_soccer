@@ -417,6 +417,9 @@ function filterWinnerRevealDataByRounds(winnerRevealData, visibleRoundIds) {
   const winners = filterWinnerRowsByRounds(winnerRevealData?.winners, visibleRoundIds);
   const winnersBySlot = filterWinnerRowsByRounds(winnerRevealData?.winnersBySlot, visibleRoundIds);
   const alternates = filterWinnerRowsByRounds(winnerRevealData?.alternates, visibleRoundIds);
+  const roundSnapshots = (Array.isArray(winnerRevealData?.roundSnapshots) ? winnerRevealData.roundSnapshots : [])
+    .map((snapshot) => filterWinnerRevealDataByRounds({ ...snapshot, roundSnapshots: [] }, visibleRoundIds))
+    .filter((snapshot) => Array.isArray(snapshot.winners) && snapshot.winners.length > 0);
   return {
     ...winnerRevealData,
     winners,
@@ -425,6 +428,7 @@ function filterWinnerRevealDataByRounds(winnerRevealData, visibleRoundIds) {
     draws: filterWinnerDrawsByRounds(winnerRevealData?.draws, visibleRoundIds),
     winnerCount: Array.isArray(winners) ? winners.length : winnerRevealData?.winnerCount,
     alternateCount: Array.isArray(alternates) ? alternates.length : winnerRevealData?.alternateCount,
+    roundSnapshots,
   };
 }
 

@@ -471,10 +471,20 @@ export function WinnersRoom({
     const revealedOptions = roundOptions.filter((option) => option.count > 0);
     return revealedOptions[revealedOptions.length - 1]?.id || roundOptions[0]?.id || "";
   }, [roundOptions]);
-  const selectedRound = roundOptions.find((option) => option.id === activeRoundId)
-    || roundOptions.find((option) => option.id === latestRevealedRoundId)
+  const activeRound = roundOptions.find((option) => option.id === activeRoundId);
+  const selectedRound = activeRound?.count > 0
+    ? activeRound
+    : roundOptions.find((option) => option.id === latestRevealedRoundId)
     || roundOptions[0]
     || null;
+  const selectedWinnerRevealData = useMemo(() => {
+    const selectedRoundId = String(selectedRound?.id || "").trim();
+    if (!selectedRoundId) return winnerRevealData;
+    return (Array.isArray(winnerRevealData.roundSnapshots) ? winnerRevealData.roundSnapshots : [])
+      .find((snapshot) => [snapshot?.roundId, snapshot?.sourceRoundId, snapshot?.drawRoundId]
+        .map((value) => String(value || "").trim())
+        .includes(selectedRoundId)) || winnerRevealData;
+  }, [selectedRound?.id, winnerRevealData]);
   const selectedRoundWinners = selectedRound?.winners || [];
   const selectedRoundHasWinners = hasOfficialWinners && selectedRoundWinners.length > 0;
   const selectedRoundCurrentUserWinnerCount = useMemo(() => {
@@ -691,7 +701,7 @@ export function WinnersRoom({
           )}
           {selectedRoundHasWinners ? (
             <WinnerOnChainProof
-              winnerRevealData={winnerRevealData}
+              winnerRevealData={selectedWinnerRevealData}
               selectedRound={selectedRound}
               selectedActiveWinner={selectedActiveWinner}
               matches={matches}

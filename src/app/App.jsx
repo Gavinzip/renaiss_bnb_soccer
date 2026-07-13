@@ -425,7 +425,11 @@ function AppContent() {
         : "");
   const winnerRevealVideoUrl = import.meta.env.VITE_WINNER_REVEAL_VIDEO_URL || DEFAULT_WINNER_REVEAL_VIDEO_URL;
   const drawWinnersUrl = import.meta.env.VITE_DRAW_WINNERS_URL
-    || (import.meta.env.PROD ? "/api/draw-winners" : "/mock-api/draw-winners.json");
+    || (import.meta.env.PROD || !localTestOrigin
+      ? "/api/draw-winners"
+      : localApiOrigin
+        ? `${localApiOrigin}/api/draw-winners`
+        : "/mock-api/draw-winners.json");
   const authMeUrl = import.meta.env.VITE_AUTH_ME_URL || (import.meta.env.PROD ? "/api/auth/me" : "");
   const [ledger, setLedger] = useState(() => normalizeFootballLedger(verifiedLedgerSnapshot));
   const [selectedLedgerEntry, setSelectedLedgerEntry] = useState(null);
