@@ -32612,3 +32612,18 @@ body {
     min-height: 118px;
   }
 }
+
+/* The final is one matchup: place each finalist on its own side of the trophy. */
+.tournament-arena__stage.is-final-round .arena-side {
+  align-content: center;
+}
+
+.tournament-arena__stage.is-final-round .arena-pair.is-single-team {
+  width: 100%;
+}
+
+.control-room[data-view="schedule"] .tournament-arena__stage.is-final-round .arena-side.is-left .arena-pair__meta {
+  position: absolute !important;
+  bottom: calc(100% + 12px) !important;
+  left: 0 !important;
+}

@@ -492,35 +492,50 @@ function ArenaTeamCard({ match, team, side, allocation, selected, onPickTeam, co
   );
 }
 
-function ArenaSide({ side, matches, teamsById, allocations, detail, onPickTeam, copy }) {
+function ArenaSide({
+  side,
+  matches,
+  teamsById,
+  allocations,
+  detail,
+  onPickTeam,
+  copy,
+  teamIndex = null,
+  showMatchMeta = true,
+}) {
   const { locale } = copy;
 
   return (
     <section className={`arena-side is-${side}`} aria-label={copy.t(side === "left" ? "schedule.leftBracket" : "schedule.rightBracket")}>
       {matches.map((match, index) => {
-        const teams = match.teams.map((teamId) => teamsById.get(teamId)).filter(Boolean);
+        const teamIds = teamIndex === null ? match.teams : [match.teams?.[teamIndex]];
+        const teams = teamIds.map((teamId) => teamsById.get(teamId)).filter(Boolean);
         const pairAccent = pairAccentColors[index % pairAccentColors.length];
         const gmtDateTime = matchGmtDateTime(match, locale);
+        const isSingleTeamMatch = teams.length === 1;
         return (
           <article
             className={[
               "arena-pair",
               match.advancingTeamId ? "has-winner" : "",
               voteableStatuses.has(match.status) ? "is-voteable" : "",
+              isSingleTeamMatch ? "is-single-team" : "",
             ].filter(Boolean).join(" ")}
             key={match.id}
             data-route-match-id={match.id}
             data-route-advancing-team-id={match.advancingTeamId || ""}
             style={{ "--pair-index": index, "--pair-rgb": pairAccent }}
           >
-            <span className="arena-pair__meta" aria-label={gmtDateTime ? `${matchDisplayCode(match)} ${gmtDateTime}` : matchDisplayCode(match)}>
-              <span className="arena-pair__match">{matchDisplayCode(match)}</span>
-              {gmtDateTime ? (
-                <time className="arena-pair__time" dateTime={match.kickoffAt}>
-                  {gmtDateTime}
-                </time>
-              ) : null}
-            </span>
+            {showMatchMeta ? (
+              <span className="arena-pair__meta" aria-label={gmtDateTime ? `${matchDisplayCode(match)} ${gmtDateTime}` : matchDisplayCode(match)}>
+                <span className="arena-pair__match">{matchDisplayCode(match)}</span>
+                {gmtDateTime ? (
+                  <time className="arena-pair__time" dateTime={match.kickoffAt}>
+                    {gmtDateTime}
+                  </time>
+                ) : null}
+              </span>
+            ) : null}
             {teams.map((team) => (
               <ArenaTeamCard
                 key={team.id}
@@ -802,9 +817,10 @@ export function TournamentArena({
   const activeDetailTeam = teamsById.get(visibleDetail.teamId) ?? teamsById.get(activeDetailMatch?.teams?.[0]);
   const opponentTeam = teamsById.get(activeDetailMatch?.teams?.find((teamId) => teamId !== activeDetailTeam?.id));
   const activeAllocation = getTeamAllocation(activeDetailMatch, activeDetailTeam, roundAllocations);
+  const isFinalRound = activeRoundId === "final" && roundMatches.length === 1;
   const splitIndex = Math.ceil(roundMatches.length / 2);
-  const leftMatches = roundMatches.slice(0, splitIndex);
-  const rightMatches = roundMatches.slice(splitIndex);
+  const leftMatches = isFinalRound ? roundMatches : roundMatches.slice(0, splitIndex);
+  const rightMatches = isFinalRound ? roundMatches : roundMatches.slice(splitIndex);
   const nextCutoff = roundMatches.find((match) => voteableStatuses.has(match.status)) ?? roundMatches[0];
 
   useEffect(() => {
@@ -902,7 +918,7 @@ export function TournamentArena({
         </p>
       </header>
       <section className="tournament-arena__scroll">
-        <section className="tournament-arena__stage" key={activeRoundId} ref={stageRef}>
+        <section className={`tournament-arena__stage${isFinalRound ? " is-final-round" : ""}`} key={activeRoundId} ref={stageRef}>
           <BracketRouteLayer
             routeLayer={routeLayer.roundId === activeRoundId ? routeLayer : { width: 0, height: 0, paths: [], nodes: [] }}
           />
@@ -914,6 +930,7 @@ export function TournamentArena({
             detail={routeSelection}
             onPickTeam={handlePickTeam}
             copy={copy}
+            teamIndex={isFinalRound ? 0 : null}
           />
           <ArenaCenter
             copy={copy}
@@ -926,6 +943,8 @@ export function TournamentArena({
             detail={routeSelection}
             onPickTeam={handlePickTeam}
             copy={copy}
+            teamIndex={isFinalRound ? 1 : null}
+            showMatchMeta={!isFinalRound}
           />
         </section>
       </section>
