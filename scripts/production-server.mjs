@@ -2,7 +2,7 @@
 import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { dirname, extname, join, normalize, resolve } from 'node:path'
+import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -64,6 +64,7 @@ applyRuntimeDefaults({ runtimeTarget, repoRoot, port })
 const distDir = resolve(repoRoot, 'dist')
 const drawContractArtifactPath = resolve(repoRoot, 'artifacts/contracts/RenaissLuckyDraw.sol/RenaissLuckyDraw.json')
 const dataDir = process.env.SOCCER_DATA_DIR || process.env.LUCKY_DRAW_DATA_DIR || '/data/soccer'
+const clientEntryAssetPath = readCurrentClientEntryAssetPath()
 const cacheDir = process.env.LUCKY_DRAW_CACHE_DIR || join(dataDir, 'cache')
 const ledgerPath = process.env.LUCKY_DRAW_LEDGER_PATH || join(dataDir, 'lucky-draw-ledger.json')
 const snapshotDir = process.env.LUCKY_DRAW_SNAPSHOT_DIR || join(dataDir, 'snapshots')
@@ -2674,6 +2675,37 @@ function distPathForUrl(url) {
   return candidate.startsWith(distDir) ? candidate : null
 }
 
+function isDistAssetPath(candidate) {
+  const assetDir = join(distDir, 'assets')
+  return candidate.startsWith(`${assetDir}${sep}`)
+}
+
+function readCurrentClientEntryAssetPath() {
+  const indexPath = join(distDir, 'index.html')
+  if (!existsSync(indexPath)) return ''
+
+  const entryMatch = readFileSync(indexPath, 'utf8').match(/<script\b[^>]*\bsrc="([^"]*\/assets\/index-[^"]+\.js)"/)
+  return entryMatch ? new URL(entryMatch[1], 'http://localhost').pathname : ''
+}
+
+function sendStaleClientRecovery(response) {
+  response.writeHead(200, {
+    'content-type': 'text/javascript; charset=utf-8',
+    'cache-control': 'no-store, max-age=0',
+    'clear-site-data': '"cache"',
+  })
+  response.end(`(() => {
+  const key = '__renaiss_stale_asset_recovery_at__'
+  const now = Date.now()
+  try {
+    const previous = Number(sessionStorage.getItem(key) || 0)
+    if (now - previous < 30000) return
+    sessionStorage.setItem(key, String(now))
+  } catch {}
+  window.location.replace(window.location.href)
+})()`)
+}
+
 function buildMilestoneSummary(ledger) {
   const currentMetricValue = Number(ledger.totalRawTickets || 0)
   return {
@@ -3797,12 +3829,39 @@ const server = createServer(async (request, response) => {
     return
   }
 
-  const candidate = distPathForUrl(request.url || '/')
-  if (candidate && existsSync(candidate) && statSync(candidate).isFile()) {
-    sendFile(request, response, candidate, {
-      'cache-control': candidate.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+  if (url.pathname === '/api/client-release') {
+    const clientEntry = String(request.headers['x-renaiss-client-entry'] || '').trim()
+    const isStaleClient = Boolean(clientEntry && clientEntryAssetPath && clientEntry !== clientEntryAssetPath)
+    sendJson(request, response, isStaleClient ? 409 : 200, {
+      entryAssetPath: clientEntryAssetPath || null,
+    }, {
+      'cache-control': 'no-store',
+      ...(isStaleClient ? { 'clear-site-data': '"cache"' } : {}),
     })
     return
+  }
+
+  const candidate = distPathForUrl(request.url || '/')
+  if (candidate) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) {
+      sendFile(request, response, candidate, {
+        'cache-control': candidate.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+      })
+      return
+    }
+
+    if (isDistAssetPath(candidate)) {
+      if (extname(candidate).toLowerCase() === '.js') {
+        sendStaleClientRecovery(response)
+        return
+      }
+      response.writeHead(404, {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store',
+      })
+      response.end('Static asset not found.')
+      return
+    }
   }
 
   const indexPath = join(distDir, 'index.html')
@@ -3847,6 +3906,7 @@ server.listen(port, () => {
   console.log(`[server] profileDbPath=${profileDbPath}`)
   console.log(`[server] matchResultsPath=${matchResultsPath}`)
   console.log(`[server] matchDrawLedgerPath=${matchDrawLedgerPath}`)
+  console.log(`[server] clientEntryAssetPath=${clientEntryAssetPath || 'missing'}`)
   if (restoreEnabled) {
     runDataRestore('startup', startBackgroundJobs)
   } else {
