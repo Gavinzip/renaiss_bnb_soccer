@@ -2,6 +2,9 @@ const emptyPreviewVoteData = {
   allocations: [],
   outcomes: [],
   roundSummaries: [],
+  matchTeamTotals: [],
+  matchVoterCounts: [],
+  hasGlobalTotals: false,
   sourceLabel: "empty",
   sourceStatus: "empty",
   generatedAt: null,
@@ -74,8 +77,32 @@ function normalizeRoundSummary(row) {
   };
 }
 
+function normalizeMatchTeamTotal(row) {
+  if (!row || typeof row !== "object") return null;
+  const roundId = String(row.roundId ?? row.round_id ?? "").trim();
+  const matchId = String(row.matchId ?? row.match_id ?? "").trim();
+  const teamId = String(row.teamId ?? row.team_id ?? "").trim();
+  const tickets = normalizeTickets(row.tickets ?? row.totalTickets ?? row.total_tickets);
+
+  if (!roundId || !matchId || !teamId) return null;
+  return { roundId, matchId, teamId, tickets };
+}
+
+function normalizeMatchVoterCount(row) {
+  if (!row || typeof row !== "object") return null;
+  const roundId = String(row.roundId ?? row.round_id ?? "").trim();
+  const matchId = String(row.matchId ?? row.match_id ?? "").trim();
+  const voters = normalizeTickets(row.voters ?? row.voterCount ?? row.voter_count);
+
+  if (!roundId || !matchId) return null;
+  return { roundId, matchId, voters };
+}
+
 export function normalizePreviewVotePayload(payload) {
   if (!payload || typeof payload !== "object") return emptyPreviewVoteData;
+
+  const hasGlobalTotals = Array.isArray(payload.matchTeamTotals ?? payload.match_team_totals)
+    && Array.isArray(payload.matchVoterCounts ?? payload.match_voter_counts);
 
   return {
     allocations: Array.isArray(payload.allocations)
@@ -87,6 +114,13 @@ export function normalizePreviewVotePayload(payload) {
     roundSummaries: Array.isArray(payload.roundSummaries ?? payload.round_summaries)
       ? (payload.roundSummaries ?? payload.round_summaries).map(normalizeRoundSummary).filter(Boolean)
       : [],
+    matchTeamTotals: Array.isArray(payload.matchTeamTotals ?? payload.match_team_totals)
+      ? (payload.matchTeamTotals ?? payload.match_team_totals).map(normalizeMatchTeamTotal).filter(Boolean)
+      : [],
+    matchVoterCounts: Array.isArray(payload.matchVoterCounts ?? payload.match_voter_counts)
+      ? (payload.matchVoterCounts ?? payload.match_voter_counts).map(normalizeMatchVoterCount).filter(Boolean)
+      : [],
+    hasGlobalTotals,
     sourceLabel: String(payload.sourceLabel ?? payload.source_label ?? "preview-vote-api"),
     sourceStatus: String(payload.sourceStatus ?? payload.source_status ?? "preview"),
     generatedAt: payload.generatedAt ?? payload.generated_at ?? null,

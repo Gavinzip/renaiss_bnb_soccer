@@ -75,22 +75,29 @@ export function getRoundPrizeImages(roundId) {
 }
 
 export function preloadRoundPrizeImages(roundId) {
-  if (typeof window === "undefined" || typeof window.Image !== "function") return;
+  if (typeof window === "undefined" || typeof window.Image !== "function") return Promise.resolve();
 
-  getRoundPrizeImages(roundId).forEach((src) => {
-    if (completedPrizeImagePreloads.has(src) || preloadedPrizeImages.has(src)) return;
+  const preloads = getRoundPrizeImages(roundId).map((src) => {
+    if (completedPrizeImagePreloads.has(src)) return Promise.resolve();
+    if (preloadedPrizeImages.has(src)) return preloadedPrizeImages.get(src);
 
-    const image = new window.Image();
-    const markComplete = () => {
-      completedPrizeImagePreloads.add(src);
-      preloadedPrizeImages.delete(src);
-    };
-    image.decoding = "async";
-    image.onload = markComplete;
-    image.onerror = markComplete;
-    preloadedPrizeImages.set(src, image);
-    image.src = src;
+    const preload = new Promise((resolve) => {
+      const image = new window.Image();
+      const markComplete = () => {
+        completedPrizeImagePreloads.add(src);
+        preloadedPrizeImages.delete(src);
+        resolve();
+      };
+      image.decoding = "async";
+      image.onload = markComplete;
+      image.onerror = markComplete;
+      image.src = src;
+    });
+    preloadedPrizeImages.set(src, preload);
+    return preload;
   });
+
+  return Promise.all(preloads).then(() => undefined);
 }
 
 export function getMatchPrizeImageFromList(match, matches = []) {

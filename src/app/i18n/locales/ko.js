@@ -1161,6 +1161,7 @@ export const koLocale = {
       "previewVoteIssue": "미리보기 투표 API 실패({message}). 당분간 투표 결과가 숨겨집니다.",
       "submitVoteIssue": "투표 제출 실패({message}).",
       "invalidLedgerShape": "잘못된 원장 요약 형식",
+      "invalidPreviewVoteShape": "잘못된 전체 투표 풀 요약 형식",
       "invalidMilestoneShape": "잘못된 마일스톤 요약 형식",
       "previewNotice": "현재 로컬 데모 데이터를 표시합니다. Production 버전은 서버 티켓 원장에서 읽어야 합니다."
     },

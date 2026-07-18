@@ -1161,6 +1161,7 @@ export const enLocale = {
       "previewVoteIssue": "Preview vote API failed ({message}). Vote outcomes are hidden for now.",
       "submitVoteIssue": "Vote submission failed ({message}).",
       "invalidLedgerShape": "Invalid ledger summary shape",
+      "invalidPreviewVoteShape": "Invalid global vote-pool summary shape",
       "invalidMilestoneShape": "Invalid milestone summary shape",
       "previewNotice": "Showing local demo data for now. The production version should read from the server ticket ledger."
     },

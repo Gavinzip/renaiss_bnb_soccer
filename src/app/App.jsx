@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ControlRoom } from "./components/control-room/ControlRoom";
+import { ControlRoom, preloadControlRoomView } from "./components/control-room/ControlRoom";
 import { preloadHomeRoomAssets } from "./components/control-room/HomeRoom";
 import { VoteConfirmModal } from "./components/control-room/VoteConfirmModal";
 import { VoteSubmitToast } from "./components/control-room/VoteSubmitToast";
@@ -49,8 +49,9 @@ import { installGoogleAnalytics, trackEvent, trackPageView } from "./utils/analy
 import { fetchJsonWithTimeout, isRequestAbortError } from "./utils/httpClient";
 import { preloadImage } from "./utils/preloadAssets";
 import { requestRenaissProviderSignOut } from "./utils/renaissAuth";
-import { canonicalMatchId, sameMatchId } from "./data/matchIds.js";
+import { sameMatchId } from "./data/matchIds.js";
 import { getRoundTicketAvailability } from "./data/ticketEligibility";
+import { buildLiveVoteStats } from "./data/votePoolRuntime";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
 const INITIAL_LOADER_EXIT_MS = 540;
@@ -58,6 +59,7 @@ const WALLET_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i;
 const AUTH_REQUEST_TIMEOUT_MS = 10000;
 const DATA_REQUEST_TIMEOUT_MS = 12000;
 const VOTE_SUBMIT_TIMEOUT_MS = 15000;
+const CRITICAL_DATA_RETRY_MS = 3000;
 const voteableMatchStatuses = new Set(["open", "closing_soon"]);
 const publicVoteRoundIds = roundDefinitions
   .map((round) => round.id)
@@ -193,8 +195,10 @@ function normalizeLocalSimulationMode(value) {
   return mode === "realtime" ? "realtime" : "scenario";
 }
 
-function normalizeLedgerEntryPayload(payload) {
+function normalizeLedgerEntryPayload(payload, requestedWalletAddress) {
+  if (!payload || typeof payload !== "object" || !("entry" in payload)) return null;
   const entry = payload?.entry;
+  if (entry === null) return createEmptyLedgerEntry(requestedWalletAddress);
   if (!entry || typeof entry !== "object") return null;
   const userAddress = normalizeWalletAddress(entry.userAddress ?? entry.user_address);
   const normalizedEntry = normalizeFootballLedgerEntry(entry);
@@ -220,7 +224,7 @@ function normalizeLedgerEntryPayload(payload) {
     Math.max(0, Math.floor(Number(normalizedEntry.totalVotingTickets ?? normalizedEntry.total_voting_tickets) || 0)),
     rawTickets + carryoverTickets + insiderPracticeTickets + insiderGrantTickets,
   );
-  if (!userAddress || totalVotingTickets <= 0) return null;
+  if (!userAddress) return null;
 
   return {
     ...normalizedEntry,
@@ -248,49 +252,12 @@ function normalizeLedgerEntryPayload(payload) {
   };
 }
 
-function isLiveVotePreview(data) {
-  return data?.sourceStatus === "live";
+function requestHasSettled(status) {
+  return status === "ready" || status === "error";
 }
 
-function voteAllocationMergeKey(allocation) {
-  return [
-    allocation.walletAddress,
-    allocation.roundId,
-    canonicalMatchId(allocation.matchId),
-    allocation.teamId,
-  ].join(":");
-}
-
-function buildLiveVoteStats(...sources) {
-  const allocationsByKey = new Map();
-
-  sources.forEach((source) => {
-    if (!isLiveVotePreview(source)) return;
-    source.allocations.forEach((allocation) => {
-      if (allocation.source === "local-preview") return;
-      allocationsByKey.set(voteAllocationMergeKey(allocation), allocation);
-    });
-  });
-
-  const totalsByMatchTeam = new Map();
-  const walletsByMatch = new Map();
-  allocationsByKey.forEach((allocation) => {
-    const matchId = canonicalMatchId(allocation.matchId);
-    if (!matchId) return;
-    const key = `${matchId}:${allocation.teamId}`;
-    totalsByMatchTeam.set(key, (totalsByMatchTeam.get(key) ?? 0) + allocation.tickets);
-    const walletAddress = String(allocation.walletAddress || "").toLowerCase();
-    if (walletAddress) {
-      const wallets = walletsByMatch.get(matchId) ?? new Set();
-      wallets.add(walletAddress);
-      walletsByMatch.set(matchId, wallets);
-    }
-  });
-
-  return {
-    totalsByMatchTeam,
-    voterCountsByMatch: new Map([...walletsByMatch].map(([matchId, wallets]) => [matchId, wallets.size])),
-  };
+function liveSnapshotIsAvailable(snapshot) {
+  return Boolean(snapshot?.fetchedAt) && ["live", "stale"].includes(String(snapshot?.sourceStatus || ""));
 }
 
 function isVoteableMatch(match) {
@@ -432,7 +399,13 @@ function AppContent() {
         : "/mock-api/draw-winners.json");
   const authMeUrl = import.meta.env.VITE_AUTH_ME_URL || (import.meta.env.PROD ? "/api/auth/me" : "");
   const [ledger, setLedger] = useState(() => normalizeFootballLedger(verifiedLedgerSnapshot));
-  const [selectedLedgerEntry, setSelectedLedgerEntry] = useState(null);
+  const [ledgerEntryRequest, setLedgerEntryRequest] = useState(() => ({
+    walletAddress: "",
+    status: ledgerEntryUrl ? "idle" : "ready",
+    entry: null,
+    issue: "",
+  }));
+  const [ledgerEntryRetryToken, setLedgerEntryRetryToken] = useState(0);
   const [ledgerIssue, setLedgerIssue] = useState("");
   const [ledgerReady, setLedgerReady] = useState(!ledgerSummaryUrl);
   const [milestoneSummary, setMilestoneSummary] = useState(bundledMilestoneSummary);
@@ -440,9 +413,17 @@ function AppContent() {
   const [milestoneReady, setMilestoneReady] = useState(!milestoneSummaryUrl);
   const [previewVoteData, setPreviewVoteData] = useState(getEmptyPreviewVoteData);
   const [globalPreviewVoteData, setGlobalPreviewVoteData] = useState(getEmptyPreviewVoteData);
-  const [previewVoteIssue, setPreviewVoteIssue] = useState("");
-  const [previewVoteReady, setPreviewVoteReady] = useState(!previewVoteUrl);
-  const [globalPreviewVoteReady, setGlobalPreviewVoteReady] = useState(!previewVoteUrl);
+  const [previewVoteRequest, setPreviewVoteRequest] = useState(() => ({
+    walletAddress: "",
+    status: previewVoteUrl ? "idle" : "ready",
+    issue: "",
+  }));
+  const [previewVoteRetryToken, setPreviewVoteRetryToken] = useState(0);
+  const [globalPreviewVoteRequest, setGlobalPreviewVoteRequest] = useState(() => ({
+    status: previewVoteUrl ? "idle" : "ready",
+    issue: "",
+  }));
+  const [globalPreviewVoteRetryToken, setGlobalPreviewVoteRetryToken] = useState(0);
   const [winnerRevealData, setWinnerRevealData] = useState(() => getEmptyWinnerRevealData(winnerRevealVideoUrl));
   const [winnerRevealIssue, setWinnerRevealIssue] = useState("");
   const [winnerRevealReady, setWinnerRevealReady] = useState(!drawWinnersUrl);
@@ -456,8 +437,14 @@ function AppContent() {
   const [liveQualification, setLiveQualification] = useState(() => createPendingFifaQualificationSnapshot());
   const [liveRound32Matches, setLiveRound32Matches] = useState(() => createPendingFifaRound32MatchesSnapshot());
   const [liveRound16Matches, setLiveRound16Matches] = useState(() => createPendingFifaRound16MatchesSnapshot());
+  const [liveRound16RequestStatus, setLiveRound16RequestStatus] = useState(
+    defaultSimulationMode === "realtime" ? "idle" : "ready",
+  );
   const [liveFutureKnockoutMatches, setLiveFutureKnockoutMatches] = useState(
     () => createPendingFifaFutureKnockoutMatchesSnapshot(),
+  );
+  const [liveFutureRequestStatus, setLiveFutureRequestStatus] = useState(
+    defaultSimulationMode === "realtime" ? "idle" : "ready",
   );
   const [simulatedRoundId, setSimulatedRoundId] = useState(initialRoundId);
   const [activeRoundId, setActiveRoundId] = useState(initialRoundId);
@@ -484,6 +471,10 @@ function AppContent() {
   const prizeRoundManuallySelectedRef = useRef(false);
   const previousActiveViewIdRef = useRef(activeViewId);
   const voteSubmitNoticeTimerRef = useRef(0);
+  const effectiveWalletAddress = normalizeWalletAddress(authSession?.walletAddress) || selectedWallet;
+  const setPreviewVoteIssue = useCallback((issue) => {
+    setPreviewVoteRequest((current) => ({ ...current, issue: String(issue || "") }));
+  }, []);
 
   const refreshAuthSession = useCallback(async () => {
     if (!authMeUrl) {
@@ -603,16 +594,23 @@ function AppContent() {
   }, [ledgerSummaryUrl, t]);
 
   useEffect(() => {
-    if (!ledgerEntryUrl || !selectedWallet) {
-      setSelectedLedgerEntry(null);
+    const walletAddress = effectiveWalletAddress;
+    if (!ledgerEntryUrl) {
+      setLedgerEntryRequest({ walletAddress, status: "ready", entry: null, issue: "" });
+      return undefined;
+    }
+    if (!walletAddress) {
+      setLedgerEntryRequest({ walletAddress: "", status: "error", entry: null, issue: t("data.invalidLedgerShape") });
       return undefined;
     }
 
     let cancelled = false;
+    let retryTimerId = 0;
     const controller = new AbortController();
+    setLedgerEntryRequest({ walletAddress, status: "loading", entry: null, issue: "" });
 
     fetchJsonWithTimeout(urlWithQueryParams(ledgerEntryUrl, {
-      wallet: selectedWallet,
+      wallet: walletAddress,
       includeIntervals: "1",
       intervalLimit: "12",
     }), {
@@ -623,20 +621,26 @@ function AppContent() {
       .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
-        setSelectedLedgerEntry(normalizeLedgerEntryPayload(payload));
+        const entry = normalizeLedgerEntryPayload(payload, walletAddress);
+        if (!entry) throw new Error(t("data.invalidLedgerShape"));
+        setLedgerEntryRequest({ walletAddress, status: "ready", entry, issue: "" });
       })
       .catch((error) => {
         if (isRequestAbortError(error)) return;
         if (cancelled) return;
-        setSelectedLedgerEntry(null);
-        setLedgerIssue(t("data.ledgerIssue", { message: error.message }));
+        const issue = t("data.ledgerIssue", { message: error.message });
+        setLedgerEntryRequest({ walletAddress, status: "error", entry: null, issue });
+        retryTimerId = window.setTimeout(() => {
+          setLedgerEntryRetryToken((current) => current + 1);
+        }, CRITICAL_DATA_RETRY_MS);
       });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimerId);
       controller.abort();
     };
-  }, [ledgerEntryUrl, selectedWallet, t]);
+  }, [effectiveWalletAddress, ledgerEntryRetryToken, ledgerEntryUrl, t]);
 
   useEffect(() => {
     const milestoneUrl = milestoneSummaryUrl;
@@ -680,16 +684,24 @@ function AppContent() {
   }, [milestoneSummaryUrl, t]);
 
   useEffect(() => {
+    const walletAddress = effectiveWalletAddress;
     if (!previewVoteUrl) {
-      setPreviewVoteReady(true);
+      setPreviewVoteRequest({ walletAddress, status: "ready", issue: "" });
+      return undefined;
+    }
+    if (!walletAddress) {
+      setPreviewVoteRequest({ walletAddress: "", status: "error", issue: t("data.invalidLedgerShape") });
       return undefined;
     }
 
     let cancelled = false;
+    let retryTimerId = 0;
     const controller = new AbortController();
-    setPreviewVoteReady(false);
+    setPreviewVoteData(getEmptyPreviewVoteData());
+    setPreviewAllocations([]);
+    setPreviewVoteRequest({ walletAddress, status: "loading", issue: "" });
 
-    fetchJsonWithTimeout(urlWithWalletQuery(previewVoteUrl, selectedWallet), {
+    fetchJsonWithTimeout(urlWithWalletQuery(previewVoteUrl, walletAddress), {
       cache: "no-store",
       signal: controller.signal,
       timeoutMs: DATA_REQUEST_TIMEOUT_MS,
@@ -700,36 +712,41 @@ function AppContent() {
         const normalized = normalizePreviewVotePayload(payload);
         setPreviewVoteData(normalized);
         setPreviewAllocations(normalized.allocations);
-        setPreviewVoteIssue("");
+        setPreviewVoteRequest({ walletAddress, status: "ready", issue: "" });
       })
       .catch((error) => {
         if (isRequestAbortError(error)) return;
         if (cancelled) return;
         setPreviewVoteData(getEmptyPreviewVoteData());
         setPreviewAllocations([]);
-        setPreviewVoteIssue(t("data.previewVoteIssue", { message: error.message }));
-      })
-      .finally(() => {
-        if (!cancelled) setPreviewVoteReady(true);
+        const issue = t("data.previewVoteIssue", { message: error.message });
+        setPreviewVoteRequest({ walletAddress, status: "error", issue });
+        retryTimerId = window.setTimeout(() => {
+          setPreviewVoteRetryToken((current) => current + 1);
+        }, CRITICAL_DATA_RETRY_MS);
       });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimerId);
       controller.abort();
     };
-  }, [previewVoteUrl, selectedWallet, t]);
+  }, [effectiveWalletAddress, previewVoteRetryToken, previewVoteUrl, t]);
 
   useEffect(() => {
     if (!previewVoteUrl) {
-      setGlobalPreviewVoteReady(true);
+      setGlobalPreviewVoteRequest({ status: "ready", issue: "" });
       return undefined;
     }
 
     let cancelled = false;
+    let retryTimerId = 0;
     const controller = new AbortController();
-    setGlobalPreviewVoteReady(false);
+    setGlobalPreviewVoteData(getEmptyPreviewVoteData());
+    setGlobalPreviewVoteRequest({ status: "loading", issue: "" });
 
-    fetchJsonWithTimeout(urlWithQueryParams(previewVoteUrl, { scope: "all" }), {
+    const scope = simulationMode === "realtime" ? "totals" : "all";
+    fetchJsonWithTimeout(urlWithQueryParams(previewVoteUrl, { scope }), {
       cache: "no-store",
       signal: controller.signal,
       timeoutMs: DATA_REQUEST_TIMEOUT_MS,
@@ -737,22 +754,30 @@ function AppContent() {
       .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
-        setGlobalPreviewVoteData(normalizePreviewVotePayload(payload));
+        const normalized = normalizePreviewVotePayload(payload);
+        if (simulationMode === "realtime" && (normalized.sourceStatus !== "live" || !normalized.hasGlobalTotals)) {
+          throw new Error(t("data.invalidPreviewVoteShape"));
+        }
+        setGlobalPreviewVoteData(normalized);
+        setGlobalPreviewVoteRequest({ status: "ready", issue: "" });
       })
       .catch((error) => {
         if (isRequestAbortError(error)) return;
         if (cancelled) return;
         setGlobalPreviewVoteData(getEmptyPreviewVoteData());
-      })
-      .finally(() => {
-        if (!cancelled) setGlobalPreviewVoteReady(true);
+        const issue = t("data.previewVoteIssue", { message: error.message });
+        setGlobalPreviewVoteRequest({ status: "error", issue });
+        retryTimerId = window.setTimeout(() => {
+          setGlobalPreviewVoteRetryToken((current) => current + 1);
+        }, CRITICAL_DATA_RETRY_MS);
       });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimerId);
       controller.abort();
     };
-  }, [previewVoteUrl]);
+  }, [globalPreviewVoteRetryToken, previewVoteUrl, simulationMode, t]);
 
   useEffect(() => {
     if (!drawWinnersUrl) {
@@ -884,12 +909,18 @@ function AppContent() {
   }, [liveRound32MatchesUrl, simulationMode, t]);
 
   useEffect(() => {
-    if (simulationMode !== "realtime") return undefined;
+    if (simulationMode !== "realtime") {
+      setLiveRound16RequestStatus("ready");
+      return undefined;
+    }
 
     let cancelled = false;
     let intervalId = 0;
+    let retryTimerId = 0;
 
     async function syncFifaRound16Matches() {
+      window.clearTimeout(retryTimerId);
+      setLiveRound16RequestStatus("loading");
       setLiveRound16Matches((current) => (
         current.fetchedAt
           ? { ...current, sourceStatus: "stale", issue: t("liveQualification.refreshing") }
@@ -903,7 +934,10 @@ function AppContent() {
             timeoutMs: DATA_REQUEST_TIMEOUT_MS,
           })).payload
           : await fetchFifaRound16MatchesSnapshot();
-        if (!cancelled) setLiveRound16Matches(snapshot);
+        if (!cancelled) {
+          setLiveRound16Matches(snapshot);
+          setLiveRound16RequestStatus("ready");
+        }
       } catch (error) {
         if (cancelled) return;
         setLiveRound16Matches((current) => (
@@ -911,6 +945,8 @@ function AppContent() {
             ? { ...current, sourceStatus: "stale", issue: error.message }
             : createPendingFifaRound16MatchesSnapshot(error.message)
         ));
+        setLiveRound16RequestStatus("error");
+        retryTimerId = window.setTimeout(syncFifaRound16Matches, CRITICAL_DATA_RETRY_MS);
       }
     }
 
@@ -919,17 +955,24 @@ function AppContent() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimerId);
       window.clearInterval(intervalId);
     };
   }, [liveRound16MatchesUrl, simulationMode, t]);
 
   useEffect(() => {
-    if (simulationMode !== "realtime") return undefined;
+    if (simulationMode !== "realtime") {
+      setLiveFutureRequestStatus("ready");
+      return undefined;
+    }
 
     let cancelled = false;
     let intervalId = 0;
+    let retryTimerId = 0;
 
     async function syncFifaFutureKnockoutMatches() {
+      window.clearTimeout(retryTimerId);
+      setLiveFutureRequestStatus("loading");
       setLiveFutureKnockoutMatches((current) => (
         current.fetchedAt
           ? { ...current, sourceStatus: "stale", issue: t("liveQualification.refreshing") }
@@ -943,7 +986,10 @@ function AppContent() {
             timeoutMs: DATA_REQUEST_TIMEOUT_MS,
           })).payload
           : await fetchFifaFutureKnockoutMatchesSnapshot();
-        if (!cancelled) setLiveFutureKnockoutMatches(snapshot);
+        if (!cancelled) {
+          setLiveFutureKnockoutMatches(snapshot);
+          setLiveFutureRequestStatus("ready");
+        }
       } catch (error) {
         if (cancelled) return;
         setLiveFutureKnockoutMatches((current) => (
@@ -951,6 +997,8 @@ function AppContent() {
             ? { ...current, sourceStatus: "stale", issue: error.message }
             : createPendingFifaFutureKnockoutMatchesSnapshot(error.message)
         ));
+        setLiveFutureRequestStatus("error");
+        retryTimerId = window.setTimeout(syncFifaFutureKnockoutMatches, CRITICAL_DATA_RETRY_MS);
       }
     }
 
@@ -959,14 +1007,15 @@ function AppContent() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimerId);
       window.clearInterval(intervalId);
     };
   }, [liveFutureKnockoutMatchesUrl, simulationMode, t]);
 
   const staticTeamsById = useMemo(() => new Map(teams.map((team) => [team.id, team])), []);
   const liveVoteStats = useMemo(
-    () => buildLiveVoteStats(globalPreviewVoteData, previewVoteData),
-    [globalPreviewVoteData, previewVoteData],
+    () => buildLiveVoteStats(globalPreviewVoteData),
+    [globalPreviewVoteData],
   );
   const realtimeRound32Preview = useMemo(
     () => buildRealtimeRound32Preview({
@@ -997,18 +1046,31 @@ function AppContent() {
     [activeRoundId, matches, selectedMatchId],
   );
   const activeEntry = useMemo(
-    () => selectedLedgerEntry
-      ?? ledger.leaderboardEntries.find((entry) => entry.userAddress === selectedWallet)
-      ?? createEmptyLedgerEntry(selectedWallet),
-    [ledger.leaderboardEntries, selectedLedgerEntry, selectedWallet],
+    () => {
+      if (ledgerEntryUrl) {
+        const requestMatchesWallet = ledgerEntryRequest.walletAddress === effectiveWalletAddress;
+        return requestMatchesWallet && ledgerEntryRequest.status === "ready"
+          ? ledgerEntryRequest.entry
+          : null;
+      }
+
+      return ledger.leaderboardEntries.find(
+        (entry) => normalizeWalletAddress(entry.userAddress) === effectiveWalletAddress,
+      ) ?? createEmptyLedgerEntry(effectiveWalletAddress);
+    },
+    [effectiveWalletAddress, ledger.leaderboardEntries, ledgerEntryRequest, ledgerEntryUrl],
   );
   const walletAllocations = useMemo(
-    () => previewAllocations.filter((allocation) => allocation.walletAddress === selectedWallet),
-    [previewAllocations, selectedWallet],
+    () => previewAllocations.filter(
+      (allocation) => normalizeWalletAddress(allocation.walletAddress) === effectiveWalletAddress,
+    ),
+    [effectiveWalletAddress, previewAllocations],
   );
   const walletVoteOutcomes = useMemo(
-    () => previewVoteData.outcomes.filter((outcome) => outcome.walletAddress === selectedWallet),
-    [previewVoteData.outcomes, selectedWallet],
+    () => previewVoteData.outcomes.filter(
+      (outcome) => normalizeWalletAddress(outcome.walletAddress) === effectiveWalletAddress,
+    ),
+    [effectiveWalletAddress, previewVoteData.outcomes],
   );
   const roundAllocations = useMemo(
     () => walletAllocations.filter((allocation) => allocation.roundId === activeRoundId),
@@ -1031,9 +1093,9 @@ function AppContent() {
       entry: activeEntry,
       roundId: activeRoundId,
       allocations: walletAllocations,
-      walletAddress: selectedWallet,
+      walletAddress: effectiveWalletAddress,
     }),
-    [activeEntry, activeRoundId, selectedWallet, walletAllocations],
+    [activeEntry, activeRoundId, effectiveWalletAddress, walletAllocations],
   );
   const remainingRoundTickets = roundTicketBreakdown.remainingTickets;
   const usedTicketPoolTickets = roundTicketBreakdown.usedTickets ?? usedRoundTickets;
@@ -1067,7 +1129,7 @@ function AppContent() {
   const visibleRoundOutcomeSummary = isRealtimeRound32
     ? { lostTickets: 0, winnerTickets: 0, pendingTickets: 0 }
     : roundOutcomeSummary;
-  const currentWinnerWalletAddress = authSession?.walletAddress || (!authMeUrl || isLocalTestOrigin() ? selectedWallet : "");
+  const currentWinnerWalletAddress = authSession?.walletAddress || (!authMeUrl || isLocalTestOrigin() ? effectiveWalletAddress : "");
   const currentUserWinnerCount = useMemo(
     () => countWinnersForWallet(winnerRevealData, currentWinnerWalletAddress),
     [currentWinnerWalletAddress, winnerRevealData],
@@ -1086,16 +1148,66 @@ function AppContent() {
     [activeRoundId, winnerRevealData],
   );
   const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalRawTickets ?? 0);
-  const initialDataReady = ledgerReady && milestoneReady && previewVoteReady && globalPreviewVoteReady && winnerRevealReady && authReady;
+  const ledgerEntryMatchesWallet = ledgerEntryRequest.walletAddress === effectiveWalletAddress;
+  const previewVoteMatchesWallet = previewVoteRequest.walletAddress === effectiveWalletAddress;
+  const ledgerEntrySettled = !ledgerEntryUrl
+    || (ledgerEntryMatchesWallet && requestHasSettled(ledgerEntryRequest.status));
+  const previewVoteSettled = !previewVoteUrl
+    || (previewVoteMatchesWallet && requestHasSettled(previewVoteRequest.status));
+  const globalPreviewVoteSettled = !previewVoteUrl || requestHasSettled(globalPreviewVoteRequest.status);
+  const ticketDataReady = !ledgerEntryUrl
+    || (ledgerEntryMatchesWallet && ledgerEntryRequest.status === "ready" && Boolean(activeEntry));
+  const personalVoteDataReady = !previewVoteUrl
+    || (previewVoteMatchesWallet && previewVoteRequest.status === "ready");
+  const votePoolReady = simulationMode !== "realtime"
+    || (globalPreviewVoteRequest.status === "ready" && globalPreviewVoteData.hasGlobalTotals === true);
+  const liveRound16Available = simulationMode !== "realtime" || liveSnapshotIsAvailable(liveRound16Matches);
+  const liveFutureAvailable = simulationMode !== "realtime" || liveSnapshotIsAvailable(liveFutureKnockoutMatches);
+  const livePublicRoundsReady = liveRound16Available && liveFutureAvailable;
+  const livePublicRoundsSettled = simulationMode !== "realtime" || (
+    (liveRound16Available || requestHasSettled(liveRound16RequestStatus))
+    && (liveFutureAvailable || requestHasSettled(liveFutureRequestStatus))
+  );
+  const preferredVoteRoundId = livePublicRoundsReady
+    ? getDefaultVoteRoundId(matches, activeRoundId)
+    : "";
+  const voteRoundSelectionReady = roundManuallySelectedRef.current
+    || !preferredVoteRoundId
+    || preferredVoteRoundId === activeRoundId;
+  const voteDataReady = ticketDataReady
+    && personalVoteDataReady
+    && votePoolReady
+    && livePublicRoundsReady
+    && voteRoundSelectionReady;
+  const voteDataIssue = [
+    ledgerEntryRequest.issue,
+    previewVoteRequest.issue,
+    globalPreviewVoteRequest.issue,
+    liveRound16RequestStatus === "error" ? liveRound16Matches.issue : "",
+    liveFutureRequestStatus === "error" ? liveFutureKnockoutMatches.issue : "",
+  ].find(Boolean) || "";
+  const initialVoteStateSettled = activeViewId !== "vote"
+    || (livePublicRoundsSettled && (!livePublicRoundsReady || voteRoundSelectionReady));
+  const initialDataReady = ledgerReady
+    && milestoneReady
+    && ledgerEntrySettled
+    && previewVoteSettled
+    && globalPreviewVoteSettled
+    && winnerRevealReady
+    && authReady
+    && initialVoteStateSettled;
   const initialCoverAssetsReady = initialDataReady && initialAssetsReady;
   const initialExperienceReady = initialCoverAssetsReady && initialCoverPaintReady;
 
   useEffect(() => {
     let alive = true;
+    setInitialAssetsReady(false);
+    setInitialCoverPaintReady(false);
 
     Promise.all([
       preloadImage(renaissLogo),
       preloadHomeRoomAssets(),
+      preloadControlRoomView(activeViewId, { roundId: activeRoundId }),
     ]).finally(() => {
       if (alive) setInitialAssetsReady(true);
     });
@@ -1103,7 +1215,7 @@ function AppContent() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [activeRoundId, activeViewId]);
 
   useEffect(() => {
     if (!initialCoverAssetsReady) return undefined;
@@ -1338,7 +1450,7 @@ function AppContent() {
     const submittedAt = new Date().toISOString();
     setPreviewAllocations((current) => {
       const existingIndex = current.findIndex((allocation) => (
-        allocation.walletAddress === selectedWallet
+        normalizeWalletAddress(allocation.walletAddress) === effectiveWalletAddress
         && allocation.roundId === activeRoundId
         && sameMatchId(allocation.matchId, matchId)
         && allocation.teamId === teamId
@@ -1355,8 +1467,8 @@ function AppContent() {
       return [
         ...current,
         {
-          id: `${selectedWallet}-${matchId}-${teamId}-${Date.now()}`,
-          walletAddress: selectedWallet,
+          id: `${effectiveWalletAddress}-${matchId}-${teamId}-${Date.now()}`,
+          walletAddress: effectiveWalletAddress,
           roundId: activeRoundId,
           matchId,
           teamId,
@@ -1408,7 +1520,7 @@ function AppContent() {
           credentials: "same-origin",
           timeoutMs: VOTE_SUBMIT_TIMEOUT_MS,
           body: JSON.stringify({
-            ...(authMeUrl ? {} : { walletAddress: selectedWallet }),
+            ...(authMeUrl ? {} : { walletAddress: effectiveWalletAddress }),
             roundId: activeRoundId,
             matchId: targetMatch.id,
             teamId: targetTeamId,
@@ -1419,7 +1531,8 @@ function AppContent() {
         const normalized = normalizePreviewVotePayload(payload.preview);
         setPreviewVoteData(normalized);
         setPreviewAllocations(normalized.allocations);
-        setPreviewVoteIssue("");
+        setPreviewVoteRequest({ walletAddress: effectiveWalletAddress, status: "ready", issue: "" });
+        setGlobalPreviewVoteRetryToken((current) => current + 1);
       } catch (error) {
         const issue = t("data.submitVoteIssue", { message: error.message });
         setPendingVoteIssue(issue);
@@ -1447,9 +1560,9 @@ function AppContent() {
         activeViewId={activeViewId}
         mobileNavOpen={mobileNavOpen}
         ledger={ledger}
-        ledgerIssue={ledgerIssue}
+        ledgerIssue={ledgerIssue || ledgerEntryRequest.issue}
         activeEntry={activeEntry}
-        selectedWallet={selectedWallet}
+        selectedWallet={effectiveWalletAddress}
         simulatedRound={simulatedRound}
         simulatedRoundId={simulatedRoundId}
         activeRound={activeRound}
@@ -1466,7 +1579,11 @@ function AppContent() {
         roundAllocations={visibleRoundAllocations}
         roundVoteOutcomes={visibleRoundVoteOutcomes}
         roundOutcomeSummary={visibleRoundOutcomeSummary}
-        previewVoteIssue={previewVoteIssue}
+        previewVoteIssue={previewVoteRequest.issue || globalPreviewVoteRequest.issue}
+        ticketDataReady={ticketDataReady}
+        voteDataReady={voteDataReady}
+        voteDataIssue={voteDataIssue}
+        votePoolReady={votePoolReady}
         winnerRevealData={winnerRevealData}
         winnerRevealIssue={winnerRevealIssue}
         currentWinnerWalletAddress={currentWinnerWalletAddress}

@@ -113,6 +113,7 @@ export function MatchPrizeList({
   selectedTeamId,
   roundAllocations,
   roundVoteOutcomes = [],
+  votePoolReady = true,
   onSelectMatch,
   onSelectTeam,
   copy,
@@ -229,13 +230,16 @@ export function MatchPrizeList({
                   const isWinner = match.advancingTeamId === team.id;
                   const isEliminated = Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);
                   const voteOutcome = getTeamVoteOutcome(roundVoteOutcomes, match.id, team.id);
-                  const matchTeamVotes = getMatchTeamVotes(match, team);
+                  const matchTeamVotes = votePoolReady ? getMatchTeamVotes(match, team) : null;
+                  const hasValidVotePool = votePoolReady
+                    && Number.isFinite(matchTeamVotes)
+                    && (!voteOutcome || matchTeamVotes >= voteOutcome.tickets);
                   const hitRate = voteOutcome
-                    ? formatHitRate(estimateMultiPrizeChance(
+                    ? hasValidVotePool ? formatHitRate(estimateMultiPrizeChance(
                       voteOutcome.tickets,
                       matchTeamVotes,
                       activeRound?.matchPrizeSlotCount || 1,
-                    ))
+                    )) : "—"
                     : "";
 
                   return (
@@ -284,7 +288,7 @@ export function MatchPrizeList({
                               </span>
                             </b>
                           ) : null}
-                          <small>{compactVotes(matchTeamVotes)}</small>
+                          <small>{hasValidVotePool ? compactVotes(matchTeamVotes) : "—"}</small>
                         </span>
                       </button>
                       {teamIndex === 0 ? (

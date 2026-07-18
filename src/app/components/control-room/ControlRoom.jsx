@@ -46,27 +46,30 @@ const LazyScheduleRoom = lazyNamed(roomLoaders.schedule, "ScheduleRoom");
 const LazyVoteRoom = lazyNamed(roomLoaders.vote, "VoteRoom");
 const LazyDrawRoom = lazyNamed(roomLoaders.draw, "DrawRoom");
 const LazyWinnersRoom = lazyNamed(roomLoaders.winners, "WinnersRoom");
-const roomPreloadCache = new Map();
+const roomModulePreloadCache = new Map();
 const ADMIN_ONLY_ROUND_IDS = new Set(["round32"]);
 const BRAND_STATS_CLICK_WINDOW_MS = 3000;
 const VERIFICATION_STATS_ENDPOINT = "/api/auth/verification-stats";
 
-function preloadRoom(viewId) {
+function preloadRoom(viewId, options = {}) {
   const loader = roomLoaders[viewId];
   if (!loader) return Promise.resolve();
-  if (roomPreloadCache.has(viewId)) return roomPreloadCache.get(viewId);
-
-  const preload = loader()
-    .then((module) => {
-      if (typeof module.preloadRoomAssets === "function") return module.preloadRoomAssets();
-      return undefined;
-    })
-    .catch((error) => {
-      roomPreloadCache.delete(viewId);
+  if (!roomModulePreloadCache.has(viewId)) {
+    const modulePromise = loader().catch((error) => {
+      roomModulePreloadCache.delete(viewId);
       throw error;
     });
-  roomPreloadCache.set(viewId, preload);
-  return preload;
+    roomModulePreloadCache.set(viewId, modulePromise);
+  }
+
+  return roomModulePreloadCache.get(viewId).then((module) => {
+    if (typeof module.preloadRoomAssets === "function") return module.preloadRoomAssets(options);
+    return undefined;
+  });
+}
+
+export function preloadControlRoomView(viewId, options = {}) {
+  return preloadRoom(viewId, options);
 }
 
 function preloadInactiveRooms(activeViewId, views = commandViews) {
@@ -965,6 +968,10 @@ export function ControlRoom({
   roundVoteOutcomes,
   roundOutcomeSummary,
   previewVoteIssue,
+  ticketDataReady,
+  voteDataReady,
+  voteDataIssue,
+  votePoolReady,
   winnerRevealData,
   winnerRevealIssue,
   currentWinnerWalletAddress,
@@ -1057,6 +1064,7 @@ export function ControlRoom({
   const headerWalletActionable = authIdentityActionable || ticketSourceActionable;
   const HeaderWalletIdentity = headerWalletActionable ? "button" : "div";
   const headerTicketCount = toLedgerInteger(remainingRoundTickets);
+  const headerTicketLabel = ticketDataReady ? `${formatNumber(headerTicketCount)} ${t("common.tickets")}` : "—";
   const brandStatsClickRef = useRef({ count: 0, lastAt: 0, timerId: null });
   const [ticketSourceOpen, setTicketSourceOpen] = useState(false);
   const [xFollowPanelOpen, setXFollowPanelOpen] = useState(false);
@@ -1291,7 +1299,11 @@ export function ControlRoom({
             <span>{xFollowVerifyComplete ? t("xFollowGate.optionalComplete") : t("xFollowGate.optionalButton")}</span>
           </button>
         ) : null}
-        <section className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"} aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}>
+        <section
+          className={showAuthState ? "header-wallet header-wallet--auth" : "header-wallet"}
+          aria-label={showAuthState ? t("auth.accountAria") : t("vote.previewWallet")}
+          aria-busy={!ticketDataReady}
+        >
           <HeaderWalletIdentity
             className={headerWalletActionable ? "header-wallet__identity" : "header-wallet__identity is-static"}
             {...(headerWalletActionable ? {
@@ -1304,12 +1316,12 @@ export function ControlRoom({
             {showAuthState ? (
               <>
                 <span>{authWalletLinked ? compactAddress(authSession.walletAddress) : authSession?.authenticated ? t("auth.walletUnlinked") : t("auth.loginCta")}</span>
-                <strong>{authWalletLinked ? `${formatNumber(headerTicketCount)} ${t("common.tickets")}` : t("auth.loginDetail")}</strong>
+                <strong>{authWalletLinked ? headerTicketLabel : t("auth.loginDetail")}</strong>
               </>
             ) : (
               <>
                 <span>{compactAddress(activeEntry?.userAddress)}</span>
-                <strong>{formatNumber(headerTicketCount)} {t("common.tickets")}</strong>
+                <strong>{headerTicketLabel}</strong>
               </>
             )}
           </HeaderWalletIdentity>
@@ -1425,8 +1437,12 @@ export function ControlRoom({
               roundVoteOutcomes={displayedRoundVoteOutcomes}
               roundOutcomeSummary={displayedRoundOutcomeSummary}
               previewVoteIssue={previewVoteIssue}
-              voteActionBlocked={voteRequiresPreVoteGate}
-              voteActionBlockReason={voteActionBlockReason}
+              ticketDataReady={ticketDataReady}
+              voteDataReady={voteDataReady}
+              voteDataIssue={voteDataIssue}
+              votePoolReady={votePoolReady}
+              voteActionBlocked={!voteDataReady || voteRequiresPreVoteGate}
+              voteActionBlockReason={!voteDataReady ? voteDataIssue : voteActionBlockReason}
               authSession={authSession}
               authEndpointReady={authEndpointReady}
               onRequestLogin={onRequestLogin}

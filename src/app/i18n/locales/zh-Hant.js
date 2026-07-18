@@ -1161,6 +1161,7 @@ export const zhHantLocale = {
       "previewVoteIssue": "投票預覽 API 失敗（{message}）。目前不顯示已投結果。",
       "submitVoteIssue": "投票送出失敗（{message}）。",
       "invalidLedgerShape": "帳本摘要格式不正確",
+      "invalidPreviewVoteShape": "全站票池彙總格式不正確",
       "invalidMilestoneShape": "里程碑摘要格式不正確",
       "previewNotice": "目前顯示本地示意資料；正式版本會由伺服器票務帳本提供。"
     },

@@ -44,6 +44,7 @@ import {
 import { canonicalMatchId } from './official-match-identity.mjs'
 import { readVotePreview, readVoteState, submitVote } from './soccer-vote-store.mjs'
 import { createSqliteVoteStore } from './soccer-vote-store-sqlite.mjs'
+import { buildVoteTotalsPreview } from './vote-preview-summary.mjs'
 import { loadLocalEnvFiles } from './env-loader.mjs'
 import {
   appendVary,
@@ -3627,16 +3628,18 @@ const server = createServer(async (request, response) => {
       const matchResults = readMatchResultsSnapshot(matchResultsPath)
       const matches = await readRealtimeVoteMatches()
       const scope = String(url.searchParams.get('scope') || '').trim().toLowerCase()
-      const includeAllWallets = ['all', 'global', 'pool'].includes(scope)
+      const totalsOnly = ['summary', 'totals', 'pool-summary'].includes(scope)
+      const includeAllWallets = totalsOnly || ['all', 'global', 'pool'].includes(scope)
+      const preview = voteStore.readPreview({
+        walletAddress: includeAllWallets ? '' : url.searchParams.get('wallet') || session?.walletAddress || '',
+        matchResults,
+        matches,
+      })
       sendJson(
         request,
         response,
         200,
-        voteStore.readPreview({
-          walletAddress: includeAllWallets ? '' : url.searchParams.get('wallet') || session?.walletAddress || '',
-          matchResults,
-          matches,
-        }),
+        totalsOnly ? buildVoteTotalsPreview(preview) : preview,
         { 'cache-control': 'no-store' },
       )
     } catch (error) {

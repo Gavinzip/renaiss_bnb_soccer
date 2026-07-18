@@ -33,8 +33,8 @@ const matchPhaseOrder = {
   open: 2,
 };
 
-export function preloadRoomAssets() {
-  return Promise.resolve();
+export function preloadRoomAssets({ roundId } = {}) {
+  return roundId ? preloadRoundPrizeImages(roundId) : Promise.resolve();
 }
 
 function clampTicketAmount(value, maxTickets) {
@@ -658,6 +658,9 @@ export function VoteRoom({
   roundVoteOutcomes = [],
   roundOutcomeSummary,
   previewVoteIssue = "",
+  voteDataReady = true,
+  voteDataIssue = "",
+  votePoolReady = true,
   voteActionBlocked = false,
   voteActionBlockReason = "",
   authSession,
@@ -716,6 +719,21 @@ export function VoteRoom({
     selectedMatchInRound,
   ]);
 
+  if (!voteDataReady) {
+    return (
+      <section
+        className="vote-room vote-room-groups is-match-prize-list"
+        aria-label={t("vote.roomAria")}
+        aria-busy={!voteDataIssue}
+      >
+        <p className="vote-issue" role={voteDataIssue ? "alert" : "status"}>
+          <AlertTriangle size={16} strokeWidth={2.35} />
+          {voteDataIssue || t("common.loadingCampaign")}
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section
       className="vote-room vote-room-groups is-match-prize-list"
@@ -758,6 +776,7 @@ export function VoteRoom({
             selectedTeamId={selectedTeamId}
             roundAllocations={roundAllocations}
             roundVoteOutcomes={roundVoteOutcomes}
+            votePoolReady={votePoolReady}
             onSelectMatch={onSelectMatch}
             onSelectTeam={onSelectTeam}
             copy={copy}
