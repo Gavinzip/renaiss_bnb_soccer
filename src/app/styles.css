@@ -26645,9 +26645,9 @@ body {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(260px, 0.38fr) minmax(560px, 0.62fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: clamp(30px, 4.8vw, 84px);
+  gap: 0;
   width: min(100% - clamp(36px, 7vw, 120px), 1440px);
   min-height: 100dvh;
   margin: 0 auto;
@@ -26658,6 +26658,16 @@ body {
   transition:
     opacity 760ms cubic-bezier(0.22, 1, 0.36, 1) 240ms,
     transform 900ms cubic-bezier(0.22, 1, 0.36, 1) 240ms;
+}
+
+.winner-stage-primary {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.38fr) minmax(560px, 0.62fr);
+  align-items: start;
+  gap: clamp(30px, 4.8vw, 84px);
+  min-width: 0;
+  min-height: calc(100dvh - clamp(160px, 18vh, 210px) - clamp(66px, 9vh, 112px));
+  scroll-margin-top: 112px;
 }
 
 .winners-room.is-reveal .winner-stage-reveal {
@@ -26672,6 +26682,64 @@ body {
   align-content: start;
   gap: clamp(18px, 2.4vw, 30px);
   min-width: 0;
+}
+
+.winner-final-draw-zone {
+  position: relative;
+  display: grid;
+  width: min(100%, 1160px);
+  justify-self: center;
+  margin-top: clamp(40px, 7vh, 88px);
+  padding: clamp(34px, 5vw, 64px) 0 clamp(12px, 2vh, 24px);
+  border-top: 1px solid rgba(240, 209, 139, 0.2);
+}
+
+.winner-final-draw-zone::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: min(180px, 28%);
+  height: 1px;
+  background: rgba(240, 209, 139, 0.72);
+  box-shadow: 0 0 24px rgba(240, 209, 139, 0.18);
+}
+
+.winner-final-presentation-notice {
+  display: grid;
+  gap: 6px;
+  border-left: 2px solid rgba(240, 209, 139, 0.58);
+  padding: 2px 0 2px 13px;
+}
+
+.winner-final-presentation-notice > span,
+.winner-proof--preview > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 241, 196, 0.94);
+}
+
+.winner-final-presentation-notice strong,
+.winner-proof--preview strong {
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.winner-final-presentation-notice p,
+.winner-proof--preview p {
+  margin: 0;
+  color: rgba(247, 243, 232, 0.54);
+  font-size: 0.72rem;
+  font-weight: 720;
+  line-height: 1.5;
+}
+
+.winner-proof--preview {
+  gap: 7px;
+  margin-top: -4px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(237, 213, 156, 0.16);
 }
 
 .winner-current-user-callout {
@@ -26692,6 +26760,107 @@ body {
     0 0 28px rgba(245, 93, 162, 0.08);
   font-size: 12px;
   font-weight: 900;
+}
+
+.winner-final-draw {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(240, 209, 139, 0.28);
+  border-radius: 20px;
+  background: rgba(8, 10, 11, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 22px 60px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(20px) saturate(1.12);
+}
+
+.winner-final-draw__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: clamp(16px, 2.2vw, 22px);
+}
+
+.winner-final-draw__copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.winner-final-draw__copy small,
+.winner-final-draw__copy strong,
+.winner-final-draw__copy p {
+  margin: 0;
+}
+
+.winner-final-draw__copy small {
+  color: rgba(240, 209, 139, 0.78);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.winner-final-draw__copy strong {
+  color: rgba(255, 249, 230, 0.96);
+  font-size: clamp(1rem, 1.5vw, 1.2rem);
+  font-weight: 920;
+  line-height: 1.2;
+}
+
+.winner-final-draw__copy p,
+.winner-final-draw__loading {
+  color: rgba(245, 246, 241, 0.56);
+  font-size: 0.76rem;
+  font-weight: 740;
+  line-height: 1.5;
+}
+
+.winner-final-draw__head button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(240, 209, 139, 0.38);
+  border-radius: 999px;
+  padding: 9px 14px;
+  color: rgba(255, 247, 222, 0.94);
+  background: rgba(240, 209, 139, 0.11);
+  font-size: 0.74rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.winner-final-draw__head button:hover,
+.winner-final-draw__head button:focus-visible {
+  border-color: rgba(240, 209, 139, 0.66);
+  background: rgba(240, 209, 139, 0.18);
+}
+
+.winner-final-draw__head button svg:last-child {
+  transition: transform 180ms ease;
+}
+
+.winner-final-draw.is-open .winner-final-draw__head button svg:last-child {
+  transform: rotate(180deg);
+}
+
+.winner-final-draw__panel {
+  border-top: 1px solid rgba(245, 246, 241, 0.09);
+  padding: 0 clamp(16px, 2.2vw, 22px) clamp(16px, 2.2vw, 22px);
+}
+
+.winner-final-draw__panel .draw-operator-wallet {
+  border-top: 0;
+  padding-top: clamp(16px, 2vw, 22px);
+}
+
+.winner-final-draw__loading {
+  margin: 0;
+  padding-top: 18px;
 }
 
 .winner-reveal-list {
@@ -27444,6 +27613,11 @@ body {
     padding-top: 170px;
   }
 
+  .winner-stage-primary {
+    grid-template-columns: 1fr;
+    align-content: end;
+  }
+
   .winners-room.is-reveal .winner-stage-reveal-bg {
     top: 136px;
     bottom: auto;
@@ -27618,6 +27792,24 @@ body {
     bottom: 18px;
   }
 
+  .winner-final-draw__head {
+    grid-template-columns: 1fr;
+  }
+
+  .winner-final-draw__head button {
+    width: 100%;
+  }
+
+  .winner-final-draw .draw-operator-wallet dl,
+  .winner-final-draw .draw-operator-wallet__run-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .winner-final-draw .draw-operator-wallet dl div + div {
+    border-top: 1px solid rgba(245, 246, 241, 0.08);
+    border-left: 0;
+  }
+
   .winner-proof__toggle {
     grid-template-columns: auto minmax(0, auto) auto;
   }
@@ -27633,11 +27825,15 @@ body {
 
 @media (min-width: 720px) and (max-width: 980px) {
   .winner-stage-reveal {
-    grid-template-columns: minmax(210px, 0.36fr) minmax(0, 0.64fr);
-    align-items: start;
-    gap: clamp(22px, 4vw, 42px);
     width: min(calc(100% - 48px), 920px);
     padding: 168px 0 92px;
+  }
+
+  .winner-stage-primary {
+    grid-template-columns: minmax(210px, 0.36fr) minmax(0, 0.64fr);
+    align-items: start;
+    align-content: start;
+    gap: clamp(22px, 4vw, 42px);
   }
 
   .winner-stage-board {
@@ -27713,6 +27909,10 @@ body {
     align-content: start;
     padding-top: clamp(380px, 50vh, 500px);
     padding-bottom: 98px;
+  }
+
+  .winner-stage-primary {
+    min-height: calc(100dvh - clamp(380px, 50vh, 500px) - 98px);
   }
 
   .winner-reveal-list,
@@ -28070,8 +28270,16 @@ body {
     padding-bottom: 116px !important;
   }
 
+  .winner-stage-primary {
+    min-height: calc(100dvh - 86px - clamp(334px, 42vh, 392px) - 116px);
+  }
+
   .winner-stage-reveal.has-prize-card {
     padding-top: clamp(132px, 19vh, 156px) !important;
+  }
+
+  .winner-stage-reveal.has-prize-card .winner-stage-primary {
+    min-height: calc(100dvh - 86px - clamp(132px, 19vh, 156px) - 116px);
   }
 
   .winner-stage-board {
@@ -28098,6 +28306,11 @@ body {
 
   .winner-stage-reveal {
     padding-top: 128px !important;
+  }
+
+  .winner-stage-primary,
+  .winner-stage-reveal.has-prize-card .winner-stage-primary {
+    min-height: calc(100dvh - 86px - 128px - 116px);
   }
 
   .winner-reveal-list,
@@ -32626,4 +32839,797 @@ body {
   position: absolute !important;
   bottom: calc(100% + 12px) !important;
   left: 0 !important;
+}
+
+/* Final draw operator: focused mode control, wallet chooser, and isolated demo reveal. */
+.winner-final-draw__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.winner-final-draw__controls .winner-final-draw__preview {
+  border-color: rgba(245, 246, 241, 0.14);
+  color: rgba(245, 246, 241, 0.78);
+  background: rgba(245, 246, 241, 0.035);
+}
+
+.winner-final-draw__controls .winner-final-draw__preview:not(:disabled):hover,
+.winner-final-draw__controls .winner-final-draw__preview:not(:disabled):focus-visible {
+  border-color: rgba(240, 209, 139, 0.46);
+  color: rgba(255, 244, 211, 0.94);
+  background: rgba(240, 209, 139, 0.08);
+}
+
+.winner-final-draw__controls .winner-final-draw__preview:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.winner-final-draw__mode {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(245, 246, 241, 0.12);
+  border-radius: 14px;
+  padding: 7px 11px;
+  color: rgba(240, 209, 139, 0.9);
+  background: rgba(245, 246, 241, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.winner-final-draw__mode > span {
+  display: grid;
+  gap: 2px;
+}
+
+.winner-final-draw__mode small,
+.winner-final-draw__mode strong {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.winner-final-draw__mode small {
+  color: rgba(245, 246, 241, 0.44);
+  font-size: 0.61rem;
+  font-weight: 800;
+}
+
+.winner-final-draw__mode strong {
+  color: rgba(255, 244, 211, 0.92);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.winner-final-draw.is-mode-simulation {
+  border-color: rgba(240, 209, 139, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 28px 76px rgba(0, 0, 0, 0.3);
+}
+
+.draw-operator-wallet__head {
+  padding-bottom: 2px;
+}
+
+.draw-operator-wallet__head > strong {
+  border: 1px solid rgba(240, 209, 139, 0.22);
+  border-radius: 12px;
+  padding: 6px 9px;
+  color: rgba(255, 238, 194, 0.9) !important;
+  background: rgba(240, 209, 139, 0.06);
+  font-family: inherit !important;
+  font-size: 0.7rem !important;
+}
+
+.draw-operator-wallet__toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 10px;
+}
+
+.draw-operator-wallet__mode-switch,
+.draw-operator-wallet__mode-static,
+.draw-operator-wallet__wallet-launch,
+.draw-operator-wallet__wallet-static {
+  min-width: 0;
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid rgba(245, 246, 241, 0.12);
+  border-radius: 16px;
+  padding: 11px 13px;
+  color: rgba(245, 246, 241, 0.88);
+  background: rgba(245, 246, 241, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  text-align: left;
+}
+
+.draw-operator-wallet__mode-switch,
+.draw-operator-wallet__wallet-launch {
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+
+.draw-operator-wallet__mode-switch:hover,
+.draw-operator-wallet__mode-switch:focus-visible,
+.draw-operator-wallet__wallet-launch:hover,
+.draw-operator-wallet__wallet-launch:focus-visible {
+  border-color: rgba(240, 209, 139, 0.38);
+  background: rgba(240, 209, 139, 0.065);
+  outline: none;
+}
+
+.draw-operator-wallet__mode-switch:active,
+.draw-operator-wallet__wallet-launch:active {
+  transform: translateY(1px) scale(0.995);
+}
+
+.draw-operator-wallet__mode-switch:disabled,
+.draw-operator-wallet__wallet-launch:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.draw-operator-wallet__mode-icon,
+.draw-operator-wallet__wallet-icon,
+.draw-wallet-dialog__provider-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(240, 209, 139, 0.22);
+  border-radius: 12px;
+  color: rgba(240, 209, 139, 0.92);
+  background: rgba(240, 209, 139, 0.07);
+}
+
+.draw-operator-wallet__mode-switch > span:nth-child(2),
+.draw-operator-wallet__mode-static > span,
+.draw-operator-wallet__wallet-launch > span:nth-child(2),
+.draw-operator-wallet__wallet-static > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.draw-operator-wallet__toolbar small {
+  overflow: hidden;
+  color: rgba(245, 246, 241, 0.44);
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draw-operator-wallet__toolbar strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 249, 231, 0.94);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draw-operator-wallet__mode-next {
+  min-width: 98px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 7px;
+  align-items: center;
+  border-left: 1px solid rgba(245, 246, 241, 0.09);
+  padding-left: 11px;
+}
+
+.draw-operator-wallet__mode-next small {
+  grid-column: 1 / -1;
+}
+
+.draw-operator-wallet__mode-next strong {
+  color: rgba(240, 209, 139, 0.82);
+  font-size: 0.67rem;
+}
+
+.draw-operator-wallet__mode-switch.is-simulation {
+  border-color: rgba(240, 209, 139, 0.32);
+  background: rgba(240, 209, 139, 0.075);
+}
+
+.draw-operator-wallet__wallet-static {
+  grid-template-columns: auto minmax(0, 1fr);
+  color: rgba(240, 209, 139, 0.86);
+}
+
+.draw-operator-wallet__wallet-static > svg {
+  margin-left: 9px;
+}
+
+.draw-wallet-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(3, 5, 6, 0.76);
+  backdrop-filter: blur(16px) saturate(0.86);
+  -webkit-backdrop-filter: blur(16px) saturate(0.86);
+}
+
+.draw-wallet-dialog__surface {
+  width: min(100%, 480px);
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(240, 209, 139, 0.28);
+  border-radius: 20px;
+  padding: 18px;
+  color: rgba(245, 246, 241, 0.9);
+  background: rgba(10, 12, 12, 0.97);
+  box-shadow:
+    0 34px 100px rgba(0, 0, 0, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.draw-wallet-dialog__surface > header,
+.draw-wallet-dialog__surface > header > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.draw-wallet-dialog__surface > header > span {
+  justify-content: flex-start;
+  color: rgba(240, 209, 139, 0.9);
+}
+
+.draw-wallet-dialog__surface > header button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(245, 246, 241, 0.12);
+  border-radius: 12px;
+  color: rgba(245, 246, 241, 0.78);
+  background: rgba(245, 246, 241, 0.04);
+}
+
+.draw-wallet-dialog__surface > p,
+.draw-wallet-dialog__empty p {
+  margin: 0;
+  color: rgba(245, 246, 241, 0.54);
+  font-size: 0.76rem;
+  font-weight: 730;
+  line-height: 1.5;
+}
+
+.draw-wallet-dialog__providers {
+  display: grid;
+  gap: 8px;
+}
+
+.draw-wallet-dialog__providers > button,
+.draw-wallet-dialog__connected {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid rgba(245, 246, 241, 0.11);
+  border-radius: 15px;
+  padding: 10px 12px;
+  color: rgba(245, 246, 241, 0.88);
+  background: rgba(245, 246, 241, 0.035);
+  text-align: left;
+}
+
+.draw-wallet-dialog__providers > button:hover,
+.draw-wallet-dialog__providers > button:focus-visible {
+  border-color: rgba(240, 209, 139, 0.38);
+  background: rgba(240, 209, 139, 0.065);
+  outline: none;
+}
+
+.draw-wallet-dialog__providers > button > span:nth-child(2),
+.draw-wallet-dialog__connected > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.draw-wallet-dialog__providers strong,
+.draw-wallet-dialog__connected strong {
+  overflow: hidden;
+  color: rgba(255, 249, 231, 0.94);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draw-wallet-dialog__providers small,
+.draw-wallet-dialog__connected small,
+.draw-wallet-dialog__connected code {
+  overflow: hidden;
+  color: rgba(245, 246, 241, 0.46);
+  font-size: 0.66rem;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draw-wallet-dialog__connected {
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-color: rgba(240, 209, 139, 0.2);
+  background: rgba(240, 209, 139, 0.045);
+}
+
+.draw-wallet-dialog__connected button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(245, 246, 241, 0.12);
+  border-radius: 11px;
+  padding: 7px 10px;
+  color: rgba(245, 246, 241, 0.72);
+  background: rgba(245, 246, 241, 0.035);
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.draw-wallet-dialog__empty {
+  min-height: 150px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border: 1px dashed rgba(245, 246, 241, 0.14);
+  border-radius: 15px;
+  padding: 20px;
+  color: rgba(240, 209, 139, 0.7);
+  text-align: center;
+}
+
+.draw-simulation {
+  display: grid;
+  gap: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(240, 209, 139, 0.22);
+  border-radius: 18px;
+  padding: clamp(14px, 2vw, 20px);
+  background: rgba(240, 209, 139, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.draw-simulation__head,
+.draw-simulation__head > span,
+.draw-simulation footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.draw-simulation__head > span {
+  justify-content: flex-start;
+  color: rgba(255, 244, 211, 0.94);
+}
+
+.draw-simulation__head em {
+  border: 1px solid rgba(240, 209, 139, 0.24);
+  border-radius: 10px;
+  padding: 5px 8px;
+  color: rgba(240, 209, 139, 0.82);
+  background: rgba(240, 209, 139, 0.055);
+  font-size: 0.64rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.draw-simulation__stages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.draw-simulation__stages li {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(245, 246, 241, 0.09);
+  padding: 8px 0;
+  color: rgba(245, 246, 241, 0.4);
+}
+
+.draw-simulation__stages li > span {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(245, 246, 241, 0.12);
+  border-radius: 8px;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+.draw-simulation__stages li > strong {
+  overflow: hidden;
+  font-size: 0.69rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draw-simulation__stages li.is-active {
+  border-bottom-color: rgba(240, 209, 139, 0.5);
+  color: rgba(255, 239, 199, 0.9);
+}
+
+.draw-simulation__stages li.is-active > span {
+  border-color: rgba(240, 209, 139, 0.36);
+  background: rgba(240, 209, 139, 0.1);
+}
+
+.draw-simulation__stage {
+  position: relative;
+  min-height: 270px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(245, 246, 241, 0.09);
+  border-radius: 16px;
+  padding: 18px;
+  background: rgba(5, 7, 8, 0.64);
+}
+
+.draw-simulation__idle,
+.draw-simulation__result {
+  width: min(100%, 620px);
+  display: grid;
+  grid-template-columns: minmax(120px, 0.42fr) minmax(0, 0.58fr);
+  align-items: center;
+  gap: clamp(16px, 3vw, 30px);
+}
+
+.draw-simulation__prize-preview,
+.draw-simulation__result-image {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 190px;
+}
+
+.draw-simulation__prize-preview img,
+.draw-simulation__result-image img {
+  width: min(100%, 170px);
+  max-height: 210px;
+  object-fit: contain;
+  border-radius: 10px;
+  filter: drop-shadow(0 24px 32px rgba(0, 0, 0, 0.42));
+}
+
+.draw-simulation__prize-preview img {
+  opacity: 0.34;
+  filter: grayscale(0.6) blur(1px) drop-shadow(0 24px 32px rgba(0, 0, 0, 0.38));
+}
+
+.draw-simulation__prize-preview > svg {
+  position: absolute;
+  color: rgba(240, 209, 139, 0.9);
+}
+
+.draw-simulation__idle > span:last-child,
+.draw-simulation__result-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.draw-simulation__idle small,
+.draw-simulation__result-copy > small,
+.draw-simulation__drawing small {
+  color: rgba(240, 209, 139, 0.78);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.draw-simulation__idle strong,
+.draw-simulation__result-copy > strong,
+.draw-simulation__drawing strong {
+  color: rgba(255, 249, 231, 0.96);
+  font-size: clamp(1.2rem, 2.7vw, 2rem);
+  font-weight: 920;
+  line-height: 1.08;
+}
+
+.draw-simulation__drawing {
+  width: min(100%, 540px);
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.draw-simulation__orb {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(240, 209, 139, 0.34);
+  border-radius: 50%;
+  color: rgba(255, 238, 194, 0.94);
+  background: rgba(240, 209, 139, 0.07);
+  box-shadow:
+    0 0 0 9px rgba(240, 209, 139, 0.025),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.draw-simulation__reel {
+  width: min(100%, 330px);
+  height: 38px;
+  overflow: hidden;
+  border: 1px solid rgba(245, 246, 241, 0.1);
+  border-radius: 11px;
+  background: rgba(245, 246, 241, 0.03);
+}
+
+.draw-simulation__reel code {
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: rgba(245, 246, 241, 0.68);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.73rem;
+  font-weight: 820;
+}
+
+.draw-simulation__result {
+  position: relative;
+}
+
+.draw-simulation__result-copy small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.draw-simulation__result-copy dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 4px 0 0;
+  border: 1px solid rgba(245, 246, 241, 0.09);
+  border-radius: 13px;
+  overflow: hidden;
+}
+
+.draw-simulation__result-copy dl div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+}
+
+.draw-simulation__result-copy dl div + div {
+  border-left: 1px solid rgba(245, 246, 241, 0.08);
+}
+
+.draw-simulation__result-copy dt,
+.draw-simulation__result-copy dd {
+  margin: 0;
+}
+
+.draw-simulation__result-copy dt {
+  color: rgba(245, 246, 241, 0.42);
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.draw-simulation__result-copy dd {
+  overflow: hidden;
+  color: rgba(255, 240, 203, 0.9);
+  font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  font-size: 0.71rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draw-simulation__celebration {
+  position: absolute;
+  inset: 50%;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.draw-simulation__celebration i {
+  --particle: 0;
+  position: absolute;
+  width: 3px;
+  height: 12px;
+  border-radius: 3px;
+  background: rgba(240, 209, 139, 0.86);
+  opacity: 0;
+}
+
+.draw-simulation footer {
+  align-items: center;
+}
+
+.draw-simulation footer p {
+  max-width: 48ch;
+  color: rgba(245, 246, 241, 0.45);
+  font-size: 0.7rem;
+}
+
+.draw-simulation footer button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(240, 209, 139, 0.46);
+  border-radius: 14px;
+  padding: 9px 14px;
+  color: rgba(23, 20, 12, 0.96);
+  background: rgba(240, 209, 139, 0.94);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  font-size: 0.75rem;
+  font-weight: 920;
+  cursor: pointer;
+}
+
+.draw-simulation footer button:hover,
+.draw-simulation footer button:focus-visible {
+  background: rgba(255, 229, 168, 0.98);
+  outline: none;
+}
+
+.draw-simulation footer button:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.draw-simulation footer button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .draw-simulation.is-mixing .draw-simulation__orb,
+  .draw-simulation.is-revealing .draw-simulation__orb {
+    animation: draw-demo-orb 880ms cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  }
+
+  .draw-simulation.is-mixing .draw-simulation__reel code,
+  .draw-simulation.is-revealing .draw-simulation__reel code {
+    animation: draw-demo-reel 760ms cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  }
+
+  .draw-simulation__celebration i {
+    animation: draw-demo-particle 940ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--particle) * 34ms) both;
+  }
+}
+
+@keyframes draw-demo-orb {
+  from {
+    transform: rotate(-9deg) scale(0.96);
+  }
+  to {
+    transform: rotate(12deg) scale(1.04);
+  }
+}
+
+@keyframes draw-demo-reel {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-152px);
+  }
+}
+
+@keyframes draw-demo-particle {
+  0% {
+    opacity: 0;
+    transform: rotate(calc(var(--particle) * 30deg)) translateY(0) scale(0.4);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--particle) * 30deg)) translateY(-105px) scale(0.75);
+  }
+}
+
+@media (max-width: 720px) {
+  .winner-final-draw-zone {
+    margin-top: 32px;
+    padding-top: 32px;
+  }
+
+  .winner-final-draw__controls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .winner-final-draw__mode {
+    justify-content: flex-start;
+  }
+
+  .draw-operator-wallet__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .draw-operator-wallet__mode-next {
+    min-width: 88px;
+  }
+
+  .draw-simulation__stages {
+    grid-template-columns: 1fr;
+  }
+
+  .draw-simulation__idle,
+  .draw-simulation__result {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .draw-simulation__prize-preview,
+  .draw-simulation__result-image {
+    min-height: 150px;
+  }
+
+  .draw-simulation__result-copy small {
+    justify-content: center;
+  }
+
+  .draw-simulation footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .draw-simulation footer button {
+    width: 100%;
+  }
+
+  .draw-wallet-dialog {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .draw-wallet-dialog__surface {
+    max-height: min(82dvh, 680px);
+    overflow: auto;
+    border-radius: 18px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .draw-wallet-dialog,
+  .winner-final-draw {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .draw-wallet-dialog__surface,
+  .winner-final-draw {
+    background: rgba(10, 12, 12, 0.98);
+  }
 }

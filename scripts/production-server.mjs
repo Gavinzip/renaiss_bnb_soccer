@@ -1708,6 +1708,32 @@ function pendingDrawWinnersSnapshot() {
   }
 }
 
+function drawWinnersFreshnessPayload() {
+  if (!drawWinnersPath || !existsSync(drawWinnersPath)) {
+    return {
+      ok: true,
+      exists: false,
+      version: "missing",
+      generatedAt: null,
+      drawId: null,
+      roundId: null,
+      sourceStatus: "pending",
+    }
+  }
+
+  const stats = statSync(drawWinnersPath)
+  const snapshot = readDrawWinnersSnapshotFile(drawWinnersPath) || pendingDrawWinnersSnapshot()
+  return {
+    ok: true,
+    exists: true,
+    version: `${Math.floor(stats.mtimeMs)}-${stats.size}`,
+    generatedAt: snapshot.generatedAt || null,
+    drawId: snapshot.drawId || snapshot.draw_id || null,
+    roundId: drawWinnerSnapshotRoundId(snapshot) || null,
+    sourceStatus: snapshot.sourceStatus || null,
+  }
+}
+
 function drawWinnerSnapshotRoundId(payload) {
   return safeDrawLedgerRoundId(
     payload?.drawRoundId
@@ -3599,6 +3625,23 @@ const server = createServer(async (request, response) => {
         response,
         503,
         { error: error instanceof Error ? error.message : 'Could not read match results.' },
+        { 'cache-control': 'no-store' },
+      )
+    }
+    return
+  }
+
+  if (url.pathname === '/api/draw-winners/freshness') {
+    try {
+      sendJson(request, response, 200, drawWinnersFreshnessPayload(), {
+        'cache-control': 'no-store',
+      })
+    } catch (error) {
+      sendJson(
+        request,
+        response,
+        503,
+        { ok: false, error: error instanceof Error ? error.message : 'Could not read draw winner freshness.' },
         { 'cache-control': 'no-store' },
       )
     }

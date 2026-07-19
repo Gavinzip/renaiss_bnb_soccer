@@ -1,9 +1,11 @@
 import {
   AlertTriangle,
   Award,
+  ChevronRight,
   CheckCircle2,
   CircleDashed,
   Clock3,
+  Dices,
   LockKeyhole,
   Loader2,
   Network,
@@ -19,16 +21,44 @@ import { compactAddress, formatNumber, formatPercent } from "../../data/ticketMa
 import { getMatchPrizeImage, preloadRoundPrizeImages } from "../../data/matchPrizeImages";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { fetchJsonWithTimeout } from "../../utils/httpClient";
-import { getLegacyWalletProviders, normalizeWalletProviders } from "../../utils/walletProviders";
+import {
+  getLegacyWalletProviders,
+  normalizeWalletProviders,
+} from "../../utils/walletProviders";
+import {
+  DrawSimulationPreview,
+  WalletProviderDialog,
+} from "./FinalDrawOperatorExperience";
 
 const drawStepIds = ["results", "eligible", "snapshot", "reveal"];
 const fallbackDrawNetworks = [
   { key: "mainnet", label: "BNB Chain", chainId: "56", chainIdHex: "0x38" },
   { key: "testnet", label: "BNB Testnet", chainId: "97", chainIdHex: "0x61" },
 ];
-const defaultDrawNetworkKey = normalizeDrawNetworkKey(import.meta.env.VITE_DRAW_NETWORK || "mainnet");
+const drawExecutionModes = ["mainnet", "testnet", "simulation"];
+const defaultDrawNetworkKey = normalizeDrawNetworkKey(
+  import.meta.env.VITE_DRAW_NETWORK || "mainnet"
+);
 const drawAdminCheckTimeoutMs = 60000;
 const drawAdminBroadcastTimeoutMs = 14 * 60 * 1000;
+function normalizeDrawExecutionMode(value) {
+  const mode = String(value || "")
+    .trim()
+    .toLowerCase();
+  return drawExecutionModes.includes(mode) ? mode : "mainnet";
+}
+
+function drawExecutionModeLabel(mode, t) {
+  return t(
+    `draw.operatorMode${
+      normalizeDrawExecutionMode(mode) === "testnet"
+        ? "Testnet"
+        : normalizeDrawExecutionMode(mode) === "simulation"
+        ? "Simulation"
+        : "Mainnet"
+    }`
+  );
+}
 
 function drawAdminEndpoint(path) {
   const apiOrigin = String(import.meta.env.VITE_DRAW_ADMIN_API_ORIGIN || import.meta.env.VITE_LOCAL_API_ORIGIN || "").replace(/\/$/, "");
@@ -506,7 +536,11 @@ function chainLabel(chainId, t) {
 }
 
 function drawNetworkLabel(network, t) {
-  return network?.label || chainLabel(network?.chainIdHex || network?.chainId, t);
+  const networkKey = normalizeDrawNetworkKey(
+    network?.key || network?.chainIdHex || network?.chainId
+  );
+  if (networkKey === "testnet") return t("draw.operatorNetworkTestnet");
+  return t("draw.operatorNetworkMainnet");
 }
 
 function drawNetworkChainId(network) {
@@ -721,7 +755,15 @@ function drawAdminReadinessItems(adminStatus, roundId, t) {
   ];
 }
 
-function DrawOperatorWallet({ activeDraw, t }) {
+export function DrawOperatorWallet({
+  activeDraw,
+  t,
+  canSwitchNetwork = false,
+  executionMode = "mainnet",
+  onExecutionModeChange,
+  onSimulationPhaseChange,
+  onPresentationReady,
+}) {
   const [walletProviders, setWalletProviders] = useState([]);
   const [walletDetecting, setWalletDetecting] = useState(false);
   const [busyAction, setBusyAction] = useState("");
@@ -729,7 +771,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
   const [adminStatus, setAdminStatus] = useState(null);
   const [adminStatusIssue, setAdminStatusIssue] = useState("");
   const [runResult, setRunResult] = useState(null);
-  const [selectedNetworkKey, setSelectedNetworkKey] = useState(defaultDrawNetworkKey);
+  const [walletDialogOpen, setWalletDialogOpen] = useState(false);
   const [redrawEnabled, setRedrawEnabled] = useState(false);
   const [redrawAttempt, setRedrawAttempt] = useState(1);
   const [activeRun, setActiveRun] = useState(null);
@@ -741,6 +783,12 @@ function DrawOperatorWallet({ activeDraw, t }) {
     provider: null,
   });
   const connected = Boolean(connectedWallet.address);
+  const activeExecutionMode = canSwitchNetwork
+    ? normalizeDrawExecutionMode(executionMode)
+    : "mainnet";
+  const simulationMode = activeExecutionMode === "simulation";
+  const selectedNetworkKey =
+    activeExecutionMode === "testnet" ? "testnet" : "mainnet";
   const sourceRoundId = activeDraw.id;
   const drawRoundId = drawRoundIdFor(sourceRoundId, redrawEnabled, redrawAttempt);
   const redrawActive = drawRoundId !== sourceRoundId;
@@ -824,6 +872,20 @@ function DrawOperatorWallet({ activeDraw, t }) {
   }, [sourceRoundId]);
 
   useEffect(() => {
+    if (
+      !canSwitchNetwork &&
+      normalizeDrawExecutionMode(executionMode) !== "mainnet"
+    ) {
+      onExecutionModeChange?.("mainnet");
+    }
+  }, [canSwitchNetwork, executionMode, onExecutionModeChange]);
+
+  useEffect(() => {
+    if (simulationMode) {
+      setAdminStatus(null);
+      setAdminStatusIssue("");
+      return undefined;
+    }
     let active = true;
     fetchJsonWithTimeout(drawAdminStatusEndpoint(selectedNetworkKey, sourceRoundId, drawRoundId), {
       timeoutMs: 10000,
@@ -841,24 +903,40 @@ function DrawOperatorWallet({ activeDraw, t }) {
     return () => {
       active = false;
     };
-  }, [drawRoundId, selectedNetworkKey, sourceRoundId, t]);
+  }, [drawRoundId, selectedNetworkKey, simulationMode, sourceRoundId, t]);
 
   useEffect(() => {
-    if (!busyAction && !adminStatus?.running && activeRun?.status !== "running") return undefined;
+    if (
+      simulationMode ||
+      (!busyAction && !adminStatus?.running && activeRun?.status !== "running")
+    )
+      return undefined;
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [activeRun?.status, adminStatus?.running, busyAction]);
+  }, [activeRun?.status, adminStatus?.running, busyAction, simulationMode]);
 
   useEffect(() => {
-    if (!adminStatus?.running && activeRun?.status !== "running") return undefined;
+    if (
+      simulationMode ||
+      (!adminStatus?.running && activeRun?.status !== "running")
+    )
+      return undefined;
     refreshAdminStatus();
     const timer = window.setInterval(() => {
       refreshAdminStatus();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [activeRun?.status, adminStatus?.running, drawRoundId, selectedNetworkKey, sourceRoundId]);
+  }, [
+    activeRun?.status,
+    adminStatus?.running,
+    drawRoundId,
+    selectedNetworkKey,
+    simulationMode,
+    sourceRoundId,
+  ]);
 
   async function refreshAdminStatus() {
+    if (simulationMode) return null;
     try {
       const { payload } = await fetchJsonWithTimeout(drawAdminStatusEndpoint(selectedNetworkKey, sourceRoundId, drawRoundId), {
         timeoutMs: 10000,
@@ -876,7 +954,7 @@ function DrawOperatorWallet({ activeDraw, t }) {
     setIssue("");
     if (!walletProvider?.provider?.request) {
       setIssue(t("draw.operatorWalletMissing"));
-      return;
+      return false;
     }
 
     setBusyAction(`connect:${walletProvider.id}`);
@@ -891,11 +969,19 @@ function DrawOperatorWallet({ activeDraw, t }) {
         label: walletProvider.label,
         provider: walletProvider.provider,
       });
+      return true;
     } catch (error) {
-      setIssue(error instanceof Error ? error.message : t("draw.operatorWalletFailed"));
+      setIssue(
+        error instanceof Error ? error.message : t("draw.operatorWalletFailed")
+      );
+      return false;
     } finally {
       setBusyAction("");
     }
+  }
+
+  async function chooseDrawWallet(walletProvider) {
+    if (await connectDrawWallet(walletProvider)) setWalletDialogOpen(false);
   }
 
   function disconnectDrawWallet() {
@@ -977,9 +1063,12 @@ function DrawOperatorWallet({ activeDraw, t }) {
     return true;
   }
 
-  function selectDrawNetwork(networkKey) {
-    if (busyAction || adminStatus?.running) return;
-    setSelectedNetworkKey(normalizeDrawNetworkKey(networkKey));
+  function cycleExecutionMode() {
+    if (!canSwitchNetwork || busyAction || adminStatus?.running) return;
+    const currentIndex = drawExecutionModes.indexOf(activeExecutionMode);
+    const nextMode =
+      drawExecutionModes[(currentIndex + 1) % drawExecutionModes.length];
+    onExecutionModeChange?.(nextMode);
     setIssue("");
     setRunResult(null);
     setActiveRun(null);
@@ -1199,14 +1288,19 @@ function DrawOperatorWallet({ activeDraw, t }) {
       await refreshAdminStatus();
       finishOperatorRun(payload);
       if (payload?.ok && (broadcast || payload?.result?.winnersOut) && typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("renaiss:draw-winners-updated", {
-          detail: {
-            roundId,
-            drawRoundId,
-            action,
-            generatedAt: payload?.result?.generatedAt || new Date().toISOString(),
-          },
-        }));
+        if (activeExecutionMode === "mainnet") {
+          window.dispatchEvent(new CustomEvent("renaiss:draw-winners-updated", {
+            detail: {
+              roundId,
+              drawRoundId,
+              action,
+              generatedAt: payload?.result?.generatedAt || new Date().toISOString(),
+            },
+          }));
+          if (broadcast) onPresentationReady?.("mainnet");
+        } else if (broadcast && activeExecutionMode === "testnet") {
+          onPresentationReady?.("testnet");
+        }
       }
     } catch (error) {
       const payload = error?.payload || null;
@@ -1232,9 +1326,17 @@ function DrawOperatorWallet({ activeDraw, t }) {
     }
   }
 
-  const currentAdminStatus = statusForSelectedNetwork(adminStatus, selectedNetworkKey);
-  const networkOptions = drawNetworkOptions(adminStatus);
+  const currentAdminStatus = statusForSelectedNetwork(
+    adminStatus,
+    selectedNetworkKey
+  );
   const targetNetworkLabel = drawNetworkLabel(selectedNetwork, t);
+  const executionModeLabel = drawExecutionModeLabel(activeExecutionMode, t);
+  const nextExecutionMode =
+    drawExecutionModes[
+      (drawExecutionModes.indexOf(activeExecutionMode) + 1) %
+        drawExecutionModes.length
+    ];
   const operationBusy = Boolean(busyAction || currentAdminStatus?.running);
   const roundReadiness = drawRoundReadinessSnapshot();
   const activeRoundLedger = roundLedgerSummaryFor(currentAdminStatus, drawRoundId);
@@ -1381,43 +1483,102 @@ function DrawOperatorWallet({ activeDraw, t }) {
   }
 
   return (
-    <section className="draw-operator-wallet" aria-label={t("draw.operatorWalletAria")}>
-      <header>
+    <section
+      className={`draw-operator-wallet is-mode-${activeExecutionMode}`}
+      aria-label={t("draw.operatorWalletAria")}
+    >
+      <header className="draw-operator-wallet__head">
         <span>
-          <WalletCards size={16} strokeWidth={2.25} />
-          {t("draw.operatorWalletTitle")}
+          <Award size={17} strokeWidth={2.15} />
+          {t("draw.operatorControlTitle")}
         </span>
-        <strong>{connected ? compactAddress(connectedWallet.address) : t("draw.operatorWalletDisconnected")}</strong>
+        <strong>{executionModeLabel}</strong>
       </header>
-      <p>{t("draw.operatorWalletBody")}</p>
+      <p>
+        {simulationMode
+          ? t("draw.operatorSimulationModeBody")
+          : t("draw.operatorControlBody")}
+      </p>
 
-      <section className="draw-operator-wallet__network" aria-label={t("draw.operatorNetworkMode")}>
-        <header>
-          <span>{t("draw.operatorNetworkMode")}</span>
-          <strong>{targetNetworkLabel}</strong>
-        </header>
-        <div className="draw-operator-wallet__network-options" role="tablist" aria-label={t("draw.operatorNetworkMode")}>
-          {networkOptions.map((network) => {
-            const active = network.key === selectedNetworkKey;
-            return (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={active ? "is-active" : ""}
-                disabled={operationBusy}
-                key={network.key}
-                onClick={() => selectDrawNetwork(network.key)}
-              >
-                <Network size={14} strokeWidth={2.2} />
-                <span>{drawNetworkLabel(network, t)}</span>
-              </button>
-            );
-          })}
-        </div>
+      <section
+        className="draw-operator-wallet__toolbar"
+        aria-label={t("draw.operatorControlAria")}
+      >
+        {canSwitchNetwork ? (
+          <button
+            type="button"
+            className={`draw-operator-wallet__mode-switch is-${activeExecutionMode}`}
+            disabled={operationBusy}
+            onClick={cycleExecutionMode}
+            aria-label={t("draw.operatorModeSwitchAria", {
+              current: executionModeLabel,
+              next: drawExecutionModeLabel(nextExecutionMode, t),
+            })}
+          >
+            <span className="draw-operator-wallet__mode-icon">
+              {simulationMode ? (
+                <Dices size={19} strokeWidth={2.1} />
+              ) : (
+                <Network size={19} strokeWidth={2.1} />
+              )}
+            </span>
+            <span>
+              <small>{t("draw.operatorModeCurrent")}</small>
+              <strong>{executionModeLabel}</strong>
+            </span>
+            <span className="draw-operator-wallet__mode-next">
+              <small>{t("draw.operatorModeNext")}</small>
+              <strong>{drawExecutionModeLabel(nextExecutionMode, t)}</strong>
+              <RefreshCw size={14} strokeWidth={2.1} />
+            </span>
+          </button>
+        ) : (
+          <div className="draw-operator-wallet__mode-static">
+            <Network size={18} strokeWidth={2.1} />
+            <span>
+              <small>{t("draw.operatorModeCurrent")}</small>
+              <strong>{executionModeLabel}</strong>
+            </span>
+          </div>
+        )}
+
+        {simulationMode ? (
+          <div className="draw-operator-wallet__wallet-static">
+            <ShieldCheck size={18} strokeWidth={2.1} />
+            <span>
+              <small>{t("draw.operatorSimulationWalletLabel")}</small>
+              <strong>{t("draw.operatorSimulationWalletNone")}</strong>
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="draw-operator-wallet__wallet-launch"
+            disabled={operationBusy}
+            onClick={() => setWalletDialogOpen(true)}
+          >
+            <span className="draw-operator-wallet__wallet-icon">
+              <WalletCards size={19} strokeWidth={2.1} />
+            </span>
+            <span>
+              <small>
+                {connected
+                  ? t("draw.operatorWalletConnected")
+                  : t("draw.operatorWalletStatus")}
+              </small>
+              <strong>
+                {connected
+                  ? connectedWallet.label ||
+                    compactAddress(connectedWallet.address)
+                  : t("draw.operatorWalletChoose")}
+              </strong>
+            </span>
+            <ChevronRight size={17} strokeWidth={2.15} />
+          </button>
+        )}
       </section>
 
-      {connected ? (
+      {connected && !simulationMode ? (
         <dl>
           <div>
             <dt>{t("draw.operatorWalletAddress")}</dt>
@@ -1437,203 +1598,272 @@ function DrawOperatorWallet({ activeDraw, t }) {
         </dl>
       ) : null}
 
-      <div className="draw-operator-wallet__actions">
-        {walletProviders.length > 0 ? walletProviders.map((walletProvider) => {
-          const busy = busyAction === `connect:${walletProvider.id}`;
-          return (
-            <button
-              key={walletProvider.id}
-              type="button"
-              disabled={operationBusy}
-              onClick={() => connectDrawWallet(walletProvider)}
-            >
-              {busy ? <Loader2 className="is-spinning" size={15} /> : <WalletCards size={15} strokeWidth={2.2} />}
-              <span>{walletProvider.label}</span>
-            </button>
-          );
-        }) : (
-          <button type="button" disabled>
-            <WalletCards size={15} strokeWidth={2.2} />
-            <span>{walletDetecting ? t("draw.operatorWalletDetecting") : t("draw.operatorWalletMissing")}</span>
-          </button>
-        )}
-        {connected ? (
-          <button type="button" disabled={operationBusy} onClick={disconnectDrawWallet}>
-            <RefreshCw size={15} strokeWidth={2.2} />
-            <span>{t("draw.operatorWalletDisconnect")}</span>
-          </button>
-        ) : null}
-        {connected && !targetMatched ? (
-          <button type="button" disabled={operationBusy} onClick={switchTargetChain}>
-            {busyAction === "switch-chain" ? <Loader2 className="is-spinning" size={15} /> : <Network size={15} strokeWidth={2.2} />}
-            <span>{t("draw.operatorWalletSwitch", { chain: targetNetworkLabel })}</span>
-          </button>
-        ) : null}
-      </div>
-
-      <section className="draw-operator-wallet__admin" aria-label={t("draw.operatorDrawAria")}>
-        <header>
-          <span>{t("draw.operatorDrawTitle")}</span>
-          <strong className={adminReady ? "is-ready" : "is-warning"}>
-            {adminReady ? t("draw.operatorDrawReady") : t("draw.operatorDrawNotReady")}
-          </strong>
-        </header>
-        <p>{adminStatusCopy}</p>
-        {readinessItems.length > 0 ? (
-          <ul className="draw-operator-wallet__readiness">
-            {readinessItems.map((item) => (
-              <li className={item.ready ? "is-ready" : "is-warning"} key={item.id}>
-                {item.label}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {currentAdminStatus?.contractAddress ? (
-          <code>{targetNetworkLabel} · {compactAddress(currentAdminStatus.contractAddress)}</code>
-        ) : null}
-        <section className="draw-operator-wallet__redraw" aria-label={t("draw.operatorRedrawAria")}>
-          <label className="draw-operator-wallet__redraw-toggle">
-            <input
-              type="checkbox"
-              checked={redrawEnabled}
-              disabled={operationBusy}
-              onChange={(event) => selectRedrawEnabled(event.target.checked)}
-            />
-            <span>
-              <strong>{t("draw.operatorRedrawLabel")}</strong>
-              <small>{t("draw.operatorRedrawBody")}</small>
-            </span>
-          </label>
-          {redrawEnabled ? (
-            <label className="draw-operator-wallet__redraw-version">
-              <span>{t("draw.operatorRedrawAttempt")}</span>
-              <input
-                type="number"
-                min="1"
-                max="999"
-                step="1"
-                value={redrawAttempt}
-                disabled={operationBusy}
-                onChange={(event) => updateRedrawAttempt(event.target.value)}
-              />
-              <code>{drawRoundId}</code>
-            </label>
-          ) : (
-            <code>{drawRoundId}</code>
-          )}
-          {redrawActive ? (
-            <p>{t("draw.operatorRedrawWarning", { sourceRound: sourceRoundId, drawRound: drawRoundId })}</p>
-          ) : null}
-        </section>
-        <p className={["draw-operator-wallet__finals", roundReadiness.complete ? "is-ready" : "is-warning"].join(" ")}>
-          {finalsNotice}
-          {!roundReadiness.complete && roundReadiness.missingMatchIds.length > 0 ? (
-            <span>{t("draw.operatorDrawReadinessMissing", { matches: roundReadiness.missingMatchIds.join(", ") })}</span>
-          ) : null}
-        </p>
-        <div className="draw-operator-wallet__actions">
-          <button
-            type="button"
-            className={["draw-operator-wallet__primary-action", primaryDrawStep.className].filter(Boolean).join(" ")}
-            disabled={primaryDrawStep.disabled}
-            onClick={runPrimaryDrawStep}
+      {simulationMode ? (
+        <DrawSimulationPreview
+          activeDraw={activeDraw}
+          onPhaseChange={onSimulationPhaseChange}
+          t={t}
+        />
+      ) : (
+        <>
+          <section
+            className="draw-operator-wallet__admin"
+            aria-label={t("draw.operatorDrawAria")}
           >
-            <PrimaryDrawIcon className={primaryDrawStep.iconClassName || ""} size={15} strokeWidth={2.2} />
-            <span>{primaryDrawStep.label}</span>
-          </button>
-        </div>
-      </section>
+            <header>
+              <span>{t("draw.operatorDrawTitle")}</span>
+              <strong className={adminReady ? "is-ready" : "is-warning"}>
+                {adminReady
+                  ? t("draw.operatorDrawReady")
+                  : t("draw.operatorDrawNotReady")}
+              </strong>
+            </header>
+            <p>{adminStatusCopy}</p>
+            {readinessItems.length > 0 ? (
+              <ul className="draw-operator-wallet__readiness">
+                {readinessItems.map((item) => (
+                  <li
+                    className={item.ready ? "is-ready" : "is-warning"}
+                    key={item.id}
+                  >
+                    {item.label}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {currentAdminStatus?.contractAddress ? (
+              <code>
+                {targetNetworkLabel} ·{" "}
+                {compactAddress(currentAdminStatus.contractAddress)}
+              </code>
+            ) : null}
+            <section
+              className="draw-operator-wallet__redraw"
+              aria-label={t("draw.operatorRedrawAria")}
+            >
+              <label className="draw-operator-wallet__redraw-toggle">
+                <input
+                  type="checkbox"
+                  checked={redrawEnabled}
+                  disabled={operationBusy}
+                  onChange={(event) =>
+                    selectRedrawEnabled(event.target.checked)
+                  }
+                />
+                <span>
+                  <strong>{t("draw.operatorRedrawLabel")}</strong>
+                  <small>{t("draw.operatorRedrawBody")}</small>
+                </span>
+              </label>
+              {redrawEnabled ? (
+                <label className="draw-operator-wallet__redraw-version">
+                  <span>{t("draw.operatorRedrawAttempt")}</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="999"
+                    step="1"
+                    value={redrawAttempt}
+                    disabled={operationBusy}
+                    onChange={(event) =>
+                      updateRedrawAttempt(event.target.value)
+                    }
+                  />
+                  <code>{drawRoundId}</code>
+                </label>
+              ) : (
+                <code>{drawRoundId}</code>
+              )}
+              {redrawActive ? (
+                <p>
+                  {t("draw.operatorRedrawWarning", {
+                    sourceRound: sourceRoundId,
+                    drawRound: drawRoundId,
+                  })}
+                </p>
+              ) : null}
+            </section>
+            <p
+              className={[
+                "draw-operator-wallet__finals",
+                roundReadiness.complete ? "is-ready" : "is-warning",
+              ].join(" ")}
+            >
+              {finalsNotice}
+              {!roundReadiness.complete &&
+              roundReadiness.missingMatchIds.length > 0 ? (
+                <span>
+                  {t("draw.operatorDrawReadinessMissing", {
+                    matches: roundReadiness.missingMatchIds.join(", "),
+                  })}
+                </span>
+              ) : null}
+            </p>
+            <div className="draw-operator-wallet__actions">
+              <button
+                type="button"
+                className={[
+                  "draw-operator-wallet__primary-action",
+                  primaryDrawStep.className,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={primaryDrawStep.disabled}
+                onClick={runPrimaryDrawStep}
+              >
+                <PrimaryDrawIcon
+                  className={primaryDrawStep.iconClassName || ""}
+                  size={15}
+                  strokeWidth={2.2}
+                />
+                <span>{primaryDrawStep.label}</span>
+              </button>
+            </div>
+          </section>
 
-      <section className={["draw-operator-wallet__run", runTone].filter(Boolean).join(" ")} aria-label={t("draw.operatorRunLog")}>
-        <header>
-          <span>{t("draw.operatorRunLog")}</span>
-          <strong>{runStatusLabel}</strong>
-        </header>
-        <div className="draw-operator-wallet__run-grid">
-          <div>
-            <span>{t("draw.operatorRunAction")}</span>
-            <strong>{visibleRun?.action || "-"}</strong>
-          </div>
-          <div>
-            <span>{t("draw.operatorRunNetwork")}</span>
-            <strong>{visibleRun?.networkLabel || targetNetworkLabel}</strong>
-          </div>
-          <div>
-            <span>{t("draw.operatorRunDrawRound")}</span>
-            <strong>{visibleRun?.drawRoundId || drawRoundId || "-"}</strong>
-          </div>
-          <div>
-            <span>{t("draw.operatorRunElapsed")}</span>
-            <strong>{formatDurationSeconds(runElapsedSeconds)}</strong>
-          </div>
-          <div>
-            <span>{t("draw.operatorRunStarted")}</span>
-            <strong>{formatRunTimestamp(visibleRun?.startedAt)}</strong>
-          </div>
-          <div>
-            <span>{t("draw.operatorRunFinished")}</span>
-            <strong>{formatRunTimestamp(visibleRun?.finishedAt)}</strong>
-          </div>
-          <div>
-            <span>{t("draw.operatorRunCode")}</span>
-            <strong>{(runResult?.code || visibleRun?.code || visibleRun?.exitCode) ?? "-"}</strong>
-          </div>
-        </div>
-        {runStage ? (
-          <p className="draw-operator-wallet__run-note">{runStage}</p>
-        ) : null}
-        <p>{txs.length > 0 ? t("draw.operatorRunTransactions") : t("draw.operatorRunNoTransactions")}</p>
-        {txs.length > 0 ? (
-          <ol>
-            {txs.map((tx, index) => (
-              <li key={`${tx.hash || tx.step || "tx"}-${index}`}>
-                {tx.step || t("common.status")} · {compactAddress(tx.hash || "")}
-              </li>
-            ))}
-          </ol>
-        ) : null}
-        {outputText ? (
-          <pre>{outputText}</pre>
-        ) : null}
-      </section>
+          {visibleRun || runResult ? (
+            <section
+              className={["draw-operator-wallet__run", runTone]
+                .filter(Boolean)
+                .join(" ")}
+              aria-label={t("draw.operatorRunLog")}
+            >
+              <header>
+                <span>{t("draw.operatorRunLog")}</span>
+                <strong>{runStatusLabel}</strong>
+              </header>
+              <div className="draw-operator-wallet__run-grid">
+                <div>
+                  <span>{t("draw.operatorRunAction")}</span>
+                  <strong>{visibleRun?.action || "-"}</strong>
+                </div>
+                <div>
+                  <span>{t("draw.operatorRunNetwork")}</span>
+                  <strong>
+                    {visibleRun?.networkLabel || targetNetworkLabel}
+                  </strong>
+                </div>
+                <div>
+                  <span>{t("draw.operatorRunDrawRound")}</span>
+                  <strong>
+                    {visibleRun?.drawRoundId || drawRoundId || "-"}
+                  </strong>
+                </div>
+                <div>
+                  <span>{t("draw.operatorRunElapsed")}</span>
+                  <strong>{formatDurationSeconds(runElapsedSeconds)}</strong>
+                </div>
+                <div>
+                  <span>{t("draw.operatorRunStarted")}</span>
+                  <strong>{formatRunTimestamp(visibleRun?.startedAt)}</strong>
+                </div>
+                <div>
+                  <span>{t("draw.operatorRunFinished")}</span>
+                  <strong>{formatRunTimestamp(visibleRun?.finishedAt)}</strong>
+                </div>
+                <div>
+                  <span>{t("draw.operatorRunCode")}</span>
+                  <strong>
+                    {(runResult?.code ||
+                      visibleRun?.code ||
+                      visibleRun?.exitCode) ??
+                      "-"}
+                  </strong>
+                </div>
+              </div>
+              {runStage ? (
+                <p className="draw-operator-wallet__run-note">{runStage}</p>
+              ) : null}
+              <p>
+                {txs.length > 0
+                  ? t("draw.operatorRunTransactions")
+                  : t("draw.operatorRunNoTransactions")}
+              </p>
+              {txs.length > 0 ? (
+                <ol>
+                  {txs.map((tx, index) => (
+                    <li key={`${tx.hash || tx.step || "tx"}-${index}`}>
+                      {tx.step || t("common.status")} ·{" "}
+                      {compactAddress(tx.hash || "")}
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              {outputText ? <pre>{outputText}</pre> : null}
+            </section>
+          ) : null}
 
-      {runResult ? (
-        <section className={["draw-operator-wallet__result", runResult.ok ? "is-ready" : "is-warning"].filter(Boolean).join(" ")}>
-          <strong>{runResult.ok ? t("draw.operatorDrawRunOk") : t("draw.operatorDrawRunFailed")}</strong>
-          <p>
-            {runResult.action === "ledger"
-              ? t("draw.operatorDrawLedgerLocked")
-              : runResult.result?.broadcast
-              ? t("draw.operatorDrawBroadcasted")
-              : t("draw.operatorDrawDryRun")}
-          </p>
-          {runResult.action === "ledger" && activeRoundLedger?.ledgerHash ? (
-            <code>{compactAddress(activeRoundLedger.ledgerHash)}</code>
+          {runResult ? (
+            <section
+              className={[
+                "draw-operator-wallet__result",
+                runResult.ok ? "is-ready" : "is-warning",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <strong>
+                {runResult.ok
+                  ? t("draw.operatorDrawRunOk")
+                  : t("draw.operatorDrawRunFailed")}
+              </strong>
+              <p>
+                {runResult.action === "ledger"
+                  ? t("draw.operatorDrawLedgerLocked")
+                  : runResult.result?.broadcast
+                  ? t("draw.operatorDrawBroadcasted")
+                  : t("draw.operatorDrawDryRun")}
+              </p>
+              {runResult.action === "ledger" &&
+              activeRoundLedger?.ledgerHash ? (
+                <code>{compactAddress(activeRoundLedger.ledgerHash)}</code>
+              ) : null}
+              {plannedSteps.length > 0 ? (
+                <ol>
+                  {plannedSteps.map((step, index) => (
+                    <li key={`${step.step || "step"}-${index}`}>
+                      {step.step || t("common.status")}
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              {txs.length > 0 ? (
+                <ol>
+                  {txs.map((tx, index) => (
+                    <li key={`${tx.hash || tx.step || "tx"}-${index}`}>
+                      {tx.step || t("common.status")} ·{" "}
+                      {compactAddress(tx.hash || "")}
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              {resultDetails.length > 0 ? (
+                <pre>{resultDetails.join("\n")}</pre>
+              ) : null}
+            </section>
           ) : null}
-          {plannedSteps.length > 0 ? (
-            <ol>
-              {plannedSteps.map((step, index) => (
-                <li key={`${step.step || "step"}-${index}`}>{step.step || t("common.status")}</li>
-              ))}
-            </ol>
-          ) : null}
-          {txs.length > 0 ? (
-            <ol>
-              {txs.map((tx, index) => (
-                <li key={`${tx.hash || tx.step || "tx"}-${index}`}>
-                  {tx.step || t("common.status")} · {compactAddress(tx.hash || "")}
-                </li>
-              ))}
-            </ol>
-          ) : null}
-          {resultDetails.length > 0 ? (
-            <pre>{resultDetails.join("\n")}</pre>
-          ) : null}
-        </section>
-      ) : null}
 
-      <small>{connected ? t("draw.operatorWalletReady") : t("draw.operatorWalletBoundary")}</small>
-      {issue ? <em>{issue}</em> : null}
+          <small>
+            {connected
+              ? t("draw.operatorWalletReady")
+              : t("draw.operatorWalletBoundary")}
+          </small>
+          {issue ? <em>{issue}</em> : null}
+        </>
+      )}
+
+      <WalletProviderDialog
+        open={walletDialogOpen && !simulationMode}
+        walletProviders={walletProviders}
+        walletDetecting={walletDetecting}
+        connectedWallet={connectedWallet}
+        busyAction={busyAction}
+        operationBusy={operationBusy}
+        onSelect={chooseDrawWallet}
+        onDisconnect={disconnectDrawWallet}
+        onClose={() => setWalletDialogOpen(false)}
+        t={t}
+      />
     </section>
   );
 }
@@ -1688,10 +1918,21 @@ function DrawMatchRibbon({ matches, teamsById, copy }) {
   );
 }
 
-export function DrawRoom({ activeRound, rounds, simulatedRoundId, drawStats, matches, teamsById, onSelectRound }) {
+export function DrawRoom({
+  activeRound,
+  rounds,
+  simulatedRoundId,
+  drawStats,
+  matches,
+  teamsById,
+  canSwitchNetwork = false,
+  onSelectRound,
+}) {
   const copy = useCampaignCopy();
   const { roundLabel, t } = copy;
-  const activeDraw = drawStats.find((round) => round.id === activeRound.id) ?? drawStats[0];
+  const [executionMode, setExecutionMode] = useState(defaultDrawNetworkKey);
+  const activeDraw =
+    drawStats.find((round) => round.id === activeRound.id) ?? drawStats[0];
   const activeStep = getActiveDrawStep(activeDraw.drawStatusResolved);
   const roundMatches = matches.filter((match) => match.roundId === activeRound.id);
   const drawState = getDrawStateCopy(activeDraw, t);
@@ -1711,8 +1952,19 @@ export function DrawRoom({ activeRound, rounds, simulatedRoundId, drawStats, mat
           <p>{t("views.draw.body")}</p>
         </header>
 
-        <DrawProgressMap activeDraw={activeDraw} activeStep={activeStep} drawState={drawState} t={t} />
-        <DrawOperatorWallet activeDraw={activeDraw} t={t} />
+        <DrawProgressMap
+          activeDraw={activeDraw}
+          activeStep={activeStep}
+          drawState={drawState}
+          t={t}
+        />
+        <DrawOperatorWallet
+          activeDraw={activeDraw}
+          t={t}
+          canSwitchNetwork={canSwitchNetwork}
+          executionMode={executionMode}
+          onExecutionModeChange={setExecutionMode}
+        />
 
         <section className="draw-stage-map__stats" aria-label={t("mast.currentRoundBalances")}>
           <output>

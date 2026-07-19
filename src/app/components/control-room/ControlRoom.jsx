@@ -24,6 +24,7 @@ import { commandViews } from "../../data/campaignRuntime";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { scheduleIdleWork } from "../../utils/preloadAssets";
 import { requestRenaissProviderSignOut } from "../../utils/renaissAuth";
+import { canViewDrawRoom, canViewWinnersFinalDraw } from "../../utils/drawVisibility";
 import { AnimatedContent } from "../AnimatedContent";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
@@ -344,28 +345,6 @@ function isLocalTestOrigin() {
     || normalizedHostname === "::1"
     || normalizedHostname === "127.0.0.1.nip.io"
     || normalizedHostname.endsWith(".127.0.0.1.nip.io");
-}
-
-function isDrawRoomFeatureEnabled(localToolsEnabled) {
-  if (localToolsEnabled) return true;
-  const value = String(import.meta.env.VITE_DRAW_ROOM_ENABLED || "").trim().toLowerCase();
-  return ["1", "true", "yes", "on"].includes(value);
-}
-
-function drawRoomAllowedWallets() {
-  return String(import.meta.env.VITE_DRAW_ROOM_ALLOWED_WALLETS || "")
-    .split(/[,\s]+/)
-    .map((value) => value.trim().toLowerCase())
-    .filter((value) => /^0x[a-f0-9]{40}$/.test(value));
-}
-
-function canViewDrawRoom(localToolsEnabled, authSession) {
-  if (localToolsEnabled) return true;
-  if (!isDrawRoomFeatureEnabled(localToolsEnabled)) return false;
-  const allowedWallets = drawRoomAllowedWallets();
-  if (allowedWallets.length === 0) return true;
-  const walletAddress = String(authSession?.walletAddress || "").trim().toLowerCase();
-  return allowedWallets.includes(walletAddress);
 }
 
 function isAdminOnlyRound(roundId) {
@@ -1001,8 +980,24 @@ export function ControlRoom({
   const copy = useCampaignCopy();
   const { roundLabel, t } = copy;
   const localToolsEnabled = isLocalTestOrigin();
-  const drawViewEnabled = canViewDrawRoom(localToolsEnabled, authSession);
-  const canViewAdminOnlyRounds = canViewDrawRoom(false, authSession);
+  const drawViewEnabled = canViewDrawRoom({
+    localToolsEnabled,
+    enabled: import.meta.env.VITE_DRAW_ROOM_ENABLED,
+    allowlist: import.meta.env.VITE_DRAW_ROOM_ALLOWED_WALLETS,
+    authSession,
+  });
+  const canViewAdminOnlyRounds = canViewDrawRoom({
+    localToolsEnabled: false,
+    enabled: import.meta.env.VITE_DRAW_ROOM_ENABLED,
+    allowlist: import.meta.env.VITE_DRAW_ROOM_ALLOWED_WALLETS,
+    authSession,
+  });
+  const canViewFinalDrawInWinners = canViewWinnersFinalDraw({
+    localToolsEnabled,
+    enabled: import.meta.env.VITE_WINNERS_FINAL_DRAW_ENABLED,
+    allowlist: import.meta.env.VITE_WINNERS_FINAL_DRAW_ALLOWED_WALLETS,
+    authSession,
+  });
   const showSimulationControls = localToolsEnabled;
   const [winnerRevealStarted, setWinnerRevealStarted] = useState(false);
   const visibleRounds = useMemo(
@@ -1048,6 +1043,9 @@ export function ControlRoom({
   const effectiveActiveViewId = !drawViewEnabled && activeViewId === "draw" ? "home" : activeViewId;
   const activeView = visibleCommandViews.find((view) => view.id === effectiveActiveViewId) ?? visibleCommandViews[0] ?? commandViews[0];
   const activeDraw = visibleDrawStats.find((round) => round.id === visibleActiveRound.id) ?? visibleDrawStats[0] ?? drawStats[0];
+  const finalDraw = visibleDrawStats.find((round) => round.id === "final")
+    ?? drawStats.find((round) => round.id === "final")
+    ?? null;
   const accumulatedDrawEntries = (activeDraw?.eligibleEntries ?? 0) + (activeDraw?.pendingEntries ?? 0);
   const matchStateCounts = countMatchStates(matches, visibleActiveRoundId);
   const compactWorkViews = new Set(["schedule", "vote", "draw", "winners"]);
@@ -1491,6 +1489,7 @@ export function ControlRoom({
               drawStats={visibleDrawStats}
               matches={matches}
               teamsById={teamsById}
+              canSwitchNetwork={canViewFinalDrawInWinners}
               onSelectRound={handleSelectVisibleRound}
             />
           ) : null}
@@ -1504,6 +1503,9 @@ export function ControlRoom({
               winnerRevealIssue={winnerRevealIssue}
               currentWalletAddress={currentWinnerWalletAddress}
               currentUserWinnerCount={visibleCurrentUserWinnerCount}
+              canViewFinalDraw={canViewFinalDrawInWinners}
+              canSwitchDrawNetwork={canViewFinalDrawInWinners}
+              finalDraw={finalDraw}
               onRevealStateChange={setWinnerRevealStarted}
             />
           ) : null}

@@ -60,6 +60,7 @@ const AUTH_REQUEST_TIMEOUT_MS = 10000;
 const DATA_REQUEST_TIMEOUT_MS = 12000;
 const VOTE_SUBMIT_TIMEOUT_MS = 15000;
 const CRITICAL_DATA_RETRY_MS = 3000;
+const WINNER_REVEAL_REFRESH_MS = 5000;
 const voteableMatchStatuses = new Set(["open", "closing_soon"]);
 const publicVoteRoundIds = roundDefinitions
   .map((round) => round.id)
@@ -397,6 +398,12 @@ function AppContent() {
       : localApiOrigin
         ? `${localApiOrigin}/api/draw-winners`
         : "/mock-api/draw-winners.json");
+  const drawWinnersFreshnessUrl = import.meta.env.VITE_DRAW_WINNERS_FRESHNESS_URL
+    || (import.meta.env.PROD || !localTestOrigin
+      ? "/api/draw-winners/freshness"
+      : localApiOrigin
+        ? `${localApiOrigin}/api/draw-winners/freshness`
+        : "");
   const authMeUrl = import.meta.env.VITE_AUTH_ME_URL || (import.meta.env.PROD ? "/api/auth/me" : "");
   const [ledger, setLedger] = useState(() => normalizeFootballLedger(verifiedLedgerSnapshot));
   const [ledgerEntryRequest, setLedgerEntryRequest] = useState(() => ({
@@ -428,6 +435,7 @@ function AppContent() {
   const [winnerRevealIssue, setWinnerRevealIssue] = useState("");
   const [winnerRevealReady, setWinnerRevealReady] = useState(!drawWinnersUrl);
   const [winnerRevealRefreshToken, setWinnerRevealRefreshToken] = useState(0);
+  const winnerRevealFreshnessRef = useRef("");
   const [authSession, setAuthSession] = useState({ authenticated: false, config: null });
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
@@ -788,8 +796,6 @@ function AppContent() {
 
     let cancelled = false;
     const controller = new AbortController();
-    setWinnerRevealReady(false);
-
     fetchJsonWithTimeout(drawWinnersUrl, {
       cache: "no-store",
       signal: controller.signal,
@@ -804,7 +810,6 @@ function AppContent() {
       .catch((error) => {
         if (isRequestAbortError(error)) return;
         if (cancelled) return;
-        setWinnerRevealData(getEmptyWinnerRevealData(winnerRevealVideoUrl));
         setWinnerRevealIssue(t("winnerReveal.dataIssue", { message: error.message }));
       })
       .finally(() => {
@@ -827,6 +832,69 @@ function AppContent() {
       window.removeEventListener("renaiss:draw-winners-updated", refreshWinnerRevealData);
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      simulationMode !== "realtime"
+      || activeViewId !== "winners"
+      || !drawWinnersFreshnessUrl
+      || !winnerRevealReady
+    ) {
+      return undefined;
+    }
+
+    let active = true;
+    let requestController = null;
+
+    async function refreshVisibleWinnerData() {
+      if (document.visibilityState === "hidden") return;
+      requestController?.abort();
+      requestController = new AbortController();
+
+      try {
+        const { payload } = await fetchJsonWithTimeout(drawWinnersFreshnessUrl, {
+          cache: "no-store",
+          signal: requestController.signal,
+          timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+        });
+        if (!active) return;
+
+        const nextVersion = String(payload?.version || "");
+        const nextGeneratedAt = String(payload?.generatedAt || "");
+        const currentGeneratedAt = String(winnerRevealData.generatedAt || "");
+        const versionChanged = Boolean(
+          winnerRevealFreshnessRef.current
+          && nextVersion
+          && winnerRevealFreshnessRef.current !== nextVersion
+        );
+        winnerRevealFreshnessRef.current = nextVersion;
+
+        if (versionChanged || (nextGeneratedAt && nextGeneratedAt !== currentGeneratedAt)) {
+          setWinnerRevealRefreshToken((current) => current + 1);
+        }
+      } catch (error) {
+        if (!isRequestAbortError(error) && active) {
+          winnerRevealFreshnessRef.current = "";
+        }
+      }
+    }
+
+    refreshVisibleWinnerData();
+    const intervalId = window.setInterval(refreshVisibleWinnerData, WINNER_REVEAL_REFRESH_MS);
+    document.addEventListener("visibilitychange", refreshVisibleWinnerData);
+    return () => {
+      active = false;
+      requestController?.abort();
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshVisibleWinnerData);
+    };
+  }, [
+    activeViewId,
+    drawWinnersFreshnessUrl,
+    simulationMode,
+    winnerRevealData.generatedAt,
+    winnerRevealReady,
+  ]);
 
   useEffect(() => {
     if (simulationMode !== "realtime") return undefined;

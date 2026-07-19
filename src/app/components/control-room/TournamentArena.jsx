@@ -92,6 +92,15 @@ function getTeamLabel({ match, team, allocation, copy }) {
   return matchStatusCompact(match?.status ?? "scheduled");
 }
 
+function hasLocalBrightPreview(match, team) {
+  if (typeof window === "undefined") return false;
+
+  const isLocalHost = ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
+  if (!isLocalHost) return false;
+
+  return new URLSearchParams(window.location.search).get("preview-bright") === `${match?.id}:${team?.id}`;
+}
+
 function formatRoutePoint(value) {
   return Number(value).toFixed(1);
 }
@@ -437,11 +446,12 @@ function ArenaTeamCard({ match, team, side, allocation, selected, onPickTeam, co
   const { compactVotes, teamName, t } = copy;
   if (!match || !team) return null;
 
-  const tone = getTeamTone(match, team, allocation);
+  const isLocalBrightPreview = hasLocalBrightPreview(match, team);
+  const tone = isLocalBrightPreview ? "winner" : getTeamTone(match, team, allocation);
   const liveQualification = team.liveQualification;
-  const isWinner = match.advancingTeamId === team.id;
-  const isEliminated = Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);
-  const label = getTeamLabel({ match, team, allocation, copy });
+  const isWinner = isLocalBrightPreview || match.advancingTeamId === team.id;
+  const isEliminated = !isLocalBrightPreview && Boolean(match.advancingTeamId && match.advancingTeamId !== team.id);
+  const label = isLocalBrightPreview ? t("common.advancing") : getTeamLabel({ match, team, allocation, copy });
   const Icon = tone === "allocated" || tone === "winner" || tone === "confirmed"
     ? CheckCircle2
     : tone === "provisional"
