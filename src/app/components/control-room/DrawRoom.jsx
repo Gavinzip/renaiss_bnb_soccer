@@ -1680,10 +1680,7 @@ export function DrawOperatorWallet({
                       selectRedrawEnabled(event.target.checked)
                     }
                   />
-                  <span>
-                    <strong>{t("draw.operatorRedrawLabel")}</strong>
-                    <small>{t("draw.operatorRedrawBody")}</small>
-                  </span>
+                  <strong>{t("draw.operatorRedrawLabel")}</strong>
                 </label>
                 {redrawEnabled ? (
                   <label className="draw-operator-wallet__redraw-version">
@@ -1701,9 +1698,7 @@ export function DrawOperatorWallet({
                     />
                     <code>{drawRoundId}</code>
                   </label>
-                ) : (
-                  <code>{drawRoundId}</code>
-                )}
+                ) : null}
                 {redrawActive ? (
                   <p>
                     {t("draw.operatorRedrawWarning", {

@@ -15372,8 +15372,10 @@ body {
 }
 
 .draw-operator-wallet__redraw {
-  display: grid;
-  gap: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   border: 1px solid rgba(245, 246, 241, 0.11);
   border-radius: 13px;
   padding: 9px 10px;
@@ -15397,23 +15399,10 @@ body {
   accent-color: rgb(129, 245, 207);
 }
 
-.draw-operator-wallet__redraw-toggle > span {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
 .draw-operator-wallet__redraw-toggle strong {
-  justify-self: start;
   color: rgba(245, 246, 241, 0.9);
   font-family: inherit;
   font-size: 0.74rem;
-}
-
-.draw-operator-wallet__redraw-toggle small {
-  color: rgba(245, 246, 241, 0.52);
-  font-size: 0.68rem;
-  line-height: 1.35;
 }
 
 .draw-operator-wallet__redraw-version input {
@@ -15430,6 +15419,10 @@ body {
   width: fit-content;
   max-width: 100%;
   font-size: 0.68rem;
+}
+
+.draw-operator-wallet__redraw > p {
+  flex-basis: 100%;
 }
 
 .draw-operator-wallet__readiness {
@@ -26836,18 +26829,8 @@ body {
   gap: 5px;
 }
 
-.winner-final-draw__copy small,
-.winner-final-draw__copy strong,
-.winner-final-draw__copy p {
+.winner-final-draw__copy strong {
   margin: 0;
-}
-
-.winner-final-draw__copy small {
-  color: rgba(240, 209, 139, 0.78);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 .winner-final-draw__copy strong {
@@ -26857,7 +26840,6 @@ body {
   line-height: 1.2;
 }
 
-.winner-final-draw__copy p,
 .winner-final-draw__loading {
   color: rgba(245, 246, 241, 0.56);
   font-size: 0.76rem;

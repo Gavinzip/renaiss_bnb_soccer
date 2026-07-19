@@ -584,9 +584,7 @@ function WinnersFinalDrawControl({
     >
       <header className="winner-final-draw__head">
         <span className="winner-final-draw__copy">
-          <small>{t("winnerReveal.finalDrawEyebrow")}</small>
-          <strong>{t("winnerReveal.finalDrawTitle")}</strong>
-          <p>{t("winnerReveal.finalDrawBody")}</p>
+          <strong>{t("winnerReveal.finalDrawEyebrow")}</strong>
         </span>
         <span className="winner-final-draw__controls">
           <span
