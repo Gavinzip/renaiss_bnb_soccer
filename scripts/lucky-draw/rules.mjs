@@ -4,7 +4,7 @@ export const WALLET_RESOLVE_URL = 'https://open-monitor-rmrm.pages.dev/api/walle
 export const WALLET_MIGRATIONS_URL = 'https://tcgpro.zeabur.app/api/wallet-migrations.json'
 
 export const DEFAULT_CAMPAIGN_START = 1783058400
-export const DEFAULT_CAMPAIGN_END = 1784469600
+export const DEFAULT_CAMPAIGN_END = 1784505600
 
 export const BUYBACK_EVENT_TOPIC =
   '0xca4650c272ed248c5917e9ad8c3cca3b69d42f25071c9e6c85a2abc7427030cf'
