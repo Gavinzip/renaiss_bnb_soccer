@@ -34,6 +34,8 @@
     "contract:deploy:bsc": "node scripts/deploy-lucky-draw.mjs --env-file config/draw-contract.env.local --broadcast",
     "contract:roles:check": "node scripts/configure-lucky-draw-roles.mjs --env-file config/draw-contract.env.local",
     "contract:roles": "node scripts/configure-lucky-draw-roles.mjs --env-file config/draw-contract.env.local --broadcast",
+    "contract:verify:preview": "node scripts/verify-lucky-draw-contract.mjs",
+    "contract:verify:bsc": "node scripts/verify-lucky-draw-contract.mjs --submit",
     "contract:round": "node scripts/run-lucky-draw-round-level.mjs --env-file config/draw-contract.env.local",
     "contract:round:verify": "node scripts/run-lucky-draw-round-level.mjs --env-file config/draw-contract.env.local --verify-only",
     "contract:round:broadcast": "node scripts/run-lucky-draw-round-level.mjs --env-file config/draw-contract.env.local --broadcast",

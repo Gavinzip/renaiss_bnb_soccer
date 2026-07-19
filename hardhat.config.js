@@ -1,5 +1,5 @@
 import hardhatToolboxMochaEthersPlugin from '@nomicfoundation/hardhat-toolbox-mocha-ethers'
-import { defineConfig } from 'hardhat/config'
+import { configVariable, defineConfig } from 'hardhat/config'
 
 export default defineConfig({
   plugins: [hardhatToolboxMochaEthersPlugin],
@@ -20,6 +20,23 @@ export default defineConfig({
     hardhatMainnet: {
       type: 'edr-simulated',
       chainType: 'l1',
+    },
+    bsc: {
+      type: 'http',
+      chainType: 'l1',
+      chainId: 56,
+      url: configVariable('BSC_RPC_URL'),
+    },
+    bscTestnet: {
+      type: 'http',
+      chainType: 'l1',
+      chainId: 97,
+      url: configVariable('BSC_RPC_URL'),
+    },
+  },
+  verify: {
+    etherscan: {
+      apiKey: configVariable('BSCSCAN_API_KEY'),
     },
   },
 })
