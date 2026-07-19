@@ -862,6 +862,7 @@ export const enLocale = {
       "operatorSimulationDisclaimer": "All visuals and data are simulated and do not represent an official result.",
       "operatorSimulationStart": "Start simulation",
       "operatorSimulationAgain": "Run again",
+      "operatorSimulationReset": "Back to start",
       "operatorSimulationStatusRunning": "Simulation running",
       "operatorSimulationStatusComplete": "Demo complete",
       "operatorDrawAria": "Draw contract execution",

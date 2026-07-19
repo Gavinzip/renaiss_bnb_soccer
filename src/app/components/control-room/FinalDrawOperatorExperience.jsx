@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ChevronRight,
   Dices,
   Gift,
@@ -184,6 +185,11 @@ export function DrawSimulationPreview({ activeDraw, onPhaseChange, t }) {
     ];
   }
 
+  function resetSimulation() {
+    clearTimers();
+    setPhase("idle");
+  }
+
   useEffect(() => {
     onPhaseChange?.(phase);
   }, [onPhaseChange, phase]);
@@ -326,24 +332,36 @@ export function DrawSimulationPreview({ activeDraw, onPhaseChange, t }) {
 
       <footer>
         <p>{t("draw.operatorSimulationDisclaimer")}</p>
-        <button
-          type="button"
-          disabled={phase === "mixing" || phase === "revealing"}
-          onClick={startSimulation}
-        >
-          {phase === "mixing" || phase === "revealing" ? (
-            <Loader2 className="is-spinning" size={16} />
-          ) : phase === "complete" ? (
-            <RefreshCw size={16} strokeWidth={2.15} />
-          ) : (
-            <Dices size={16} strokeWidth={2.15} />
-          )}
-          <span>
-            {phase === "complete"
-              ? t("draw.operatorSimulationAgain")
-              : t("draw.operatorSimulationStart")}
-          </span>
-        </button>
+        <span className="draw-simulation__actions">
+          {phase !== "idle" ? (
+            <button
+              type="button"
+              className="is-secondary"
+              onClick={resetSimulation}
+            >
+              <ArrowLeft size={16} strokeWidth={2.15} />
+              <span>{t("draw.operatorSimulationReset")}</span>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            disabled={phase === "mixing" || phase === "revealing"}
+            onClick={startSimulation}
+          >
+            {phase === "mixing" || phase === "revealing" ? (
+              <Loader2 className="is-spinning" size={16} />
+            ) : phase === "complete" ? (
+              <RefreshCw size={16} strokeWidth={2.15} />
+            ) : (
+              <Dices size={16} strokeWidth={2.15} />
+            )}
+            <span>
+              {phase === "complete"
+                ? t("draw.operatorSimulationAgain")
+                : t("draw.operatorSimulationStart")}
+            </span>
+          </button>
+        </span>
       </footer>
     </section>
   );

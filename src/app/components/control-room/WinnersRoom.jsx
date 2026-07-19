@@ -502,13 +502,16 @@ function WinnersFinalDrawControl({
 }) {
   const { t } = useCampaignCopy();
   const [open, setOpen] = useState(false);
+  const [hasOpened, setHasOpened] = useState(false);
   const [executionMode, setExecutionMode] = useState("mainnet");
   const [simulationPhase, setSimulationPhase] = useState("idle");
+  const openFrameRef = useRef(0);
 
   const handleSimulationPhaseChange = useCallback((phase) => {
     setSimulationPhase(phase);
     if (phase === "complete") onPresentationPreview?.("simulation", { scroll: false });
-  }, [onPresentationPreview]);
+    if (phase === "idle") onPresentationReset?.();
+  }, [onPresentationPreview, onPresentationReset]);
 
   const handlePresentationReady = useCallback((mode) => {
     onPresentationPreview?.(mode, {
@@ -522,6 +525,20 @@ function WinnersFinalDrawControl({
     setSimulationPhase("idle");
     onPresentationReset?.();
   }, [onPresentationReset]);
+
+  const handleOpenChange = useCallback(() => {
+    if (open) {
+      window.cancelAnimationFrame(openFrameRef.current);
+      setOpen(false);
+      return;
+    }
+
+    setHasOpened(true);
+    window.cancelAnimationFrame(openFrameRef.current);
+    openFrameRef.current = window.requestAnimationFrame(() => setOpen(true));
+  }, [open]);
+
+  useEffect(() => () => window.cancelAnimationFrame(openFrameRef.current), []);
 
   if (!activeDraw) return null;
 
@@ -579,7 +596,7 @@ function WinnersFinalDrawControl({
           <button
             type="button"
             aria-expanded={open}
-            onClick={() => setOpen((current) => !current)}
+            onClick={handleOpenChange}
           >
             <Award size={16} strokeWidth={2.35} />
             {open
@@ -589,25 +606,31 @@ function WinnersFinalDrawControl({
           </button>
         </span>
       </header>
-      {open ? (
-        <div className="winner-final-draw__panel">
-          <Suspense
-            fallback={
-              <p className="winner-final-draw__loading">
-                {t("winnerReveal.finalDrawLoading")}
-              </p>
-            }
-          >
-            <LazyDrawOperatorWallet
-              activeDraw={activeDraw}
-              t={t}
-              canSwitchNetwork={canSwitchNetwork}
-              executionMode={executionMode}
-              onExecutionModeChange={handleExecutionModeChange}
-              onSimulationPhaseChange={handleSimulationPhaseChange}
-              onPresentationReady={handlePresentationReady}
-            />
-          </Suspense>
+      {hasOpened ? (
+        <div
+          className="winner-final-draw__panel-shell"
+          aria-hidden={!open}
+          inert={open ? undefined : ""}
+        >
+          <div className="winner-final-draw__panel">
+            <Suspense
+              fallback={
+                <p className="winner-final-draw__loading">
+                  {t("winnerReveal.finalDrawLoading")}
+                </p>
+              }
+            >
+              <LazyDrawOperatorWallet
+                activeDraw={activeDraw}
+                t={t}
+                canSwitchNetwork={canSwitchNetwork}
+                executionMode={executionMode}
+                onExecutionModeChange={handleExecutionModeChange}
+                onSimulationPhaseChange={handleSimulationPhaseChange}
+                onPresentationReady={handlePresentationReady}
+              />
+            </Suspense>
+          </div>
         </div>
       ) : null}
     </section>
@@ -742,6 +765,9 @@ export function WinnersRoom({
       presentation?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
     });
   }, [officialPresentationFingerprint, selectedRoundHasWinners]);
+  const resetFinalPresentation = useCallback(() => {
+    setFinalPresentationPreviewMode("");
+  }, []);
 
   useEffect(() => {
     preloadRoundPrizeImages(selectedRound?.id);
@@ -841,74 +867,74 @@ export function WinnersRoom({
       ].join(" ")}
       aria-label={t("winnerReveal.roomAria")}
     >
-      <video
-        ref={videoRef}
-        className="winner-stage-video"
-        src={winnerRevealData.videoUrl}
-        autoPlay
-        muted
-        playsInline
-        preload="auto"
-        onEnded={() => setVideoFinished(true)}
-        onError={() => setMediaIssue(t("winnerReveal.videoIssue"))}
-      />
-      <div
-        className="winner-stage-reveal-bg"
-        style={{ backgroundImage: showPrizeCard ? "none" : `url(${revealBackdrop})` }}
-        aria-hidden="true"
-      />
-      <div className="winner-stage-grid" aria-hidden="true" />
-      {revealStarted ? (
-        <div className="winner-stage-side-rays" aria-hidden="true">
-          <SideRays
-            speed={2.5}
-            rayColor1="#EAB308"
-            rayColor2="#96c8ff"
-            intensity={2}
-            spread={2}
-            origin="top-left"
-            tilt={0}
-            saturation={1.5}
-            blend={0.75}
-            falloff={1.6}
-            opacity={1}
-          />
-        </div>
-      ) : null}
-      <div className="winner-stage-scrim" aria-hidden="true" />
+      <div className="winner-stage-presentation">
+        <video
+          ref={videoRef}
+          className="winner-stage-video"
+          src={winnerRevealData.videoUrl}
+          autoPlay
+          muted
+          playsInline
+          preload="auto"
+          onEnded={() => setVideoFinished(true)}
+          onError={() => setMediaIssue(t("winnerReveal.videoIssue"))}
+        />
+        <div
+          className="winner-stage-reveal-bg"
+          style={{ backgroundImage: showPrizeCard ? "none" : `url(${revealBackdrop})` }}
+          aria-hidden="true"
+        />
+        <div className="winner-stage-grid" aria-hidden="true" />
+        {revealStarted ? (
+          <div className="winner-stage-side-rays" aria-hidden="true">
+            <SideRays
+              speed={2.5}
+              rayColor1="#EAB308"
+              rayColor2="#96c8ff"
+              intensity={2}
+              spread={2}
+              origin="top-left"
+              tilt={0}
+              saturation={1.5}
+              blend={0.75}
+              falloff={1.6}
+              opacity={1}
+            />
+          </div>
+        ) : null}
+        <div className="winner-stage-scrim" aria-hidden="true" />
 
-      <section className="winner-stage-intro" aria-hidden={revealStarted}>
-        <span>
-          <Award size={16} strokeWidth={2.25} />
-          {t("winnerReveal.eyebrow")}
-        </span>
-        <h1>{t("winnerReveal.title")}</h1>
-      </section>
+        <section className="winner-stage-intro" aria-hidden={revealStarted}>
+          <span>
+            <Award size={16} strokeWidth={2.25} />
+            {t("winnerReveal.eyebrow")}
+          </span>
+          <h1>{t("winnerReveal.title")}</h1>
+        </section>
 
-      <section className="winner-stage-actions" aria-label={t("winnerReveal.controlsAria")}>
-        {!revealStarted ? (
-          <button type="button" onClick={() => setVideoFinished(true)}>
-            <CirclePlay size={16} strokeWidth={2.25} />
-            {t("winnerReveal.skipVideo")}
-          </button>
-        ) : (
-          <button type="button" onClick={replayIntro}>
-            <RotateCcw size={16} strokeWidth={2.25} />
-            {t("winnerReveal.replay")}
-          </button>
-        )}
-      </section>
+        <section className="winner-stage-actions" aria-label={t("winnerReveal.controlsAria")}>
+          {!revealStarted ? (
+            <button type="button" onClick={() => setVideoFinished(true)}>
+              <CirclePlay size={16} strokeWidth={2.25} />
+              {t("winnerReveal.skipVideo")}
+            </button>
+          ) : (
+            <button type="button" onClick={replayIntro}>
+              <RotateCcw size={16} strokeWidth={2.25} />
+              {t("winnerReveal.replay")}
+            </button>
+          )}
+        </section>
 
-      <section
-        className={[
-          "winner-stage-reveal",
-          showPrizeCard ? "has-prize-card" : "",
-          showFinalDrawControl ? "has-final-draw-control" : "",
-        ].filter(Boolean).join(" ")}
-        aria-live="polite"
-        aria-hidden={!revealStarted}
-      >
-        <div className="winner-stage-primary">
+        <section
+          className={[
+            "winner-stage-reveal",
+            showPrizeCard ? "has-prize-card" : "",
+          ].filter(Boolean).join(" ")}
+          aria-live="polite"
+          aria-hidden={!revealStarted}
+        >
+          <div className="winner-stage-primary">
           {showPrizeCard ? (
             <section className="winner-stage-prize-card" aria-label={t("winnerReveal.cardPrizeAria")}>
               <span className="winner-stage-prize-card__image">
@@ -997,25 +1023,29 @@ export function WinnersRoom({
                 onToggle={() => setProofOpen((current) => !current)}
               />
             ) : null}
-          </section>
-        </div>
+            </section>
+          </div>
+        </section>
 
-        {showFinalDrawControl ? (
+        {mediaIssue || winnerRevealIssue ? (
+          <p className="winner-stage-issue">{mediaIssue || winnerRevealIssue}</p>
+        ) : null}
+      </div>
+
+      {showFinalDrawControl ? (
+        <section className="winner-final-draw-region">
           <div className="winner-final-draw-zone">
             <WinnersFinalDrawControl
               activeDraw={finalDraw}
               canSwitchNetwork={canSwitchDrawNetwork}
               hasOfficialResult={selectedRoundHasWinners}
               onPresentationPreview={showFinalPresentation}
-              onPresentationReset={() => setFinalPresentationPreviewMode("")}
+              onPresentationReset={resetFinalPresentation}
             />
           </div>
-        ) : null}
-      </section>
-
-      {mediaIssue || winnerRevealIssue ? (
-        <p className="winner-stage-issue">{mediaIssue || winnerRevealIssue}</p>
+        </section>
       ) : null}
+
     </section>
   );
 }

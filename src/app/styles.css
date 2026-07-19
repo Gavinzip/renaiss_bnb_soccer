@@ -26163,12 +26163,22 @@ body {
   --winner-prize-card-width: min(16vw, 220px);
   position: relative;
   isolation: isolate;
+  display: block;
+  width: 100%;
+  min-height: 100dvh;
+  overflow: visible;
+  color: #f7f3e8;
+  background: #040504;
+}
+
+.winner-stage-presentation {
+  position: relative;
+  isolation: isolate;
   display: grid;
   align-items: end;
   width: 100%;
   min-height: 100dvh;
   overflow: hidden;
-  color: #f7f3e8;
   background: #040504;
 }
 
@@ -26689,9 +26699,18 @@ body {
   display: grid;
   width: min(100%, 1160px);
   justify-self: center;
-  margin-top: clamp(40px, 7vh, 88px);
+  margin: clamp(40px, 7vh, 88px) auto 0;
   padding: clamp(34px, 5vw, 64px) 0 clamp(12px, 2vh, 24px);
   border-top: 1px solid rgba(240, 209, 139, 0.2);
+}
+
+.winner-final-draw-region {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  width: 100%;
+  padding: 0 clamp(18px, 4vw, 64px) clamp(54px, 8vh, 96px);
+  background: #040504;
 }
 
 .winner-final-draw-zone::before {
@@ -26848,9 +26867,39 @@ body {
   transform: rotate(180deg);
 }
 
+.winner-final-draw__panel-shell {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    grid-template-rows 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms ease,
+    visibility 0s linear 420ms;
+}
+
+.winner-final-draw.is-open .winner-final-draw__panel-shell {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  opacity: 1;
+  transition:
+    grid-template-rows 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 260ms ease,
+    visibility 0s linear 0s;
+}
+
 .winner-final-draw__panel {
+  min-height: 0;
+  overflow: hidden;
   border-top: 1px solid rgba(245, 246, 241, 0.09);
   padding: 0 clamp(16px, 2.2vw, 22px) clamp(16px, 2.2vw, 22px);
+  transform: translateY(-8px);
+  transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.winner-final-draw.is-open .winner-final-draw__panel {
+  transform: translateY(0);
 }
 
 .winner-final-draw__panel .draw-operator-wallet {
@@ -33509,6 +33558,25 @@ body {
   opacity: 0.72;
 }
 
+.draw-simulation__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.draw-simulation footer button.is-secondary {
+  border: 1px solid rgba(240, 209, 139, 0.28);
+  color: rgba(255, 239, 199, 0.88);
+  background: rgba(240, 209, 139, 0.055);
+}
+
+.draw-simulation footer button.is-secondary:hover,
+.draw-simulation footer button.is-secondary:focus-visible {
+  color: rgba(255, 249, 231, 0.96);
+  background: rgba(240, 209, 139, 0.12);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .draw-simulation.is-mixing .draw-simulation__orb,
   .draw-simulation.is-revealing .draw-simulation__orb {
@@ -33601,6 +33669,11 @@ body {
   }
 
   .draw-simulation footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .draw-simulation__actions {
     display: grid;
     grid-template-columns: 1fr;
   }

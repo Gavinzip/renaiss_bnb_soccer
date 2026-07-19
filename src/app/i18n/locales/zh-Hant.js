@@ -862,6 +862,7 @@ export const zhHantLocale = {
       "operatorSimulationDisclaimer": "畫面與資料皆為演示，不代表正式抽獎結果。",
       "operatorSimulationStart": "開始模擬抽獎",
       "operatorSimulationAgain": "再模擬一次",
+      "operatorSimulationReset": "返回重來",
       "operatorSimulationStatusRunning": "模擬抽獎中",
       "operatorSimulationStatusComplete": "演示完成",
       "operatorDrawAria": "抽獎合約執行",

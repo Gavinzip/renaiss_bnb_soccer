@@ -862,6 +862,7 @@ export const koLocale = {
       "operatorSimulationDisclaimer": "모든 화면과 데이터는 시연용이며 공식 결과가 아닙니다.",
       "operatorSimulationStart": "시뮬레이션 시작",
       "operatorSimulationAgain": "다시 실행",
+      "operatorSimulationReset": "처음으로 돌아가기",
       "operatorSimulationStatusRunning": "시뮬레이션 실행 중",
       "operatorSimulationStatusComplete": "시연 완료",
       "operatorDrawAria": "추첨 컨트랙트 실행",
