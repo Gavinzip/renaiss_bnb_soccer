@@ -26,6 +26,7 @@ import {
   normalizeWalletProviders,
 } from "../../utils/walletProviders";
 import {
+  DrawExecutionProgress,
   DrawSimulationPreview,
   WalletProviderDialog,
 } from "./FinalDrawOperatorExperience";
@@ -1063,11 +1064,10 @@ export function DrawOperatorWallet({
     return true;
   }
 
-  function cycleExecutionMode() {
+  function selectExecutionMode(mode) {
     if (!canSwitchNetwork || busyAction || adminStatus?.running) return;
-    const currentIndex = drawExecutionModes.indexOf(activeExecutionMode);
-    const nextMode =
-      drawExecutionModes[(currentIndex + 1) % drawExecutionModes.length];
+    const nextMode = normalizeDrawExecutionMode(mode);
+    if (nextMode === activeExecutionMode) return;
     onExecutionModeChange?.(nextMode);
     setIssue("");
     setRunResult(null);
@@ -1332,11 +1332,6 @@ export function DrawOperatorWallet({
   );
   const targetNetworkLabel = drawNetworkLabel(selectedNetwork, t);
   const executionModeLabel = drawExecutionModeLabel(activeExecutionMode, t);
-  const nextExecutionMode =
-    drawExecutionModes[
-      (drawExecutionModes.indexOf(activeExecutionMode) + 1) %
-        drawExecutionModes.length
-    ];
   const operationBusy = Boolean(busyAction || currentAdminStatus?.running);
   const roundReadiness = drawRoundReadinessSnapshot();
   const activeRoundLedger = roundLedgerSummaryFor(currentAdminStatus, drawRoundId);
@@ -1393,12 +1388,45 @@ export function DrawOperatorWallet({
         : t("draw.operatorRunIdle");
   const runTone = runIsRunning ? "is-running" : visibleRun?.ok ? "is-ready" : visibleRun ? "is-warning" : "";
   const runStage = runStageCopy({ runPayloadResult, visibleRun, output: outputText, t });
+  const currentExecutionRun = drawRunMatches(activeRun, drawRoundId, selectedNetworkKey)
+    ? activeRun
+    : drawRunMatches(serverLastRun, drawRoundId, selectedNetworkKey)
+    ? serverLastRun
+    : null;
+  const executionProgressPhase = (() => {
+    if (!currentExecutionRun) return "idle";
+    if (
+      currentExecutionRun.status === "failed"
+      || (currentExecutionRun.finishedAt && !currentExecutionRun.ok)
+    ) return "failed";
+    if (currentExecutionRun.action === "broadcast") {
+      return currentExecutionRun.ok || currentExecutionRun.status === "completed"
+        ? "complete"
+        : "randomness";
+    }
+    if (currentExecutionRun.action === "ledger") return "pool";
+    return "idle";
+  })();
   const resultDetails = [
     runResult?.code ? `${t("draw.operatorRunCode")}: ${runResult.code}` : "",
     runResult?.error || "",
     visibleRun?.error || "",
     outputText,
   ].filter(Boolean);
+  const currentExecutionResult = currentExecutionRun === serverLastRun
+    ? serverLastRun?.result || null
+    : runResult?.result || null;
+  const currentExecutionStage = runStageCopy({
+    runPayloadResult: currentExecutionResult,
+    visibleRun: currentExecutionRun,
+    output: runOutputText(runResult, currentExecutionRun),
+    t,
+  });
+  const executionProgressDetail = executionProgressPhase === "failed"
+    ? currentExecutionRun?.error || resultDetails[0] || ""
+    : executionProgressPhase === "randomness"
+    ? currentExecutionStage
+    : "";
   const currentBroadcastCompleted = drawRunSucceeded(runResult, "broadcast", drawRoundId, selectedNetworkKey)
     || drawRunSucceeded(visibleRun, "broadcast", drawRoundId, selectedNetworkKey);
   const primaryDrawStep = (() => {
@@ -1505,33 +1533,37 @@ export function DrawOperatorWallet({
         aria-label={t("draw.operatorControlAria")}
       >
         {canSwitchNetwork ? (
-          <button
-            type="button"
-            className={`draw-operator-wallet__mode-switch is-${activeExecutionMode}`}
-            disabled={operationBusy}
-            onClick={cycleExecutionMode}
-            aria-label={t("draw.operatorModeSwitchAria", {
-              current: executionModeLabel,
-              next: drawExecutionModeLabel(nextExecutionMode, t),
-            })}
+          <div
+            className="draw-operator-wallet__mode-picker"
+            role="group"
+            aria-label={t("draw.operatorModePickerAria")}
           >
-            <span className="draw-operator-wallet__mode-icon">
-              {simulationMode ? (
-                <Dices size={19} strokeWidth={2.1} />
-              ) : (
-                <Network size={19} strokeWidth={2.1} />
-              )}
-            </span>
-            <span>
-              <small>{t("draw.operatorModeCurrent")}</small>
-              <strong>{executionModeLabel}</strong>
-            </span>
-            <span className="draw-operator-wallet__mode-next">
-              <small>{t("draw.operatorModeNext")}</small>
-              <strong>{drawExecutionModeLabel(nextExecutionMode, t)}</strong>
-              <RefreshCw size={14} strokeWidth={2.1} />
-            </span>
-          </button>
+            {drawExecutionModes.map((mode) => {
+              const selected = activeExecutionMode === mode;
+              const ModeIcon = mode === "simulation" ? Dices : Network;
+              return (
+                <button
+                  type="button"
+                  className={`draw-operator-wallet__mode-option is-${mode}${selected ? " is-active" : ""}`}
+                  disabled={operationBusy}
+                  aria-pressed={selected}
+                  onClick={() => selectExecutionMode(mode)}
+                  key={mode}
+                >
+                  <ModeIcon size={18} strokeWidth={2.1} aria-hidden="true" />
+                  <strong>{drawExecutionModeLabel(mode, t)}</strong>
+                  {selected ? (
+                    <CheckCircle2
+                      className="draw-operator-wallet__mode-selected"
+                      size={14}
+                      strokeWidth={2.4}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         ) : (
           <div className="draw-operator-wallet__mode-static">
             <Network size={18} strokeWidth={2.1} />
@@ -1606,6 +1638,13 @@ export function DrawOperatorWallet({
         />
       ) : (
         <>
+          <DrawExecutionProgress
+            activeDraw={activeDraw}
+            detail={executionProgressDetail}
+            networkLabel={targetNetworkLabel}
+            phase={executionProgressPhase}
+            t={t}
+          />
           <section
             className="draw-operator-wallet__admin"
             aria-label={t("draw.operatorDrawAria")}
@@ -1618,71 +1657,63 @@ export function DrawOperatorWallet({
                   : t("draw.operatorDrawNotReady")}
               </strong>
             </header>
-            <p>{adminStatusCopy}</p>
-            {readinessItems.length > 0 ? (
-              <ul className="draw-operator-wallet__readiness">
-                {readinessItems.map((item) => (
-                  <li
-                    className={item.ready ? "is-ready" : "is-warning"}
-                    key={item.id}
-                  >
-                    {item.label}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {currentAdminStatus?.contractAddress ? (
-              <code>
-                {targetNetworkLabel} ·{" "}
-                {compactAddress(currentAdminStatus.contractAddress)}
-              </code>
-            ) : null}
-            <section
-              className="draw-operator-wallet__redraw"
-              aria-label={t("draw.operatorRedrawAria")}
-            >
-              <label className="draw-operator-wallet__redraw-toggle">
-                <input
-                  type="checkbox"
-                  checked={redrawEnabled}
-                  disabled={operationBusy}
-                  onChange={(event) =>
-                    selectRedrawEnabled(event.target.checked)
-                  }
-                />
-                <span>
-                  <strong>{t("draw.operatorRedrawLabel")}</strong>
-                  <small>{t("draw.operatorRedrawBody")}</small>
-                </span>
-              </label>
-              {redrawEnabled ? (
-                <label className="draw-operator-wallet__redraw-version">
-                  <span>{t("draw.operatorRedrawAttempt")}</span>
+            <div className="draw-operator-wallet__admin-overview">
+              <span className="draw-operator-wallet__admin-summary">
+                {!adminReady ? <p>{adminStatusCopy}</p> : null}
+                {currentAdminStatus?.contractAddress ? (
+                  <code>
+                    {targetNetworkLabel} ·{" "}
+                    {compactAddress(currentAdminStatus.contractAddress)}
+                  </code>
+                ) : null}
+              </span>
+              <section
+                className="draw-operator-wallet__redraw"
+                aria-label={t("draw.operatorRedrawAria")}
+              >
+                <label className="draw-operator-wallet__redraw-toggle">
                   <input
-                    type="number"
-                    min="1"
-                    max="999"
-                    step="1"
-                    value={redrawAttempt}
+                    type="checkbox"
+                    checked={redrawEnabled}
                     disabled={operationBusy}
                     onChange={(event) =>
-                      updateRedrawAttempt(event.target.value)
+                      selectRedrawEnabled(event.target.checked)
                     }
                   />
-                  <code>{drawRoundId}</code>
+                  <span>
+                    <strong>{t("draw.operatorRedrawLabel")}</strong>
+                    <small>{t("draw.operatorRedrawBody")}</small>
+                  </span>
                 </label>
-              ) : (
-                <code>{drawRoundId}</code>
-              )}
-              {redrawActive ? (
-                <p>
-                  {t("draw.operatorRedrawWarning", {
-                    sourceRound: sourceRoundId,
-                    drawRound: drawRoundId,
-                  })}
-                </p>
-              ) : null}
-            </section>
+                {redrawEnabled ? (
+                  <label className="draw-operator-wallet__redraw-version">
+                    <span>{t("draw.operatorRedrawAttempt")}</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="999"
+                      step="1"
+                      value={redrawAttempt}
+                      disabled={operationBusy}
+                      onChange={(event) =>
+                        updateRedrawAttempt(event.target.value)
+                      }
+                    />
+                    <code>{drawRoundId}</code>
+                  </label>
+                ) : (
+                  <code>{drawRoundId}</code>
+                )}
+                {redrawActive ? (
+                  <p>
+                    {t("draw.operatorRedrawWarning", {
+                      sourceRound: sourceRoundId,
+                      drawRound: drawRoundId,
+                    })}
+                  </p>
+                ) : null}
+              </section>
+            </div>
             <p
               className={[
                 "draw-operator-wallet__finals",

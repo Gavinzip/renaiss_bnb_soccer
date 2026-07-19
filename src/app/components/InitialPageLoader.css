@@ -1,3 +1,19 @@
+.initial-experience {
+  min-height: 100svh;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 420ms ease,
+    visibility 420ms ease;
+}
+
+.initial-experience.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
 .initial-loader {
   position: fixed;
   inset: 0;
@@ -81,8 +97,52 @@
   white-space: nowrap;
 }
 
+.initial-loader__issue {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(42px, 8vh, 84px);
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: min(88vw, 620px);
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.initial-loader__issue p {
+  margin: 0;
+  color: rgba(245, 246, 241, 0.78);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.initial-loader__issue button {
+  min-height: 42px;
+  border: 1px solid rgba(240, 209, 139, 0.48);
+  border-radius: 999px;
+  padding: 0 22px;
+  color: #f7f3e8;
+  background: rgba(240, 209, 139, 0.12);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.initial-loader__issue button:hover,
+.initial-loader__issue button:focus-visible {
+  border-color: rgba(240, 209, 139, 0.78);
+  background: rgba(240, 209, 139, 0.2);
+}
+
+.initial-loader.has-issue .initial-loader__circular {
+  animation-play-state: paused;
+  opacity: 0.62;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .initial-loader,
+  .initial-experience,
   .circular-text span {
     transition-duration: 1ms;
   }

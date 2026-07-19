@@ -953,6 +953,9 @@ export function ControlRoom({
   votePoolReady,
   winnerRevealData,
   winnerRevealIssue,
+  winnerRevealLoading,
+  winnerRevealNetwork,
+  canSwitchWinnerRevealNetwork,
   currentWinnerWalletAddress,
   currentUserWinnerCount,
   drawStats,
@@ -964,6 +967,9 @@ export function ControlRoom({
   authConfig,
   authIssue,
   authEndpointReady,
+  experienceVisible,
+  onInitialViewMediaStateChange,
+  onSelectWinnerRevealNetwork,
   onRequestLogin,
   onRefreshAuth,
   onSelectView,
@@ -1028,12 +1034,15 @@ export function ControlRoom({
     ? roundTicketBreakdown
     : { usableTickets: 0, remainingTickets: 0, usedTickets: 0, allocations: [] };
   const visibleWinnerRevealData = useMemo(
-    () => (canViewAdminOnlyRounds
+    () => (canViewAdminOnlyRounds || (canViewFinalDrawInWinners && winnerRevealNetwork === "testnet")
       ? winnerRevealData
       : filterWinnerRevealDataByRounds(winnerRevealData, visibleRoundIds)),
-    [canViewAdminOnlyRounds, visibleRoundIds, winnerRevealData],
+    [canViewAdminOnlyRounds, canViewFinalDrawInWinners, visibleRoundIds, winnerRevealData, winnerRevealNetwork],
   );
-  const visibleCurrentUserWinnerCount = canViewAdminOnlyRounds
+  const canViewAllWinnerRounds = canViewAdminOnlyRounds
+    || (canViewFinalDrawInWinners && winnerRevealNetwork === "testnet");
+  const winnerRoomRounds = canViewAllWinnerRounds ? rounds : visibleRounds;
+  const visibleCurrentUserWinnerCount = canViewAllWinnerRounds
     ? currentUserWinnerCount
     : countVisibleWinnersForWallet(winnerRevealData, currentWinnerWalletAddress, visibleRoundIds);
   const visibleCommandViews = useMemo(
@@ -1042,6 +1051,16 @@ export function ControlRoom({
   );
   const effectiveActiveViewId = !drawViewEnabled && activeViewId === "draw" ? "home" : activeViewId;
   const activeView = visibleCommandViews.find((view) => view.id === effectiveActiveViewId) ?? visibleCommandViews[0] ?? commandViews[0];
+  const winnerRoomActiveRound = winnerRoomRounds.find((round) => round.id === activeRoundId)
+    ?? winnerRoomRounds[0]
+    ?? visibleActiveRound;
+  const roundSwitchRounds = effectiveActiveViewId === "winners" ? winnerRoomRounds : visibleRounds;
+  const roundSwitchActiveRoundId = effectiveActiveViewId === "winners"
+    ? winnerRoomActiveRound.id
+    : visibleActiveRoundId;
+  const roundSwitchDrawStats = effectiveActiveViewId === "winners" && canViewAllWinnerRounds
+    ? drawStats
+    : visibleDrawStats;
   const activeDraw = visibleDrawStats.find((round) => round.id === visibleActiveRound.id) ?? visibleDrawStats[0] ?? drawStats[0];
   const finalDraw = visibleDrawStats.find((round) => round.id === "final")
     ?? drawStats.find((round) => round.id === "final")
@@ -1172,7 +1191,8 @@ export function ControlRoom({
   }
 
   function handleSelectVisibleRound(roundId) {
-    if (!canViewAdminOnlyRounds && isAdminOnlyRound(roundId)) {
+    const canSelectAllWinnerRounds = effectiveActiveViewId === "winners" && canViewAllWinnerRounds;
+    if (!canViewAdminOnlyRounds && !canSelectAllWinnerRounds && isAdminOnlyRound(roundId)) {
       const fallbackRoundId = visibleRounds[0]?.id;
       if (fallbackRoundId) onSelectRound(fallbackRoundId);
       return;
@@ -1187,11 +1207,11 @@ export function ControlRoom({
   }, [activeViewId, drawViewEnabled, onSelectView]);
 
   useEffect(() => {
-    if (canViewAdminOnlyRounds) return;
+    if (canViewAdminOnlyRounds || (effectiveActiveViewId === "winners" && canViewAllWinnerRounds)) return;
     if (!isAdminOnlyRound(activeRoundId)) return;
     const fallbackRoundId = visibleRounds[0]?.id;
     if (fallbackRoundId) onSelectRound(fallbackRoundId);
-  }, [activeRoundId, canViewAdminOnlyRounds, onSelectRound, visibleRounds]);
+  }, [activeRoundId, canViewAdminOnlyRounds, canViewAllWinnerRounds, effectiveActiveViewId, onSelectRound, visibleRounds]);
 
   useEffect(() => {
     if (effectiveActiveViewId !== "winners") setWinnerRevealStarted(false);
@@ -1378,12 +1398,12 @@ export function ControlRoom({
 
             {showRoundSwitch ? (
               <RoundSwitch
-                rounds={visibleRounds}
-                activeRoundId={visibleActiveRoundId}
+                rounds={roundSwitchRounds}
+                activeRoundId={roundSwitchActiveRoundId}
                 simulatedRoundId={simulatedRoundId}
                 simulationMode={simulationMode}
                 liveQualification={liveQualification}
-                drawStats={visibleDrawStats}
+                drawStats={roundSwitchDrawStats}
                 remainingRoundTickets={displayedRemainingRoundTickets}
                 showModeTools={showSimulationControls && effectiveActiveViewId !== "winners"}
                 allowAllRounds={roundSwitchAllowsAll}
@@ -1496,16 +1516,22 @@ export function ControlRoom({
 
           {effectiveActiveViewId === "winners" ? (
             <LazyWinnersRoom
-              activeRoundId={visibleActiveRoundId}
-              rounds={visibleRounds}
+              activeRoundId={winnerRoomActiveRound.id}
+              rounds={winnerRoomRounds}
               matches={matches}
               winnerRevealData={visibleWinnerRevealData}
               winnerRevealIssue={winnerRevealIssue}
+              winnerRevealLoading={winnerRevealLoading}
+              winnerRevealNetwork={winnerRevealNetwork}
               currentWalletAddress={currentWinnerWalletAddress}
               currentUserWinnerCount={visibleCurrentUserWinnerCount}
               canViewFinalDraw={canViewFinalDrawInWinners}
               canSwitchDrawNetwork={canViewFinalDrawInWinners}
+              canSwitchWinnerRevealNetwork={canSwitchWinnerRevealNetwork}
               finalDraw={finalDraw}
+              experienceVisible={experienceVisible}
+              onInitialMediaStateChange={onInitialViewMediaStateChange}
+              onSelectWinnerRevealNetwork={onSelectWinnerRevealNetwork}
               onRevealStateChange={setWinnerRevealStarted}
             />
           ) : null}

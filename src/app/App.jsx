@@ -47,11 +47,12 @@ import { useCampaignCopy } from "./i18n/useCampaignCopy";
 import renaissLogo from "./assets/renaiss-logo-mark.webp";
 import { installGoogleAnalytics, trackEvent, trackPageView } from "./utils/analytics";
 import { fetchJsonWithTimeout, isRequestAbortError } from "./utils/httpClient";
-import { preloadImage } from "./utils/preloadAssets";
+import { preloadImageDecoded } from "./utils/preloadAssets";
 import { requestRenaissProviderSignOut } from "./utils/renaissAuth";
 import { sameMatchId } from "./data/matchIds.js";
 import { getRoundTicketAvailability } from "./data/ticketEligibility";
 import { buildLiveVoteStats } from "./data/votePoolRuntime";
+import { canViewWinnersFinalDraw } from "./utils/drawVisibility";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
 const INITIAL_LOADER_EXIT_MS = 540;
@@ -253,10 +254,6 @@ function normalizeLedgerEntryPayload(payload, requestedWalletAddress) {
   };
 }
 
-function requestHasSettled(status) {
-  return status === "ready" || status === "error";
-}
-
 function liveSnapshotIsAvailable(snapshot) {
   return Boolean(snapshot?.fetchedAt) && ["live", "stale"].includes(String(snapshot?.sourceStatus || ""));
 }
@@ -432,13 +429,51 @@ function AppContent() {
   }));
   const [globalPreviewVoteRetryToken, setGlobalPreviewVoteRetryToken] = useState(0);
   const [winnerRevealData, setWinnerRevealData] = useState(() => getEmptyWinnerRevealData(winnerRevealVideoUrl));
+  const [winnerRevealDataNetwork, setWinnerRevealDataNetwork] = useState("mainnet");
   const [winnerRevealIssue, setWinnerRevealIssue] = useState("");
   const [winnerRevealReady, setWinnerRevealReady] = useState(!drawWinnersUrl);
   const [winnerRevealRefreshToken, setWinnerRevealRefreshToken] = useState(0);
-  const winnerRevealFreshnessRef = useRef("");
+  const winnerRevealCacheRef = useRef(new Map());
+  const winnerRevealFreshnessRef = useRef({ mainnet: "", testnet: "" });
   const [authSession, setAuthSession] = useState({ authenticated: false, config: null });
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
+  const [winnerRevealNetwork, setWinnerRevealNetwork] = useState("mainnet");
+  const canSwitchWinnerRevealNetwork = canViewWinnersFinalDraw({
+    localToolsEnabled: localTestOrigin,
+    enabled: import.meta.env.VITE_WINNERS_FINAL_DRAW_ENABLED,
+    allowlist: import.meta.env.VITE_WINNERS_FINAL_DRAW_ALLOWED_WALLETS,
+    authSession,
+  });
+  const selectedWinnerRevealNetwork = canSwitchWinnerRevealNetwork
+    ? winnerRevealNetwork
+    : "mainnet";
+  const selectedDrawWinnersUrl = useMemo(
+    () => urlWithQueryParams(drawWinnersUrl, { network: selectedWinnerRevealNetwork }),
+    [drawWinnersUrl, selectedWinnerRevealNetwork],
+  );
+  const selectedDrawWinnersFreshnessUrl = useMemo(
+    () => urlWithQueryParams(drawWinnersFreshnessUrl, { network: selectedWinnerRevealNetwork }),
+    [drawWinnersFreshnessUrl, selectedWinnerRevealNetwork],
+  );
+  const selectedWinnerRevealData = useMemo(
+    () => (winnerRevealDataNetwork === selectedWinnerRevealNetwork
+      ? winnerRevealData
+      : getEmptyWinnerRevealData(winnerRevealVideoUrl)),
+    [selectedWinnerRevealNetwork, winnerRevealData, winnerRevealDataNetwork, winnerRevealVideoUrl],
+  );
+  const winnerRevealLoading = !winnerRevealReady
+    || winnerRevealDataNetwork !== selectedWinnerRevealNetwork;
+  const handleSelectWinnerRevealNetwork = useCallback((network) => {
+    const nextNetwork = network === "testnet" ? "testnet" : "mainnet";
+    const cachedData = winnerRevealCacheRef.current.get(nextNetwork);
+    if (cachedData) {
+      setWinnerRevealData(cachedData);
+      setWinnerRevealDataNetwork(nextNetwork);
+      setWinnerRevealIssue("");
+    }
+    setWinnerRevealNetwork(nextNetwork);
+  }, []);
   const [activeViewId, setActiveViewId] = useState(readInitialViewId);
   const [localSimulationMode, setLocalSimulationMode] = useState(defaultSimulationMode);
   const simulationMode = localTestOrigin ? localSimulationMode : "realtime";
@@ -468,10 +503,14 @@ function AppContent() {
   const [pendingVoteIssue, setPendingVoteIssue] = useState("");
   const [voteSubmitting, setVoteSubmitting] = useState(false);
   const [voteSubmitNotice, setVoteSubmitNotice] = useState(null);
-  const [initialAssetsReady, setInitialAssetsReady] = useState(false);
+  const [initialAssetsState, setInitialAssetsState] = useState({ key: "", status: "loading", issue: "" });
+  const [initialViewMediaState, setInitialViewMediaState] = useState({
+    viewId: "",
+    status: "loading",
+    issue: "",
+  });
   const [initialCoverPaintReady, setInitialCoverPaintReady] = useState(false);
-  const [initialLoaderVisible, setInitialLoaderVisible] = useState(true);
-  const [initialLoaderMounted, setInitialLoaderMounted] = useState(true);
+  const [initialLoaderPhase, setInitialLoaderPhase] = useState("loading");
   const [initialLoaderStartedAt] = useState(() => Date.now());
   const [matchStatusNow, setMatchStatusNow] = useState(() => Date.now());
   const trackedLoginKeyRef = useRef("");
@@ -482,6 +521,21 @@ function AppContent() {
   const effectiveWalletAddress = normalizeWalletAddress(authSession?.walletAddress) || selectedWallet;
   const setPreviewVoteIssue = useCallback((issue) => {
     setPreviewVoteRequest((current) => ({ ...current, issue: String(issue || "") }));
+  }, []);
+  const handleInitialViewMediaStateChange = useCallback((nextState) => {
+    const next = {
+      viewId: String(nextState?.viewId || ""),
+      status: String(nextState?.status || "loading"),
+      issue: String(nextState?.issue || ""),
+    };
+
+    setInitialViewMediaState((current) => (
+      current.viewId === next.viewId
+      && current.status === next.status
+      && current.issue === next.issue
+        ? current
+        : next
+    ));
   }, []);
 
   const refreshAuthSession = useCallback(async () => {
@@ -615,7 +669,12 @@ function AppContent() {
     let cancelled = false;
     let retryTimerId = 0;
     const controller = new AbortController();
-    setLedgerEntryRequest({ walletAddress, status: "loading", entry: null, issue: "" });
+    setLedgerEntryRequest((current) => ({
+      walletAddress,
+      status: "loading",
+      entry: null,
+      issue: current.walletAddress === walletAddress ? current.issue : "",
+    }));
 
     fetchJsonWithTimeout(urlWithQueryParams(ledgerEntryUrl, {
       wallet: walletAddress,
@@ -707,7 +766,11 @@ function AppContent() {
     const controller = new AbortController();
     setPreviewVoteData(getEmptyPreviewVoteData());
     setPreviewAllocations([]);
-    setPreviewVoteRequest({ walletAddress, status: "loading", issue: "" });
+    setPreviewVoteRequest((current) => ({
+      walletAddress,
+      status: "loading",
+      issue: current.walletAddress === walletAddress ? current.issue : "",
+    }));
 
     fetchJsonWithTimeout(urlWithWalletQuery(previewVoteUrl, walletAddress), {
       cache: "no-store",
@@ -751,7 +814,7 @@ function AppContent() {
     let retryTimerId = 0;
     const controller = new AbortController();
     setGlobalPreviewVoteData(getEmptyPreviewVoteData());
-    setGlobalPreviewVoteRequest({ status: "loading", issue: "" });
+    setGlobalPreviewVoteRequest((current) => ({ status: "loading", issue: current.issue }));
 
     const scope = simulationMode === "realtime" ? "totals" : "all";
     fetchJsonWithTimeout(urlWithQueryParams(previewVoteUrl, { scope }), {
@@ -788,28 +851,56 @@ function AppContent() {
   }, [globalPreviewVoteRetryToken, previewVoteUrl, simulationMode, t]);
 
   useEffect(() => {
-    if (!drawWinnersUrl) {
-      setWinnerRevealData(getEmptyWinnerRevealData(winnerRevealVideoUrl));
+    if (!canSwitchWinnerRevealNetwork && winnerRevealNetwork !== "mainnet") {
+      handleSelectWinnerRevealNetwork("mainnet");
+    }
+  }, [canSwitchWinnerRevealNetwork, handleSelectWinnerRevealNetwork, winnerRevealNetwork]);
+
+  useEffect(() => {
+    if (!selectedDrawWinnersUrl) {
+      const emptyData = getEmptyWinnerRevealData(winnerRevealVideoUrl);
+      winnerRevealCacheRef.current.set(selectedWinnerRevealNetwork, emptyData);
+      setWinnerRevealData(emptyData);
+      setWinnerRevealDataNetwork(selectedWinnerRevealNetwork);
       setWinnerRevealReady(true);
       return undefined;
     }
 
     let cancelled = false;
     const controller = new AbortController();
-    fetchJsonWithTimeout(drawWinnersUrl, {
+    const cachedData = winnerRevealCacheRef.current.get(selectedWinnerRevealNetwork);
+    if (cachedData) {
+      setWinnerRevealData(cachedData);
+      setWinnerRevealDataNetwork(selectedWinnerRevealNetwork);
+    }
+    setWinnerRevealIssue("");
+
+    fetchJsonWithTimeout(selectedDrawWinnersUrl, {
       cache: "no-store",
+      credentials: "same-origin",
       signal: controller.signal,
       timeoutMs: DATA_REQUEST_TIMEOUT_MS,
     })
       .then(({ payload }) => payload)
       .then((payload) => {
         if (cancelled) return;
-        setWinnerRevealData(normalizeWinnerRevealPayload(payload, winnerRevealVideoUrl));
+        const payloadNetwork = String(payload?.networkKey || "mainnet").trim().toLowerCase();
+        if (payloadNetwork !== selectedWinnerRevealNetwork) {
+          throw new Error(t("winnerReveal.networkMismatch"));
+        }
+        const normalizedData = normalizeWinnerRevealPayload(payload, winnerRevealVideoUrl);
+        winnerRevealCacheRef.current.set(selectedWinnerRevealNetwork, normalizedData);
+        setWinnerRevealData(normalizedData);
+        setWinnerRevealDataNetwork(selectedWinnerRevealNetwork);
         setWinnerRevealIssue("");
       })
       .catch((error) => {
         if (isRequestAbortError(error)) return;
         if (cancelled) return;
+        if (!cachedData) {
+          setWinnerRevealData(getEmptyWinnerRevealData(winnerRevealVideoUrl));
+          setWinnerRevealDataNetwork(selectedWinnerRevealNetwork);
+        }
         setWinnerRevealIssue(t("winnerReveal.dataIssue", { message: error.message }));
       })
       .finally(() => {
@@ -820,7 +911,45 @@ function AppContent() {
       cancelled = true;
       controller.abort();
     };
-  }, [drawWinnersUrl, t, winnerRevealVideoUrl, winnerRevealRefreshToken]);
+  }, [selectedDrawWinnersUrl, selectedWinnerRevealNetwork, t, winnerRevealVideoUrl, winnerRevealRefreshToken]);
+
+  useEffect(() => {
+    if (
+      !canSwitchWinnerRevealNetwork
+      || !drawWinnersUrl
+      || selectedWinnerRevealNetwork === "testnet"
+      || winnerRevealCacheRef.current.has("testnet")
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const testnetUrl = urlWithQueryParams(drawWinnersUrl, { network: "testnet" });
+
+    fetchJsonWithTimeout(testnetUrl, {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: controller.signal,
+      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
+    })
+      .then(({ payload }) => payload)
+      .then((payload) => {
+        if (cancelled) return;
+        const payloadNetwork = String(payload?.networkKey || "").trim().toLowerCase();
+        if (payloadNetwork !== "testnet") return;
+        winnerRevealCacheRef.current.set(
+          "testnet",
+          normalizeWinnerRevealPayload(payload, winnerRevealVideoUrl),
+        );
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [canSwitchWinnerRevealNetwork, drawWinnersUrl, selectedWinnerRevealNetwork, winnerRevealVideoUrl]);
 
   useEffect(() => {
     function refreshWinnerRevealData() {
@@ -837,8 +966,8 @@ function AppContent() {
     if (
       simulationMode !== "realtime"
       || activeViewId !== "winners"
-      || !drawWinnersFreshnessUrl
-      || !winnerRevealReady
+      || !selectedDrawWinnersFreshnessUrl
+      || winnerRevealLoading
     ) {
       return undefined;
     }
@@ -852,8 +981,9 @@ function AppContent() {
       requestController = new AbortController();
 
       try {
-        const { payload } = await fetchJsonWithTimeout(drawWinnersFreshnessUrl, {
+        const { payload } = await fetchJsonWithTimeout(selectedDrawWinnersFreshnessUrl, {
           cache: "no-store",
+          credentials: "same-origin",
           signal: requestController.signal,
           timeoutMs: DATA_REQUEST_TIMEOUT_MS,
         });
@@ -861,20 +991,21 @@ function AppContent() {
 
         const nextVersion = String(payload?.version || "");
         const nextGeneratedAt = String(payload?.generatedAt || "");
-        const currentGeneratedAt = String(winnerRevealData.generatedAt || "");
+        const currentGeneratedAt = String(selectedWinnerRevealData.generatedAt || "");
+        const currentVersion = winnerRevealFreshnessRef.current[selectedWinnerRevealNetwork];
         const versionChanged = Boolean(
-          winnerRevealFreshnessRef.current
+          currentVersion
           && nextVersion
-          && winnerRevealFreshnessRef.current !== nextVersion
+          && currentVersion !== nextVersion
         );
-        winnerRevealFreshnessRef.current = nextVersion;
+        winnerRevealFreshnessRef.current[selectedWinnerRevealNetwork] = nextVersion;
 
         if (versionChanged || (nextGeneratedAt && nextGeneratedAt !== currentGeneratedAt)) {
           setWinnerRevealRefreshToken((current) => current + 1);
         }
       } catch (error) {
         if (!isRequestAbortError(error) && active) {
-          winnerRevealFreshnessRef.current = "";
+          winnerRevealFreshnessRef.current[selectedWinnerRevealNetwork] = "";
         }
       }
     }
@@ -890,10 +1021,11 @@ function AppContent() {
     };
   }, [
     activeViewId,
-    drawWinnersFreshnessUrl,
+    selectedDrawWinnersFreshnessUrl,
+    selectedWinnerRevealData.generatedAt,
+    selectedWinnerRevealNetwork,
     simulationMode,
-    winnerRevealData.generatedAt,
-    winnerRevealReady,
+    winnerRevealLoading,
   ]);
 
   useEffect(() => {
@@ -1199,8 +1331,8 @@ function AppContent() {
     : roundOutcomeSummary;
   const currentWinnerWalletAddress = authSession?.walletAddress || (!authMeUrl || isLocalTestOrigin() ? effectiveWalletAddress : "");
   const currentUserWinnerCount = useMemo(
-    () => countWinnersForWallet(winnerRevealData, currentWinnerWalletAddress),
-    [currentWinnerWalletAddress, winnerRevealData],
+    () => countWinnersForWallet(selectedWinnerRevealData, currentWinnerWalletAddress),
+    [currentWinnerWalletAddress, selectedWinnerRevealData],
   );
   const drawStats = useMemo(
     () => roundDefinitions.map((round) => summarizeRoundDraw(
@@ -1212,17 +1344,12 @@ function AppContent() {
     [globalPreviewVoteData, previewAllocations, previewVoteData],
   );
   const latestPrizeRoundId = useMemo(
-    () => getLatestPrizeRoundId(winnerRevealData, activeRoundId),
-    [activeRoundId, winnerRevealData],
+    () => getLatestPrizeRoundId(selectedWinnerRevealData, activeRoundId),
+    [activeRoundId, selectedWinnerRevealData],
   );
   const milestoneCurrentValue = milestoneSummary.currentMetricValue ?? (ledger.totalRawTickets ?? 0);
   const ledgerEntryMatchesWallet = ledgerEntryRequest.walletAddress === effectiveWalletAddress;
   const previewVoteMatchesWallet = previewVoteRequest.walletAddress === effectiveWalletAddress;
-  const ledgerEntrySettled = !ledgerEntryUrl
-    || (ledgerEntryMatchesWallet && requestHasSettled(ledgerEntryRequest.status));
-  const previewVoteSettled = !previewVoteUrl
-    || (previewVoteMatchesWallet && requestHasSettled(previewVoteRequest.status));
-  const globalPreviewVoteSettled = !previewVoteUrl || requestHasSettled(globalPreviewVoteRequest.status);
   const ticketDataReady = !ledgerEntryUrl
     || (ledgerEntryMatchesWallet && ledgerEntryRequest.status === "ready" && Boolean(activeEntry));
   const personalVoteDataReady = !previewVoteUrl
@@ -1232,10 +1359,6 @@ function AppContent() {
   const liveRound16Available = simulationMode !== "realtime" || liveSnapshotIsAvailable(liveRound16Matches);
   const liveFutureAvailable = simulationMode !== "realtime" || liveSnapshotIsAvailable(liveFutureKnockoutMatches);
   const livePublicRoundsReady = liveRound16Available && liveFutureAvailable;
-  const livePublicRoundsSettled = simulationMode !== "realtime" || (
-    (liveRound16Available || requestHasSettled(liveRound16RequestStatus))
-    && (liveFutureAvailable || requestHasSettled(liveFutureRequestStatus))
-  );
   const preferredVoteRoundId = livePublicRoundsReady
     ? getDefaultVoteRoundId(matches, activeRoundId)
     : "";
@@ -1254,31 +1377,76 @@ function AppContent() {
     liveRound16RequestStatus === "error" ? liveRound16Matches.issue : "",
     liveFutureRequestStatus === "error" ? liveFutureKnockoutMatches.issue : "",
   ].find(Boolean) || "";
-  const initialVoteStateSettled = activeViewId !== "vote"
-    || (livePublicRoundsSettled && (!livePublicRoundsReady || voteRoundSelectionReady));
-  const initialDataReady = ledgerReady
+  const ledgerEntryReadyForInitialLoad = !ledgerEntryUrl
+    || (ledgerEntryMatchesWallet && ledgerEntryRequest.status === "ready");
+  const commonInitialDataReady = ledgerReady
+    && !ledgerIssue
     && milestoneReady
-    && ledgerEntrySettled
-    && previewVoteSettled
-    && globalPreviewVoteSettled
-    && winnerRevealReady
+    && !milestoneIssue
+    && ledgerEntryReadyForInitialLoad
     && authReady
-    && initialVoteStateSettled;
-  const initialCoverAssetsReady = initialDataReady && initialAssetsReady;
+    && !authIssue;
+  const initialViewDataReady = activeViewId === "vote"
+    ? voteDataReady
+    : activeViewId === "winners"
+      ? winnerRevealReady && !winnerRevealIssue
+      : true;
+  const initialDataReady = commonInitialDataReady && initialViewDataReady;
+  const initialDataIssue = [
+    ledgerReady ? ledgerIssue : "",
+    milestoneReady ? milestoneIssue : "",
+    ledgerEntryMatchesWallet ? ledgerEntryRequest.issue : "",
+    authReady ? authIssue : "",
+    activeViewId === "vote" ? voteDataIssue : "",
+    activeViewId === "winners" && winnerRevealReady ? winnerRevealIssue : "",
+  ].find(Boolean) || "";
+  const initialAssetsReady = initialAssetsState.key === `${activeViewId}:${activeRoundId}`
+    && initialAssetsState.status === "ready";
+  const initialViewMediaReady = activeViewId !== "winners"
+    || (initialViewMediaState.viewId === "winners" && initialViewMediaState.status === "ready");
+  const initialLoadIssue = initialDataIssue
+    || (initialAssetsState.key === `${activeViewId}:${activeRoundId}` && initialAssetsState.status === "error"
+      ? initialAssetsState.issue
+      : "")
+    || (activeViewId === "winners"
+      && initialViewMediaState.viewId === "winners"
+      && initialViewMediaState.status === "error"
+      ? initialViewMediaState.issue
+      : "");
+  const initialCoverAssetsReady = initialDataReady
+    && initialAssetsReady
+    && initialViewMediaReady
+    && !initialLoadIssue;
   const initialExperienceReady = initialCoverAssetsReady && initialCoverPaintReady;
+  const initialExperienceVisible = initialLoaderPhase !== "loading";
+  const initialExperienceInteractive = initialLoaderPhase === "done";
+  const initialLoaderMounted = initialLoaderPhase !== "done";
 
   useEffect(() => {
     let alive = true;
-    setInitialAssetsReady(false);
+    const key = `${activeViewId}:${activeRoundId}`;
+    setInitialAssetsState({ key, status: "loading", issue: "" });
     setInitialCoverPaintReady(false);
 
-    Promise.all([
-      preloadImage(renaissLogo),
-      preloadHomeRoomAssets(),
+    const preloadTasks = [
+      preloadImageDecoded(renaissLogo),
       preloadControlRoomView(activeViewId, { roundId: activeRoundId }),
-    ]).finally(() => {
-      if (alive) setInitialAssetsReady(true);
-    });
+    ];
+    if (activeViewId === "home") preloadTasks.push(preloadHomeRoomAssets());
+
+    Promise.all(preloadTasks)
+      .then(() => {
+        if (alive) setInitialAssetsState({ key, status: "ready", issue: "" });
+      })
+      .catch((error) => {
+        if (alive) {
+          setInitialAssetsState({
+            key,
+            status: "error",
+            issue: error instanceof Error ? error.message : String(error || "Asset loading failed."),
+          });
+        }
+      });
 
     return () => {
       alive = false;
@@ -1316,29 +1484,29 @@ function AppContent() {
   }, [initialCoverAssetsReady]);
 
   useEffect(() => {
-    if (!initialExperienceReady) return undefined;
+    if (!initialExperienceReady || initialLoaderPhase !== "loading") return undefined;
 
     const elapsed = Date.now() - initialLoaderStartedAt;
     const timeoutId = window.setTimeout(() => {
-      setInitialLoaderVisible(false);
+      setInitialLoaderPhase((current) => (current === "loading" ? "leaving" : current));
     }, Math.max(0, INITIAL_LOADER_MIN_VISIBLE_MS - elapsed));
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [initialExperienceReady, initialLoaderStartedAt]);
+  }, [initialExperienceReady, initialLoaderPhase, initialLoaderStartedAt]);
 
   useEffect(() => {
-    if (initialLoaderVisible) return undefined;
+    if (initialLoaderPhase !== "leaving") return undefined;
 
     const timeoutId = window.setTimeout(() => {
-      setInitialLoaderMounted(false);
+      setInitialLoaderPhase("done");
     }, INITIAL_LOADER_EXIT_MS);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [initialLoaderVisible]);
+  }, [initialLoaderPhase]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -1623,75 +1791,92 @@ function AppContent() {
 
   return (
     <>
-      {initialLoaderMounted ? <InitialPageLoader isLeaving={!initialLoaderVisible} /> : null}
-      <ControlRoom
-        activeViewId={activeViewId}
-        mobileNavOpen={mobileNavOpen}
-        ledger={ledger}
-        ledgerIssue={ledgerIssue || ledgerEntryRequest.issue}
-        activeEntry={activeEntry}
-        selectedWallet={effectiveWalletAddress}
-        simulatedRound={simulatedRound}
-        simulatedRoundId={simulatedRoundId}
-        activeRound={activeRound}
-        activeRoundId={activeRoundId}
-        rounds={roundDefinitions}
-        matches={matches}
-        teamsById={teamsById}
-        selectedMatch={selectedMatch}
-        selectedTeamId={selectedTeamId}
-        ticketAmount={ticketAmount}
-        remainingRoundTickets={visibleRemainingRoundTickets}
-        roundTicketBreakdown={roundTicketBreakdown}
-        usedRoundTickets={visibleUsedRoundTickets}
-        roundAllocations={visibleRoundAllocations}
-        roundVoteOutcomes={visibleRoundVoteOutcomes}
-        roundOutcomeSummary={visibleRoundOutcomeSummary}
-        previewVoteIssue={previewVoteRequest.issue || globalPreviewVoteRequest.issue}
-        ticketDataReady={ticketDataReady}
-        voteDataReady={voteDataReady}
-        voteDataIssue={voteDataIssue}
-        votePoolReady={votePoolReady}
-        winnerRevealData={winnerRevealData}
-        winnerRevealIssue={winnerRevealIssue}
-        currentWinnerWalletAddress={currentWinnerWalletAddress}
-        currentUserWinnerCount={currentUserWinnerCount}
-        drawStats={drawStats}
-        milestones={milestoneSummary.milestones}
-        currentMilestoneValue={milestoneCurrentValue}
-        simulationMode={simulationMode}
-        liveQualification={displayedLiveQualification}
-        authSession={authSession}
-        authConfig={authSession?.config}
-        authIssue={authIssue}
-        authEndpointReady={Boolean(authMeUrl)}
-        onRequestLogin={redirectToRenaissLogin}
-        onRefreshAuth={refreshAuthSession}
-        onSelectView={handleSelectView}
-        onToggleMobileNav={() => setMobileNavOpen((current) => !current)}
-        onSelectWallet={setSelectedWallet}
-        onSelectRound={handleSelectRound}
-        onSelectSimulatedRound={handleSelectSimulatedRound}
-        onSelectSimulationMode={handleSelectSimulationMode}
-        onSelectMatch={handleSelectMatch}
-        onSelectTeam={handleSelectTeam}
-        onSetTicketAmount={setTicketAmount}
-        onConfirmPreviewVote={handleRequestPreviewVote}
-      />
-      <VoteConfirmModal
-        amount={pendingVote?.amount}
-        issue={pendingVoteIssue}
-        match={pendingVoteMatch}
-        submitting={voteSubmitting}
-        team={pendingVoteTeam}
-        onCancel={() => {
-          if (voteSubmitting) return;
-          setPendingVote(null);
-          setPendingVoteIssue("");
-        }}
-        onConfirm={() => handleConfirmPreviewVote(pendingVote)}
-      />
-      <VoteSubmitToast notice={voteSubmitNotice} />
+      {initialLoaderMounted ? (
+        <InitialPageLoader
+          isLeaving={initialLoaderPhase === "leaving"}
+          issue={initialLoadIssue}
+          onRetry={() => window.location.reload()}
+        />
+      ) : null}
+      <div
+        className={`initial-experience${initialExperienceVisible ? " is-visible" : ""}`}
+        aria-hidden={!initialExperienceVisible}
+      >
+        <ControlRoom
+          activeViewId={activeViewId}
+          mobileNavOpen={mobileNavOpen}
+          ledger={ledger}
+          ledgerIssue={ledgerIssue || ledgerEntryRequest.issue}
+          activeEntry={activeEntry}
+          selectedWallet={effectiveWalletAddress}
+          simulatedRound={simulatedRound}
+          simulatedRoundId={simulatedRoundId}
+          activeRound={activeRound}
+          activeRoundId={activeRoundId}
+          rounds={roundDefinitions}
+          matches={matches}
+          teamsById={teamsById}
+          selectedMatch={selectedMatch}
+          selectedTeamId={selectedTeamId}
+          ticketAmount={ticketAmount}
+          remainingRoundTickets={visibleRemainingRoundTickets}
+          roundTicketBreakdown={roundTicketBreakdown}
+          usedRoundTickets={visibleUsedRoundTickets}
+          roundAllocations={visibleRoundAllocations}
+          roundVoteOutcomes={visibleRoundVoteOutcomes}
+          roundOutcomeSummary={visibleRoundOutcomeSummary}
+          previewVoteIssue={previewVoteRequest.issue || globalPreviewVoteRequest.issue}
+          ticketDataReady={ticketDataReady}
+          voteDataReady={voteDataReady}
+          voteDataIssue={voteDataIssue}
+          votePoolReady={votePoolReady}
+          winnerRevealData={selectedWinnerRevealData}
+          winnerRevealIssue={winnerRevealIssue}
+          winnerRevealLoading={winnerRevealLoading}
+          winnerRevealNetwork={selectedWinnerRevealNetwork}
+          canSwitchWinnerRevealNetwork={canSwitchWinnerRevealNetwork}
+          currentWinnerWalletAddress={currentWinnerWalletAddress}
+          currentUserWinnerCount={currentUserWinnerCount}
+          drawStats={drawStats}
+          milestones={milestoneSummary.milestones}
+          currentMilestoneValue={milestoneCurrentValue}
+          simulationMode={simulationMode}
+          liveQualification={displayedLiveQualification}
+          authSession={authSession}
+          authConfig={authSession?.config}
+          authIssue={authIssue}
+          authEndpointReady={Boolean(authMeUrl)}
+          experienceVisible={initialExperienceInteractive}
+          onInitialViewMediaStateChange={handleInitialViewMediaStateChange}
+          onSelectWinnerRevealNetwork={handleSelectWinnerRevealNetwork}
+          onRequestLogin={redirectToRenaissLogin}
+          onRefreshAuth={refreshAuthSession}
+          onSelectView={handleSelectView}
+          onToggleMobileNav={() => setMobileNavOpen((current) => !current)}
+          onSelectWallet={setSelectedWallet}
+          onSelectRound={handleSelectRound}
+          onSelectSimulatedRound={handleSelectSimulatedRound}
+          onSelectSimulationMode={handleSelectSimulationMode}
+          onSelectMatch={handleSelectMatch}
+          onSelectTeam={handleSelectTeam}
+          onSetTicketAmount={setTicketAmount}
+          onConfirmPreviewVote={handleRequestPreviewVote}
+        />
+        <VoteConfirmModal
+          amount={pendingVote?.amount}
+          issue={pendingVoteIssue}
+          match={pendingVoteMatch}
+          submitting={voteSubmitting}
+          team={pendingVoteTeam}
+          onCancel={() => {
+            if (voteSubmitting) return;
+            setPendingVote(null);
+            setPendingVoteIssue("");
+          }}
+          onConfirm={() => handleConfirmPreviewVote(pendingVote)}
+        />
+        <VoteSubmitToast notice={voteSubmitNotice} />
+      </div>
     </>
   );
 }

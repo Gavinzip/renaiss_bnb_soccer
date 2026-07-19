@@ -636,6 +636,48 @@ function drawWinnersOutputPathForNetwork(networkKey = drawDefaultNetworkKey) {
   return readEnvString('DRAW_TESTNET_WINNERS_PATH') || readEnvString('SOCCER_TESTNET_DRAW_WINNERS_PATH')
 }
 
+function winnersNetworkSwitchEnabled() {
+  return ['1', 'true', 'yes', 'on'].includes(
+    readEnvString('VITE_WINNERS_FINAL_DRAW_ENABLED').toLowerCase(),
+  )
+}
+
+function winnersNetworkSwitchAllowedAddresses() {
+  return readEnvString('VITE_WINNERS_FINAL_DRAW_ALLOWED_WALLETS')
+    .split(/[,\s]+/)
+    .map(normalizeDrawAdminWalletAddress)
+    .filter(Boolean)
+}
+
+function authorizeDrawWinnersNetworkRequest(request, response, networkKey) {
+  if (networkKey === 'mainnet' || runtimeTarget === 'local') return true
+
+  const session = readAuthSession(auth, request)
+  if (!session) {
+    sendSecurityError(request, response, 401, {
+      code: 'winner_network_login_required',
+      error: 'Login is required to read testnet winner data.',
+    })
+    return false
+  }
+
+  const walletAddress = normalizeDrawAdminWalletAddress(session.walletAddress)
+  const allowedAddresses = winnersNetworkSwitchAllowedAddresses()
+  if (
+    !winnersNetworkSwitchEnabled()
+    || !walletAddress
+    || !allowedAddresses.includes(walletAddress)
+  ) {
+    sendSecurityError(request, response, 403, {
+      code: 'winner_network_not_allowed',
+      error: 'This wallet is not allowed to read testnet winner data.',
+    })
+    return false
+  }
+
+  return true
+}
+
 function drawWinnersArchiveDirForNetwork(networkKey = drawDefaultNetworkKey) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   if (selectedNetworkKey === 'mainnet') return drawWinnersArchiveDir
@@ -787,7 +829,10 @@ function drawNetworkStatusPayload(networkKey = drawDefaultNetworkKey, { roundId 
     matchDrawLedger: readMatchDrawLedgerSummary(),
     roundId: roundId || null,
     drawRoundId: drawRoundId || roundId || null,
-    drawWinnersExists: existsSync(drawWinnersPath),
+    drawWinnersExists: Boolean(
+      drawWinnersOutputPathForNetwork(network.key)
+      && existsSync(drawWinnersOutputPathForNetwork(network.key)),
+    ),
     ...(roundReadiness ? { roundReadiness } : {}),
   }
 }
@@ -1695,21 +1740,23 @@ function readDrawWinnersSnapshotFile(path) {
   }
 }
 
-function pendingDrawWinnersSnapshot() {
+function pendingDrawWinnersSnapshot(networkKey = 'mainnet') {
   return {
     version: 1,
     mode: 'draw-winners',
     sourceLabel: 'on-chain-reveal',
     sourceStatus: 'pending',
     generatedAt: null,
+    networkKey,
     videoUrl: winnerRevealVideoUrl,
     winners: [],
     winnersBySlot: [],
   }
 }
 
-function drawWinnersFreshnessPayload() {
-  if (!drawWinnersPath || !existsSync(drawWinnersPath)) {
+function drawWinnersFreshnessPayload(networkKey = 'mainnet') {
+  const winnersPath = drawWinnersOutputPathForNetwork(networkKey)
+  if (!winnersPath || !existsSync(winnersPath)) {
     return {
       ok: true,
       exists: false,
@@ -1718,11 +1765,12 @@ function drawWinnersFreshnessPayload() {
       drawId: null,
       roundId: null,
       sourceStatus: "pending",
+      networkKey,
     }
   }
 
-  const stats = statSync(drawWinnersPath)
-  const snapshot = readDrawWinnersSnapshotFile(drawWinnersPath) || pendingDrawWinnersSnapshot()
+  const stats = statSync(winnersPath)
+  const snapshot = readDrawWinnersSnapshotFile(winnersPath) || pendingDrawWinnersSnapshot(networkKey)
   return {
     ok: true,
     exists: true,
@@ -1731,6 +1779,7 @@ function drawWinnersFreshnessPayload() {
     drawId: snapshot.drawId || snapshot.draw_id || null,
     roundId: drawWinnerSnapshotRoundId(snapshot) || null,
     sourceStatus: snapshot.sourceStatus || null,
+    networkKey,
   }
 }
 
@@ -1866,17 +1915,33 @@ async function enrichStoredDrawWinnersSnapshot(payload) {
   return enrichDrawWinnersChainProof(withConfiguredProof)
 }
 
-async function readDrawWinnersSnapshot() {
-  const currentSnapshot = readDrawWinnersSnapshotFile(drawWinnersPath) || pendingDrawWinnersSnapshot()
+async function readDrawWinnersSnapshot(networkKey = 'mainnet') {
+  const selectedNetworkKey = normalizeDrawNetworkKey(networkKey)
+  const winnersPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
+  const currentSnapshot = readDrawWinnersSnapshotFile(winnersPath)
+    || pendingDrawWinnersSnapshot(selectedNetworkKey)
   if (currentSnapshot.sourceStatus !== 'revealed') {
-    return enrichStoredDrawWinnersSnapshot(currentSnapshot)
+    return {
+      ...await enrichStoredDrawWinnersSnapshot(currentSnapshot),
+      networkKey: selectedNetworkKey,
+    }
   }
 
-  const historicalSnapshots = await Promise.all(
-    priorDrawRoundIds(currentSnapshot).map((roundId) => readHistoricalDrawWinnersSnapshot(roundId)),
-  )
+  const embeddedRoundSnapshots = (Array.isArray(currentSnapshot.roundSnapshots)
+    ? currentSnapshot.roundSnapshots
+    : [])
+    .filter((snapshot) => snapshot && typeof snapshot === 'object' && drawWinnerSnapshotRoundId(snapshot))
+  const historicalSnapshots = embeddedRoundSnapshots.length > 0
+    ? embeddedRoundSnapshots
+    : await Promise.all(
+      priorDrawRoundIds(currentSnapshot)
+        .map((roundId) => readHistoricalDrawWinnersSnapshot(roundId, selectedNetworkKey)),
+    )
+  const snapshotInputs = embeddedRoundSnapshots.length > 0
+    ? historicalSnapshots
+    : [...historicalSnapshots.filter(Boolean), currentSnapshot]
   const snapshots = await Promise.all(
-    [...historicalSnapshots.filter(Boolean), currentSnapshot].map(enrichStoredDrawWinnersSnapshot),
+    snapshotInputs.map(enrichStoredDrawWinnersSnapshot),
   )
   const winners = snapshots.flatMap((snapshot) => Array.isArray(snapshot.winners) ? snapshot.winners : [])
   const winnersBySlot = snapshots.flatMap((snapshot) => Array.isArray(snapshot.winnersBySlot) ? snapshot.winnersBySlot : [])
@@ -1886,6 +1951,7 @@ async function readDrawWinnersSnapshot() {
 
   return {
     ...current,
+    networkKey: selectedNetworkKey,
     winnerCount: winners.length,
     alternateCount: alternates.length,
     winners,
@@ -3633,15 +3699,21 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === '/api/draw-winners/freshness') {
     try {
-      sendJson(request, response, 200, drawWinnersFreshnessPayload(), {
+      const networkKey = normalizeDrawNetworkKey(url.searchParams.get('network') || 'mainnet')
+      if (!authorizeDrawWinnersNetworkRequest(request, response, networkKey)) return
+      sendJson(request, response, 200, drawWinnersFreshnessPayload(networkKey), {
         'cache-control': 'no-store',
       })
     } catch (error) {
       sendJson(
         request,
         response,
-        503,
-        { ok: false, error: error instanceof Error ? error.message : 'Could not read draw winner freshness.' },
+        Number(error?.statusCode || 503),
+        {
+          ok: false,
+          code: error?.code || 'draw_winner_freshness_failed',
+          error: error instanceof Error ? error.message : 'Could not read draw winner freshness.',
+        },
         { 'cache-control': 'no-store' },
       )
     }
@@ -3650,15 +3722,20 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === '/api/draw-winners') {
     try {
-      sendJson(request, response, 200, await readDrawWinnersSnapshot(), {
+      const networkKey = normalizeDrawNetworkKey(url.searchParams.get('network') || 'mainnet')
+      if (!authorizeDrawWinnersNetworkRequest(request, response, networkKey)) return
+      sendJson(request, response, 200, await readDrawWinnersSnapshot(networkKey), {
         'cache-control': 'no-store',
       })
     } catch (error) {
       sendJson(
         request,
         response,
-        503,
-        { error: error instanceof Error ? error.message : 'Could not read draw winners.' },
+        Number(error?.statusCode || 503),
+        {
+          code: error?.code || 'draw_winners_failed',
+          error: error instanceof Error ? error.message : 'Could not read draw winners.',
+        },
         { 'cache-control': 'no-store' },
       )
     }
@@ -3841,7 +3918,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === '/draw-winners.json') {
-    sendJson(request, response, 200, await readDrawWinnersSnapshot(), {
+    sendJson(request, response, 200, await readDrawWinnersSnapshot('mainnet'), {
       'cache-control': 'no-store',
       'access-control-allow-origin': '*',
     })

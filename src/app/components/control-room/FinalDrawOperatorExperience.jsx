@@ -1,9 +1,11 @@
 import {
+  AlertTriangle,
   ArrowLeft,
   ChevronRight,
   Dices,
   Gift,
   Loader2,
+  Network,
   RefreshCw,
   Sparkles,
   WalletCards,
@@ -363,6 +365,146 @@ export function DrawSimulationPreview({ activeDraw, onPhaseChange, t }) {
           </button>
         </span>
       </footer>
+    </section>
+  );
+}
+
+export function DrawExecutionProgress({
+  activeDraw,
+  detail = "",
+  networkLabel,
+  phase = "idle",
+  t,
+}) {
+  const reduceMotion = useReducedMotion();
+  const prizeImage = getMatchPrizeImage({ roundId: activeDraw.id }, 0);
+  const activeStage =
+    phase === "pool"
+      ? 1
+      : phase === "randomness"
+      ? 2
+      : phase === "complete"
+      ? 3
+      : 0;
+  const running = phase === "pool" || phase === "randomness";
+
+  return (
+    <section
+      className={`draw-simulation draw-execution is-${phase}`}
+      aria-label={t("draw.operatorExecutionAria")}
+    >
+      <header className="draw-simulation__head">
+        <span>
+          <Network size={17} strokeWidth={2.15} />
+          <strong>{t("draw.operatorExecutionTitle")}</strong>
+        </span>
+        <em>{networkLabel}</em>
+      </header>
+      <p>{t("draw.operatorExecutionBody")}</p>
+
+      <ol
+        className="draw-simulation__stages"
+        aria-label={t("draw.operatorExecutionStagesAria")}
+      >
+        {["pool", "randomness", "winner"].map((stage, index) => (
+          <li className={index < activeStage ? "is-active" : ""} key={stage}>
+            <span>{index + 1}</span>
+            <strong>
+              {t(
+                `draw.operatorSimulationStage${stage[0].toUpperCase()}${stage.slice(
+                  1
+                )}`
+              )}
+            </strong>
+          </li>
+        ))}
+      </ol>
+
+      {phase !== "idle" ? (
+        <div className="draw-simulation__stage" aria-live="polite">
+          <AnimatePresence mode="wait">
+            {running ? (
+              <motion.section
+                className="draw-simulation__drawing"
+                key={phase}
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={reduceMotion ? undefined : { opacity: 0, scale: 1.015 }}
+              >
+                <span className="draw-simulation__orb" aria-hidden="true">
+                  {phase === "pool" ? (
+                    <Loader2 size={34} strokeWidth={1.75} />
+                  ) : (
+                    <Dices size={34} strokeWidth={1.75} />
+                  )}
+                </span>
+                <span>
+                  <small>
+                    {phase === "pool"
+                      ? t("draw.operatorSimulationStagePool")
+                      : t("draw.operatorSimulationStageRandomness")}
+                  </small>
+                  <strong>
+                    {phase === "pool"
+                      ? t("draw.operatorExecutionPool")
+                      : t("draw.operatorExecutionRandomness")}
+                  </strong>
+                </span>
+                <div className="draw-simulation__reel" aria-hidden="true">
+                  {[networkLabel, activeDraw.id, detail || "ON-CHAIN", networkLabel].map(
+                    (entry, index) => (
+                      <code key={`${entry}-${index}`}>{entry}</code>
+                    )
+                  )}
+                </div>
+              </motion.section>
+            ) : null}
+
+            {phase === "complete" ? (
+              <motion.section
+                className="draw-simulation__result draw-execution__result"
+                key="complete"
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.92, y: 18 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 150, damping: 18 }}
+              >
+                <span className="draw-simulation__celebration" aria-hidden="true">
+                  {Array.from({ length: 12 }, (_, index) => (
+                    <i style={{ "--particle": index }} key={index} />
+                  ))}
+                </span>
+                <span className="draw-simulation__result-image">
+                  <img src={prizeImage} alt="" />
+                </span>
+                <span className="draw-simulation__result-copy">
+                  <small>
+                    <Sparkles size={14} strokeWidth={2.1} />
+                    {t("draw.operatorRunCompleted")}
+                  </small>
+                  <strong>{t("draw.operatorExecutionComplete")}</strong>
+                  <p>{detail || t("draw.operatorExecutionCompleteBody")}</p>
+                </span>
+              </motion.section>
+            ) : null}
+
+            {phase === "failed" ? (
+              <motion.section
+                className="draw-execution__failed"
+                key="failed"
+                initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <AlertTriangle size={24} strokeWidth={1.9} />
+                <span>
+                  <small>{t("draw.operatorRunFailed")}</small>
+                  <strong>{t("draw.operatorExecutionFailed")}</strong>
+                  {detail ? <p>{detail}</p> : null}
+                </span>
+              </motion.section>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -6,7 +6,7 @@ import {
   Ticket,
 } from "lucide-react";
 import heroImage from "../../assets/hero-world-cup-clean.webp";
-import { addPreloadHint, preloadImage } from "../../utils/preloadAssets";
+import { addPreloadHint, preloadImageDecoded } from "../../utils/preloadAssets";
 import { GlareHover } from "../GlareHover";
 import { Magnet } from "../Magnet";
 import { formatNumber } from "../../data/ticketMath";
@@ -29,7 +29,7 @@ function renderCopyLines(text) {
 
 export function preloadHomeRoomAssets() {
   addPreloadHint(heroImage, "image", "image/webp");
-  return preloadImage(heroImage);
+  return preloadImageDecoded(heroImage);
 }
 
 function getMilestoneSnapshot(milestones, currentValue) {

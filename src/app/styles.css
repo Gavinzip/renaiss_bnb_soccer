@@ -14546,6 +14546,11 @@ body {
   min-height: 50px;
 }
 
+/* Winners keeps the stage rail in the page instead of pinning it over later content. */
+.control-room[data-view="winners"] .round-simulator {
+  position: absolute;
+}
+
 .control-room[data-view="schedule"] .tournament-arena,
 .control-room[data-view="vote"] .tournament-arena {
   min-height: calc(100dvh - 12px);
@@ -15352,11 +15357,27 @@ body {
   white-space: nowrap;
 }
 
+.draw-operator-wallet__admin-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 360px);
+  align-items: start;
+  gap: 12px;
+}
+
+.draw-operator-wallet__admin-summary {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+}
+
 .draw-operator-wallet__redraw {
   display: grid;
-  gap: 8px;
-  border-top: 1px solid rgba(245, 246, 241, 0.08);
-  padding-top: 10px;
+  gap: 7px;
+  border: 1px solid rgba(245, 246, 241, 0.11);
+  border-radius: 13px;
+  padding: 9px 10px;
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .draw-operator-wallet__redraw-toggle,
@@ -15377,7 +15398,7 @@ body {
 }
 
 .draw-operator-wallet__redraw-toggle > span {
-  min-width: min(280px, 100%);
+  min-width: 0;
   display: grid;
   gap: 3px;
 }
@@ -15406,6 +15427,8 @@ body {
 }
 
 .draw-operator-wallet__redraw code {
+  width: fit-content;
+  max-width: 100%;
   font-size: 0.68rem;
 }
 
@@ -26710,7 +26733,9 @@ body {
   display: grid;
   width: 100%;
   padding: 0 clamp(18px, 4vw, 64px) clamp(54px, 8vh, 96px);
-  background: #040504;
+  background:
+    radial-gradient(circle at 78% 12%, rgba(240, 209, 139, 0.07), transparent 36%),
+    linear-gradient(180deg, #0c0e0c 0%, #141511 46%, #0c0e0d 100%);
 }
 
 .winner-final-draw-zone::before {
@@ -26785,12 +26810,14 @@ body {
   display: grid;
   gap: 0;
   overflow: hidden;
-  border: 1px solid rgba(240, 209, 139, 0.28);
+  border: 1px solid rgba(240, 209, 139, 0.34);
   border-radius: 20px;
-  background: rgba(8, 10, 11, 0.72);
+  background:
+    radial-gradient(circle at 82% 0%, rgba(240, 209, 139, 0.09), transparent 34%),
+    rgba(27, 29, 25, 0.94);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 22px 60px rgba(0, 0, 0, 0.24);
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 22px 60px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(20px) saturate(1.12);
 }
 
@@ -26800,6 +26827,7 @@ body {
   align-items: center;
   gap: 18px;
   padding: clamp(16px, 2.2vw, 22px);
+  background: rgba(255, 255, 255, 0.018);
 }
 
 .winner-final-draw__copy {
@@ -26892,8 +26920,9 @@ body {
 .winner-final-draw__panel {
   min-height: 0;
   overflow: hidden;
-  border-top: 1px solid rgba(245, 246, 241, 0.09);
+  border-top: 1px solid rgba(245, 246, 241, 0.12);
   padding: 0 clamp(16px, 2.2vw, 22px) clamp(16px, 2.2vw, 22px);
+  background: rgba(255, 255, 255, 0.025);
   transform: translateY(-8px);
   transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -26905,6 +26934,13 @@ body {
 .winner-final-draw__panel .draw-operator-wallet {
   border-top: 0;
   padding-top: clamp(16px, 2vw, 22px);
+}
+
+.winner-final-draw .draw-operator-wallet__admin,
+.winner-final-draw .draw-operator-wallet__result,
+.winner-final-draw .draw-operator-wallet__run {
+  border-color: rgba(245, 246, 241, 0.15);
+  background: rgba(245, 246, 241, 0.065);
 }
 
 .winner-final-draw__loading {
@@ -27480,6 +27516,107 @@ body {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.winner-network-switcher {
+  position: absolute;
+  top: clamp(96px, 10vh, 124px);
+  right: clamp(18px, 3.2vw, 44px);
+  z-index: 6;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 9px 14px;
+  min-width: min(360px, calc(100vw - 36px));
+  padding: 10px 11px 10px 14px;
+  border: 1px solid rgba(237, 213, 156, 0.24);
+  border-radius: 18px;
+  background: rgba(7, 9, 9, 0.78);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 18px 48px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(22px) saturate(1.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+}
+
+.winner-network-switcher__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: rgba(237, 213, 156, 0.9);
+}
+
+.winner-network-switcher__label > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.winner-network-switcher__label small,
+.winner-network-switcher__label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.winner-network-switcher__label small {
+  color: rgba(247, 243, 232, 0.46);
+  font-size: 0.61rem;
+  font-weight: 780;
+}
+
+.winner-network-switcher__label strong {
+  color: rgba(255, 248, 226, 0.94);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.winner-network-switcher__options {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(245, 246, 241, 0.09);
+  border-radius: 999px;
+  background: rgba(245, 246, 241, 0.035);
+}
+
+.winner-network-switcher__options button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  color: rgba(247, 243, 232, 0.58);
+  background: transparent;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.winner-network-switcher__options button:hover,
+.winner-network-switcher__options button:focus-visible {
+  color: rgba(255, 248, 226, 0.94);
+}
+
+.winner-network-switcher__options button.is-active {
+  color: #fff8e2;
+  background: rgba(237, 213, 156, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(237, 213, 156, 0.24);
+}
+
+.winner-network-switcher__options button:disabled {
+  cursor: wait;
+}
+
+.winner-network-switcher__loading {
+  grid-column: 1 / -1;
+  color: rgba(237, 213, 156, 0.68);
+  font-size: 0.64rem;
+  font-weight: 780;
+  text-align: right;
+}
+
 .winner-proof__summary a:hover,
 .winner-proof__tx-group a:hover,
 .winner-proof__match-row a:hover {
@@ -27742,6 +27879,22 @@ body {
 }
 
 @media (max-width: 620px) {
+  .winner-network-switcher {
+    top: 94px;
+    right: 18px;
+    left: 18px;
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  .winner-network-switcher__options {
+    width: 100%;
+  }
+
+  .winner-network-switcher__loading {
+    text-align: left;
+  }
+
   .winner-stage-intro {
     left: 22px;
     right: 22px;
@@ -32900,9 +33053,9 @@ body {
 }
 
 .winner-final-draw__controls .winner-final-draw__preview {
-  border-color: rgba(245, 246, 241, 0.14);
-  color: rgba(245, 246, 241, 0.78);
-  background: rgba(245, 246, 241, 0.035);
+  border-color: rgba(245, 246, 241, 0.18);
+  color: rgba(245, 246, 241, 0.82);
+  background: rgba(245, 246, 241, 0.065);
 }
 
 .winner-final-draw__controls .winner-final-draw__preview:not(:disabled):hover,
@@ -32922,11 +33075,11 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  border: 1px solid rgba(245, 246, 241, 0.12);
+  border: 1px solid rgba(245, 246, 241, 0.18);
   border-radius: 14px;
   padding: 7px 11px;
   color: rgba(240, 209, 139, 0.9);
-  background: rgba(245, 246, 241, 0.035);
+  background: rgba(245, 246, 241, 0.065);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
@@ -32980,7 +33133,6 @@ body {
   gap: 10px;
 }
 
-.draw-operator-wallet__mode-switch,
 .draw-operator-wallet__mode-static,
 .draw-operator-wallet__wallet-launch,
 .draw-operator-wallet__wallet-static {
@@ -32990,16 +33142,15 @@ body {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 11px;
-  border: 1px solid rgba(245, 246, 241, 0.12);
+  border: 1px solid rgba(245, 246, 241, 0.18);
   border-radius: 16px;
   padding: 11px 13px;
   color: rgba(245, 246, 241, 0.88);
-  background: rgba(245, 246, 241, 0.035);
+  background: rgba(245, 246, 241, 0.065);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
   text-align: left;
 }
 
-.draw-operator-wallet__mode-switch,
 .draw-operator-wallet__wallet-launch {
   cursor: pointer;
   transition:
@@ -33008,8 +33159,6 @@ body {
     transform 180ms ease;
 }
 
-.draw-operator-wallet__mode-switch:hover,
-.draw-operator-wallet__mode-switch:focus-visible,
 .draw-operator-wallet__wallet-launch:hover,
 .draw-operator-wallet__wallet-launch:focus-visible {
   border-color: rgba(240, 209, 139, 0.38);
@@ -33017,18 +33166,15 @@ body {
   outline: none;
 }
 
-.draw-operator-wallet__mode-switch:active,
 .draw-operator-wallet__wallet-launch:active {
   transform: translateY(1px) scale(0.995);
 }
 
-.draw-operator-wallet__mode-switch:disabled,
 .draw-operator-wallet__wallet-launch:disabled {
   cursor: not-allowed;
   opacity: 0.58;
 }
 
-.draw-operator-wallet__mode-icon,
 .draw-operator-wallet__wallet-icon,
 .draw-wallet-dialog__provider-icon {
   width: 38px;
@@ -33041,7 +33187,6 @@ body {
   background: rgba(240, 209, 139, 0.07);
 }
 
-.draw-operator-wallet__mode-switch > span:nth-child(2),
 .draw-operator-wallet__mode-static > span,
 .draw-operator-wallet__wallet-launch > span:nth-child(2),
 .draw-operator-wallet__wallet-static > span {
@@ -33070,28 +33215,85 @@ body {
   white-space: nowrap;
 }
 
-.draw-operator-wallet__mode-next {
-  min-width: 98px;
+.draw-operator-wallet__mode-picker {
+  min-width: 0;
+  min-height: 70px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 7px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.draw-operator-wallet__mode-option {
+  position: relative;
+  min-width: 0;
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  border-left: 1px solid rgba(245, 246, 241, 0.09);
-  padding-left: 11px;
+  gap: 8px;
+  border: 1px solid rgba(245, 246, 241, 0.18);
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: rgba(245, 246, 241, 0.62);
+  background: rgba(245, 246, 241, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
 }
 
-.draw-operator-wallet__mode-next small {
-  grid-column: 1 / -1;
+.draw-operator-wallet__mode-option > svg:first-child {
+  color: rgba(245, 246, 241, 0.42);
 }
 
-.draw-operator-wallet__mode-next strong {
-  color: rgba(240, 209, 139, 0.82);
-  font-size: 0.67rem;
+.draw-operator-wallet__mode-option strong {
+  overflow: visible;
+  color: inherit;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  text-overflow: clip;
+  white-space: normal;
 }
 
-.draw-operator-wallet__mode-switch.is-simulation {
-  border-color: rgba(240, 209, 139, 0.32);
-  background: rgba(240, 209, 139, 0.075);
+.draw-operator-wallet__mode-option:hover,
+.draw-operator-wallet__mode-option:focus-visible {
+  border-color: rgba(240, 209, 139, 0.34);
+  color: rgba(255, 247, 223, 0.88);
+  background: rgba(240, 209, 139, 0.055);
+  outline: none;
+}
+
+.draw-operator-wallet__mode-option:active {
+  transform: translateY(1px) scale(0.992);
+}
+
+.draw-operator-wallet__mode-option.is-active {
+  border-color: rgba(240, 209, 139, 0.5);
+  color: rgba(255, 244, 211, 0.98);
+  background: rgba(240, 209, 139, 0.115);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    0 0 0 1px rgba(240, 209, 139, 0.06);
+}
+
+.draw-operator-wallet__mode-option.is-active > svg:first-child {
+  color: rgba(240, 209, 139, 0.96);
+}
+
+.draw-operator-wallet__mode-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.draw-operator-wallet__mode-selected {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  color: rgba(240, 209, 139, 0.9);
 }
 
 .draw-operator-wallet__wallet-static {
@@ -33258,6 +33460,62 @@ body {
   padding: clamp(14px, 2vw, 20px);
   background: rgba(240, 209, 139, 0.035);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.draw-execution.is-idle {
+  gap: 10px;
+  padding-block: 14px;
+}
+
+.draw-execution .draw-simulation__stage {
+  min-height: 220px;
+}
+
+.draw-execution__result .draw-simulation__result-copy p {
+  margin: 0;
+  color: rgba(245, 246, 241, 0.52);
+  font-size: 0.72rem;
+  font-weight: 740;
+  line-height: 1.5;
+}
+
+.draw-execution__failed {
+  width: min(100%, 560px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  color: rgba(255, 157, 157, 0.9);
+}
+
+.draw-execution__failed > span {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.draw-execution__failed small,
+.draw-execution__failed strong,
+.draw-execution__failed p {
+  margin: 0;
+}
+
+.draw-execution__failed small {
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.draw-execution__failed strong {
+  color: rgba(255, 236, 232, 0.94);
+  font-size: clamp(1rem, 2vw, 1.35rem);
+  font-weight: 920;
+}
+
+.draw-execution__failed p {
+  color: rgba(255, 207, 201, 0.7);
+  font-size: 0.72rem;
+  font-weight: 730;
+  line-height: 1.5;
 }
 
 .draw-simulation__head,
@@ -33579,12 +33837,16 @@ body {
 
 @media (prefers-reduced-motion: no-preference) {
   .draw-simulation.is-mixing .draw-simulation__orb,
-  .draw-simulation.is-revealing .draw-simulation__orb {
+  .draw-simulation.is-revealing .draw-simulation__orb,
+  .draw-execution.is-pool .draw-simulation__orb,
+  .draw-execution.is-randomness .draw-simulation__orb {
     animation: draw-demo-orb 880ms cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
   }
 
   .draw-simulation.is-mixing .draw-simulation__reel code,
-  .draw-simulation.is-revealing .draw-simulation__reel code {
+  .draw-simulation.is-revealing .draw-simulation__reel code,
+  .draw-execution.is-pool .draw-simulation__reel code,
+  .draw-execution.is-randomness .draw-simulation__reel code {
     animation: draw-demo-reel 760ms cubic-bezier(0.5, 0, 0.5, 1) infinite;
   }
 
@@ -33645,8 +33907,21 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .draw-operator-wallet__mode-next {
-    min-width: 88px;
+  .draw-operator-wallet__admin-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .draw-operator-wallet__mode-option {
+    min-height: 64px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 5px;
+    padding: 9px 5px;
+    text-align: center;
+  }
+
+  .draw-operator-wallet__mode-option strong {
+    font-size: 0.64rem;
   }
 
   .draw-simulation__stages {

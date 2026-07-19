@@ -129,20 +129,30 @@ function normalizeWinner(row, index) {
   const ticketNumber = String(row.ticketNumber ?? row.ticket_number ?? "").trim();
   const prizeSlotIndex = normalizeInteger(row.prizeSlotIndex ?? row.prize_slot_index);
   const revealIndex = normalizeInteger(row.revealIndex ?? row.reveal_index ?? index);
+  const roundId = String(row.roundId ?? row.round_id ?? "");
+  const matchId = String(row.matchId ?? row.match_id ?? "");
+  const walletAddress = String(row.walletAddress ?? row.wallet_address ?? row.userAddress ?? row.user_address ?? "").trim();
   if (!ticketNumber) return null;
 
   return {
-    id: String(row.id ?? `${ticketNumber}-${revealIndex}-${prizeSlotIndex}`),
+    id: String(row.id ?? [
+      roundId || "round",
+      matchId || "match",
+      ticketNumber,
+      revealIndex,
+      prizeSlotIndex,
+      walletAddress.toLowerCase() || "wallet",
+    ].join(":")),
     revealIndex,
     prizeSlotIndex,
     role: String(row.role ?? "winner"),
     alternateIndex: row.alternateIndex ?? row.alternate_index ?? null,
     ticketNumber,
-    walletAddress: String(row.walletAddress ?? row.wallet_address ?? row.userAddress ?? row.user_address ?? "").trim(),
+    walletAddress,
     userAddress: String(row.userAddress ?? row.user_address ?? row.walletAddress ?? row.wallet_address ?? "").trim(),
     allocationId: row.allocationId ?? row.allocation_id ?? null,
-    roundId: String(row.roundId ?? row.round_id ?? ""),
-    matchId: String(row.matchId ?? row.match_id ?? ""),
+    roundId,
+    matchId,
     teamId: String(row.teamId ?? row.team_id ?? ""),
     transactionHash: normalizeTransactionHash(
       row.transactionHash

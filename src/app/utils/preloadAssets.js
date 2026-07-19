@@ -1,4 +1,5 @@
 const loadedAssets = new Set();
+const decodedImagePreloads = new Map();
 
 function canUseDom() {
   return typeof window !== "undefined" && typeof document !== "undefined";
@@ -40,6 +41,33 @@ export function preloadImage(src) {
     image.onerror = resolve;
     image.src = src;
   });
+}
+
+export function preloadImageDecoded(src) {
+  if (!canUseDom() || !src) return Promise.resolve();
+  if (decodedImagePreloads.has(src)) return decodedImagePreloads.get(src);
+
+  const preload = new Promise((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => {
+      if (typeof image.decode !== "function") {
+        resolve();
+        return;
+      }
+
+      image.decode().then(resolve).catch(reject);
+    };
+    image.onerror = () => reject(new Error(`Could not load image: ${src}`));
+    image.decoding = "async";
+    image.src = src;
+  }).catch((error) => {
+    decodedImagePreloads.delete(src);
+    throw error;
+  });
+
+  decodedImagePreloads.set(src, preload);
+  return preload;
 }
 
 export function preloadVideo(src) {

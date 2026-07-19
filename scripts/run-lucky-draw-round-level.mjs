@@ -602,6 +602,7 @@ const contractAddress = argValue('--contract') || env.DRAW_CONTRACT_ADDRESS || '
 const broadcast = hasFlag('--broadcast')
 const verifyOnly = hasFlag('--verify-only')
 const emitSnapshot = hasFlag('--emit-snapshot')
+const writeVerifiedSnapshot = hasFlag('--write-verified-snapshot')
 const writeHistorySnapshot = hasFlag('--write-history-snapshot')
 const matchBatchSize = normalizePositiveInteger(argValue('--match-batch-size') || env.DRAW_MATCH_BATCH_SIZE || 1, 'matchBatchSize')
 
@@ -668,6 +669,9 @@ if (!broadcast || verifyOnly) {
     payload.winnerCount = winnersSnapshot.winnerCount
     payload.alternateCount = winnersSnapshot.alternateCount
     payload.firstDraw = winnersSnapshot.draws[0] || null
+    if (writeVerifiedSnapshot) {
+      payload.winnersOut = writeWinnersSnapshotIfConfigured(winnersOutPath, winnersSnapshot)
+    }
     if (writeHistorySnapshot) {
       payload.winnersHistoryOut = writeWinnersHistorySnapshotIfConfigured(winnersHistoryDir, winnersSnapshot)
     }

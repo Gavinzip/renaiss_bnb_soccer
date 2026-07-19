@@ -19,6 +19,7 @@ import { getMatchPrizeImageByMatchId, preloadRoundPrizeImages } from "../../data
 import { canonicalMatchId } from "../../data/matchIds.js";
 import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+import { preloadImageDecoded } from "../../utils/preloadAssets";
 import SideRays from "../SideRays/SideRays";
 
 const FALLBACK_ROUND_ORDER = [
@@ -496,16 +497,22 @@ function WinnerOnChainProof({ winnerRevealData, selectedRound, selectedActiveWin
 function WinnersFinalDrawControl({
   activeDraw,
   canSwitchNetwork,
+  selectedNetwork,
   hasOfficialResult,
+  onSelectedNetworkChange,
   onPresentationPreview,
   onPresentationReset,
 }) {
   const { t } = useCampaignCopy();
   const [open, setOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
-  const [executionMode, setExecutionMode] = useState("mainnet");
+  const [simulationNetwork, setSimulationNetwork] = useState("");
   const [simulationPhase, setSimulationPhase] = useState("idle");
   const openFrameRef = useRef(0);
+  const normalizedSelectedNetwork = selectedNetwork === "testnet" ? "testnet" : "mainnet";
+  const executionMode = simulationNetwork === normalizedSelectedNetwork
+    ? "simulation"
+    : normalizedSelectedNetwork;
 
   const handleSimulationPhaseChange = useCallback((phase) => {
     setSimulationPhase(phase);
@@ -515,16 +522,21 @@ function WinnersFinalDrawControl({
 
   const handlePresentationReady = useCallback((mode) => {
     onPresentationPreview?.(mode, {
-      scroll: mode === "mainnet",
-      waitForRefresh: mode === "mainnet",
+      scroll: mode !== "simulation",
+      waitForRefresh: mode !== "simulation",
     });
   }, [onPresentationPreview]);
 
   const handleExecutionModeChange = useCallback((mode) => {
-    setExecutionMode(mode);
+    if (mode === "simulation") {
+      setSimulationNetwork(normalizedSelectedNetwork);
+    } else if (mode === "mainnet" || mode === "testnet") {
+      setSimulationNetwork("");
+      onSelectedNetworkChange?.(mode);
+    }
     setSimulationPhase("idle");
     onPresentationReset?.();
-  }, [onPresentationReset]);
+  }, [normalizedSelectedNetwork, onPresentationReset, onSelectedNetworkChange]);
 
   const handleOpenChange = useCallback(() => {
     if (open) {
@@ -540,6 +552,12 @@ function WinnersFinalDrawControl({
 
   useEffect(() => () => window.cancelAnimationFrame(openFrameRef.current), []);
 
+  useEffect(() => {
+    setSimulationNetwork("");
+    setSimulationPhase("idle");
+    onPresentationReset?.();
+  }, [onPresentationReset, selectedNetwork]);
+
   if (!activeDraw) return null;
 
   const modeLabel =
@@ -552,7 +570,10 @@ function WinnersFinalDrawControl({
         ? t("draw.operatorSimulationStatusRunning")
         : t("draw.operatorModeSimulation")
       : t("draw.operatorModeMainnet");
-  const presentationPreviewDisabled = executionMode === "mainnet" && !hasOfficialResult;
+  const presentationPreviewDisabled = executionMode !== "simulation" && !hasOfficialResult;
+  const pendingNetworkLabel = executionMode === "testnet"
+    ? t("winnerReveal.networkTestnetShort")
+    : t("winnerReveal.networkMainnetShort");
 
   return (
     <section
@@ -590,7 +611,7 @@ function WinnersFinalDrawControl({
           >
             <Eye size={16} strokeWidth={2.25} />
             {presentationPreviewDisabled
-              ? t("winnerReveal.finalPresentationMainnetPending")
+              ? t("winnerReveal.finalPresentationPending", { network: pendingNetworkLabel })
               : t("winnerReveal.finalPresentationPreviewButton")}
           </button>
           <button
@@ -641,12 +662,18 @@ export function WinnersRoom({
   activeRoundId = "",
   winnerRevealData,
   winnerRevealIssue,
+  winnerRevealLoading = false,
+  winnerRevealNetwork = "mainnet",
   rounds = [],
   matches = [],
   currentWalletAddress = "",
   canViewFinalDraw = false,
   canSwitchDrawNetwork = false,
+  canSwitchWinnerRevealNetwork = false,
   finalDraw = null,
+  experienceVisible = true,
+  onInitialMediaStateChange,
+  onSelectWinnerRevealNetwork,
   onRevealStateChange,
 }) {
   const { t, roundLabel } = useCampaignCopy();
@@ -659,7 +686,13 @@ export function WinnersRoom({
   const [proofOpen, setProofOpen] = useState(false);
   const [finalPresentationPreviewMode, setFinalPresentationPreviewMode] = useState("");
   const [finalPresentationReplayKey, setFinalPresentationReplayKey] = useState(0);
-  const [pendingMainnetPresentation, setPendingMainnetPresentation] = useState(null);
+  const [pendingOfficialPresentation, setPendingOfficialPresentation] = useState(null);
+  const [stageVideoReady, setStageVideoReady] = useState(false);
+  const [stageBackdropReady, setStageBackdropReady] = useState(false);
+  const [initialMediaIssue, setInitialMediaIssue] = useState("");
+  const revealStartedRef = useRef(false);
+  const previousWinnerRevealNetworkRef = useRef(winnerRevealNetwork);
+  const pendingWinnerRevealNetworkSwapRef = useRef(false);
   const winners = useMemo(() => winnerRevealData.winners || [], [winnerRevealData.winners]);
   const hasOfficialWinners = winnerRevealData.sourceStatus === "revealed" && winners.length > 0;
   const revealStarted = videoFinished;
@@ -734,9 +767,10 @@ export function WinnersRoom({
     : t("winnerReveal.cardPrizeTitle");
 
   const showFinalPresentation = useCallback((mode, { scroll = true, waitForRefresh = false } = {}) => {
-    if (mode === "mainnet") {
+    if (mode === "mainnet" || mode === "testnet") {
       if (waitForRefresh) {
-        setPendingMainnetPresentation({
+        setPendingOfficialPresentation({
+          mode,
           baseline: officialPresentationFingerprint,
           scroll,
         });
@@ -744,10 +778,10 @@ export function WinnersRoom({
       }
       if (!selectedRoundHasWinners) return;
       setFinalPresentationPreviewMode("");
-      setPendingMainnetPresentation(null);
-    } else if (mode === "simulation" || mode === "testnet") {
+      setPendingOfficialPresentation(null);
+    } else if (mode === "simulation") {
       setFinalPresentationPreviewMode(mode);
-      setPendingMainnetPresentation(null);
+      setPendingOfficialPresentation(null);
     } else {
       return;
     }
@@ -774,33 +808,119 @@ export function WinnersRoom({
   }, [selectedRound?.id]);
 
   useEffect(() => {
+    let active = true;
+    setStageBackdropReady(false);
+
+    preloadImageDecoded(revealBackdrop)
+      .then(() => {
+        if (active) setStageBackdropReady(true);
+      })
+      .catch((error) => {
+        if (active) setInitialMediaIssue(error.message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    revealStartedRef.current = videoFinished;
+  }, [videoFinished]);
+
+  useEffect(() => {
+    const networkChanged = previousWinnerRevealNetworkRef.current !== winnerRevealNetwork;
+    if (networkChanged) {
+      previousWinnerRevealNetworkRef.current = winnerRevealNetwork;
+      pendingWinnerRevealNetworkSwapRef.current = winnerRevealLoading;
+      setVisibleCount(revealStartedRef.current ? winners.length : 0);
+      setMediaIssue("");
+      setSelectedWinnerId("");
+      setProofOpen(false);
+      setFinalPresentationPreviewMode("");
+      setPendingOfficialPresentation(null);
+      return;
+    }
+
+    if (pendingWinnerRevealNetworkSwapRef.current) {
+      if (winnerRevealLoading) return;
+      pendingWinnerRevealNetworkSwapRef.current = false;
+      setVisibleCount(revealStartedRef.current ? winners.length : 0);
+      setMediaIssue("");
+      setSelectedWinnerId("");
+      setProofOpen(false);
+      setFinalPresentationPreviewMode("");
+      setPendingOfficialPresentation(null);
+      return;
+    }
+
     setVideoFinished(false);
     setVisibleCount(0);
     setMediaIssue("");
     setSelectedWinnerId("");
     setProofOpen(false);
     setFinalPresentationPreviewMode("");
-  }, [winnerRevealData.videoUrl, winnerRevealData.drawId, winnerRevealData.generatedAt]);
+    setPendingOfficialPresentation(null);
+  }, [
+    winnerRevealData.drawId,
+    winnerRevealData.generatedAt,
+    winnerRevealData.videoUrl,
+    winnerRevealLoading,
+    winnerRevealNetwork,
+    winners.length,
+  ]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    setStageVideoReady(Boolean(video && video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA));
+    setInitialMediaIssue("");
+  }, [winnerRevealData.videoUrl]);
+
+  useEffect(() => {
+    const status = initialMediaIssue
+      ? "error"
+      : stageVideoReady && stageBackdropReady
+        ? "ready"
+        : "loading";
+
+    onInitialMediaStateChange?.({
+      viewId: "winners",
+      status,
+      issue: initialMediaIssue,
+    });
+  }, [initialMediaIssue, onInitialMediaStateChange, stageBackdropReady, stageVideoReady]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !experienceVisible || !stageVideoReady || videoFinished) return;
+
+    video.currentTime = 0;
+    video.play().catch(() => {
+      setMediaIssue(t("winnerReveal.videoIssue"));
+    });
+  }, [experienceVisible, stageVideoReady, t, videoFinished, winnerRevealData.videoUrl]);
 
   useEffect(() => {
     setProofOpen(false);
     if (selectedRound?.id !== "final") {
       setFinalPresentationPreviewMode("");
-      setPendingMainnetPresentation(null);
+      setPendingOfficialPresentation(null);
     }
   }, [selectedRound?.id]);
 
   useEffect(() => {
     if (
-      !pendingMainnetPresentation
+      !pendingOfficialPresentation
       || !selectedRoundHasWinners
-      || officialPresentationFingerprint === pendingMainnetPresentation.baseline
+      || officialPresentationFingerprint === pendingOfficialPresentation.baseline
     ) return;
 
-    showFinalPresentation("mainnet", { scroll: pendingMainnetPresentation.scroll });
+    showFinalPresentation(pendingOfficialPresentation.mode, {
+      scroll: pendingOfficialPresentation.scroll,
+    });
   }, [
     officialPresentationFingerprint,
-    pendingMainnetPresentation,
+    pendingOfficialPresentation,
     selectedRoundHasWinners,
     showFinalPresentation,
   ]);
@@ -868,16 +988,59 @@ export function WinnersRoom({
       aria-label={t("winnerReveal.roomAria")}
     >
       <div className="winner-stage-presentation">
+        {canSwitchWinnerRevealNetwork ? (
+          <section
+            className="winner-network-switcher"
+            aria-label={t("winnerReveal.networkSwitcherAria")}
+          >
+            <span className="winner-network-switcher__label">
+              <Network size={15} strokeWidth={2.25} />
+              <span>
+                <small>{t("winnerReveal.networkSwitcherLabel")}</small>
+                <strong>
+                  {winnerRevealNetwork === "testnet"
+                    ? t("winnerReveal.networkTestnet")
+                    : t("winnerReveal.networkMainnet")}
+                </strong>
+              </span>
+            </span>
+            <span className="winner-network-switcher__options">
+              {["mainnet", "testnet"].map((network) => (
+                <button
+                  type="button"
+                  className={winnerRevealNetwork === network ? "is-active" : ""}
+                  aria-pressed={winnerRevealNetwork === network}
+                  disabled={winnerRevealLoading && winnerRevealNetwork === network}
+                  onClick={() => onSelectWinnerRevealNetwork?.(network)}
+                  key={network}
+                >
+                  {network === "testnet"
+                    ? t("winnerReveal.networkTestnetShort")
+                    : t("winnerReveal.networkMainnetShort")}
+                </button>
+              ))}
+            </span>
+            {winnerRevealLoading ? (
+              <small className="winner-network-switcher__loading">
+                {t("winnerReveal.networkLoading")}
+              </small>
+            ) : null}
+          </section>
+        ) : null}
         <video
           ref={videoRef}
           className="winner-stage-video"
           src={winnerRevealData.videoUrl}
-          autoPlay
           muted
           playsInline
           preload="auto"
+          onCanPlay={() => setStageVideoReady(true)}
           onEnded={() => setVideoFinished(true)}
-          onError={() => setMediaIssue(t("winnerReveal.videoIssue"))}
+          onError={() => {
+            const issue = t("winnerReveal.videoIssue");
+            setInitialMediaIssue(issue);
+            setMediaIssue(issue);
+          }}
         />
         <div
           className="winner-stage-reveal-bg"
@@ -1038,7 +1201,9 @@ export function WinnersRoom({
             <WinnersFinalDrawControl
               activeDraw={finalDraw}
               canSwitchNetwork={canSwitchDrawNetwork}
+              selectedNetwork={winnerRevealNetwork}
               hasOfficialResult={selectedRoundHasWinners}
+              onSelectedNetworkChange={onSelectWinnerRevealNetwork}
               onPresentationPreview={showFinalPresentation}
               onPresentationReset={resetFinalPresentation}
             />
