@@ -22,6 +22,10 @@ import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { preloadImageDecoded } from "../../utils/preloadAssets";
 import SideRays from "../SideRays/SideRays";
 import { WinnerNetworkSwitcher } from "./WinnerNetworkSwitcher";
+import {
+  isOfficialDrawMode,
+  normalizeDrawExecutionMode,
+} from "../../config/drawExecutionMode";
 
 const FALLBACK_ROUND_ORDER = [
   "round32",
@@ -522,10 +526,17 @@ function WinnersFinalDrawControl({
   }, [onPresentationPreview]);
 
   const handleExecutionModeChange = useCallback((mode) => {
-    setExecutionMode(["mainnet", "sandbox", "simulation"].includes(mode) ? mode : "mainnet");
+    setExecutionMode(normalizeDrawExecutionMode(mode));
     setSimulationPhase("idle");
     onPresentationReset?.();
   }, [onPresentationReset]);
+
+  useEffect(() => {
+    if (isOfficialDrawMode && executionMode !== "mainnet") {
+      setExecutionMode("mainnet");
+      setSimulationPhase("idle");
+    }
+  }, [executionMode]);
 
   const handleOpenChange = useCallback(() => {
     if (open) {

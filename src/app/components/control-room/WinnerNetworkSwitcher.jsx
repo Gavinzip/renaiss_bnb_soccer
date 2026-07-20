@@ -1,6 +1,7 @@
 import { Network } from "lucide-react";
 import { useEffect } from "react";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
+import { isOfficialDrawMode } from "../../config/drawExecutionMode";
 
 export function WinnerNetworkSwitcher({
   network = "mainnet",
@@ -14,6 +15,12 @@ export function WinnerNetworkSwitcher({
   useEffect(() => {
     onAccessChange?.(authorized);
   }, [authorized, onAccessChange]);
+
+  useEffect(() => {
+    if (isOfficialDrawMode && network !== "mainnet") {
+      onSelectNetwork?.("mainnet");
+    }
+  }, [network, onSelectNetwork]);
 
   if (!authorized) return null;
 
@@ -36,15 +43,17 @@ export function WinnerNetworkSwitcher({
         >
           {t("winnerReveal.networkMainnetShort")}
         </button>
-        <button
-          type="button"
-          className={network === "sandbox" ? "is-active" : ""}
-          aria-pressed={network === "sandbox"}
-          disabled={loading}
-          onClick={() => onSelectNetwork?.("sandbox")}
-        >
-          {t("winnerReveal.networkSandboxShort")}
-        </button>
+        {!isOfficialDrawMode ? (
+          <button
+            type="button"
+            className={network === "sandbox" ? "is-active" : ""}
+            aria-pressed={network === "sandbox"}
+            disabled={loading}
+            onClick={() => onSelectNetwork?.("sandbox")}
+          >
+            {t("winnerReveal.networkSandboxShort")}
+          </button>
+        ) : null}
       </span>
       {loading ? <small className="winner-network-switcher__loading">{t("winnerReveal.networkLoading")}</small> : null}
     </section>

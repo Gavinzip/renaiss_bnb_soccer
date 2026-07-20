@@ -30,24 +30,22 @@ import {
   DrawSimulationPreview,
   WalletProviderDialog,
 } from "./FinalDrawOperatorExperience";
+import {
+  drawExecutionModes,
+  isOfficialDrawMode,
+  normalizeDrawExecutionMode,
+} from "../../config/drawExecutionMode";
 
 const drawStepIds = ["results", "eligible", "snapshot", "reveal"];
 const fallbackDrawNetworks = [
   { key: "mainnet", label: "BNB Chain · Official", chainId: "56", chainIdHex: "0x38", scope: "official" },
   { key: "sandbox", label: "BNB Chain · Mainnet sandbox", chainId: "56", chainIdHex: "0x38", scope: "sandbox" },
 ];
-const drawExecutionModes = ["mainnet", "sandbox", "simulation"];
 const defaultDrawNetworkKey = normalizeDrawNetworkKey(
-  import.meta.env.VITE_DRAW_NETWORK || "mainnet"
+  isOfficialDrawMode ? "mainnet" : import.meta.env.VITE_DRAW_NETWORK || "mainnet"
 );
 const drawAdminCheckTimeoutMs = 60000;
 const drawAdminBroadcastTimeoutMs = 14 * 60 * 1000;
-function normalizeDrawExecutionMode(value) {
-  const mode = String(value || "")
-    .trim()
-    .toLowerCase();
-  return drawExecutionModes.includes(mode) ? mode : "mainnet";
-}
 
 function drawExecutionModeLabel(mode, t) {
   return t(
@@ -785,7 +783,7 @@ export function DrawOperatorWallet({
     provider: null,
   });
   const connected = Boolean(connectedWallet.address);
-  const activeExecutionMode = canSwitchNetwork
+  const activeExecutionMode = canSwitchNetwork && !isOfficialDrawMode
     ? normalizeDrawExecutionMode(executionMode)
     : "mainnet";
   const simulationMode = activeExecutionMode === "simulation";
@@ -881,7 +879,7 @@ export function DrawOperatorWallet({
 
   useEffect(() => {
     if (
-      !canSwitchNetwork &&
+      (!canSwitchNetwork || isOfficialDrawMode) &&
       normalizeDrawExecutionMode(executionMode) !== "mainnet"
     ) {
       onExecutionModeChange?.("mainnet");
@@ -1072,7 +1070,7 @@ export function DrawOperatorWallet({
   }
 
   function selectExecutionMode(mode) {
-    if (!canSwitchNetwork || busyAction || adminStatus?.running) return;
+    if (isOfficialDrawMode || !canSwitchNetwork || busyAction || adminStatus?.running) return;
     const nextMode = normalizeDrawExecutionMode(mode);
     if (nextMode === activeExecutionMode) return;
     onExecutionModeChange?.(nextMode);
