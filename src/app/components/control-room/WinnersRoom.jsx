@@ -649,6 +649,7 @@ export function WinnersRoom({
   matches = [],
   currentWalletAddress = "",
   canViewFinalDraw = false,
+  canViewSandboxWinners = false,
   canSwitchDrawNetwork = false,
   finalDraw = null,
   experienceVisible = true,
@@ -1014,6 +1015,7 @@ export function WinnersRoom({
         <WinnerNetworkSwitcher
           network={winnerRevealNetwork}
           loading={winnerRevealLoading}
+          authorized={canViewSandboxWinners}
           onSelectNetwork={onSelectWinnerRevealNetwork}
           onAccessChange={onSandboxWinnerAccessChange}
         />

@@ -1522,6 +1522,7 @@ export function ControlRoom({
               winnerRevealIssue={winnerRevealIssue}
               winnerRevealLoading={winnerRevealLoading}
               winnerRevealNetwork={winnerRevealNetwork}
+              canViewSandboxWinners={drawViewEnabled}
               currentWalletAddress={currentWinnerWalletAddress}
               currentUserWinnerCount={visibleCurrentUserWinnerCount}
               canViewFinalDraw={canViewFinalDrawInWinners}

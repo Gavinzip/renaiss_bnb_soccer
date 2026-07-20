@@ -54,7 +54,6 @@ import {
 } from './http-security.mjs'
 import { verifyCsrfRequest } from './auth/csrf.mjs'
 import { createMemoryRateLimiter } from './rate-limit.mjs'
-import { parseCookies, serializeCookie } from './auth/cookies.mjs'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 loadLocalEnvFiles(repoRoot)
@@ -126,9 +125,6 @@ const drawAdminApiEnabled = process.env.DRAW_ADMIN_API_ENABLED === '1'
   || (runtimeTarget === 'local' && process.env.DRAW_ADMIN_API_ENABLED !== '0')
 const drawAdminChallengeTtlSeconds = readIntegerEnv('DRAW_ADMIN_CHALLENGE_TTL_SECONDS', 300, 30)
 const drawAdminChallengeTtlMs = drawAdminChallengeTtlSeconds * 1000
-const drawSandboxWinnerViewerTtlSeconds = readIntegerEnv('DRAW_SANDBOX_WINNER_VIEW_TTL_SECONDS', 1800, 60)
-const drawSandboxWinnerViewerTtlMs = drawSandboxWinnerViewerTtlSeconds * 1000
-const drawSandboxWinnerViewerCookieName = 'renaiss_draw_sandbox_viewer'
 const drawAdminScriptTimeoutSeconds = readIntegerEnv('DRAW_ADMIN_SCRIPT_TIMEOUT_SECONDS', 14 * 60, 60)
 const drawAdminScriptTimeoutMs = drawAdminScriptTimeoutSeconds * 1000
 const drawAdminOutputLimitBytes = readIntegerEnv('DRAW_ADMIN_OUTPUT_LIMIT_BYTES', 512 * 1024, 16 * 1024)
@@ -139,8 +135,6 @@ const drawNetworkDefinitions = [
 ]
 const drawDefaultNetworkKey = normalizeDrawNetworkKey(process.env.DRAW_NETWORK || process.env.DRAW_DEFAULT_NETWORK || 'mainnet')
 const drawAdminChallenges = new Map()
-const drawSandboxWinnerViewerChallenges = new Map()
-const drawSandboxWinnerViewerSessions = new Map()
 let drawAdminRunRunning = false
 const drawWinnerHistoryTasks = new Map()
 let lastDrawAdminRun = {
@@ -665,51 +659,38 @@ function drawWinnersOutputPathForNetwork(networkKey = drawDefaultNetworkKey) {
   return readEnvString('DRAW_SANDBOX_WINNERS_PATH')
 }
 
-function pruneDrawSandboxWinnerViewerSessions() {
-  const now = Date.now()
-  for (const [token, session] of drawSandboxWinnerViewerSessions) {
-    if (!session || Number(session.expiresAtMs || 0) <= now) {
-      drawSandboxWinnerViewerSessions.delete(token)
-    }
-  }
+function drawRoomVisibilityEnabled() {
+  return ['1', 'true', 'yes', 'on'].includes(String(process.env.VITE_DRAW_ROOM_ENABLED || '').trim().toLowerCase())
 }
 
-function drawSandboxWinnerViewerCookieSecure() {
-  if (['1', 'true', 'yes', 'on'].includes(readEnvString('AUTH_COOKIE_SECURE').toLowerCase())) return true
-  return publicAppOrigin().startsWith('https://')
+function drawRoomAllowedAddresses() {
+  return String(process.env.VITE_DRAW_ROOM_ALLOWED_WALLETS || '')
+    .split(/[,\s]+/)
+    .map(normalizeDrawAdminWalletAddress)
+    .filter(Boolean)
 }
 
-function drawSandboxWinnerViewerCookie({ token = '', maxAge = 0 } = {}) {
-  return serializeCookie(drawSandboxWinnerViewerCookieName, token, {
-    maxAge,
-    path: '/',
-    httpOnly: true,
-    secure: drawSandboxWinnerViewerCookieSecure(),
-    sameSite: 'Lax',
-  })
-}
-
-function drawSandboxWinnerViewerAccess(request) {
-  pruneDrawSandboxWinnerViewerSessions()
-  const token = String(parseCookies(request.headers.cookie || '')[drawSandboxWinnerViewerCookieName] || '').trim()
-  const session = token ? drawSandboxWinnerViewerSessions.get(token) : null
-  const address = normalizeDrawAdminWalletAddress(session?.address)
-  const allowed = Boolean(address && drawAdminAllowedAddresses('sandbox').includes(address))
-  if (!allowed && token) drawSandboxWinnerViewerSessions.delete(token)
+function drawSandboxWinnerSsoAccess(request) {
+  const session = readAuthSession(auth, request)
+  const address = normalizeDrawAdminWalletAddress(session?.walletAddress)
+  const allowed = Boolean(
+    drawRoomVisibilityEnabled()
+    && address
+    && drawRoomAllowedAddresses().includes(address),
+  )
   return {
     allowed,
     address: allowed ? address : '',
-    expiresAt: allowed ? new Date(session.expiresAtMs).toISOString() : null,
   }
 }
 
 function authorizeDrawWinnersNetworkRequest(request, response, networkKey) {
   if (networkKey === 'mainnet') return true
-  const access = drawSandboxWinnerViewerAccess(request)
+  const access = drawSandboxWinnerSsoAccess(request)
   if (access.allowed) return true
   sendSecurityError(request, response, 403, {
-    code: 'winner_network_operator_access_required',
-    error: 'Sandbox draw results require a verified draw-operation allowlist wallet.',
+    code: 'winner_network_sso_access_required',
+    error: 'Sandbox draw results require an SSO session with a draw-room allowlist wallet.',
   })
   return false
 }
@@ -1394,111 +1375,6 @@ function verifyDrawAdminChallenge({ address, action, roundId, drawRoundId, netwo
   }
 
   return challenge
-}
-
-function createDrawSandboxWinnerViewerMessage({ address, nonce, issuedAt }) {
-  return [
-    'Renaiss World Cup sandbox winners access',
-    `Address: ${address}`,
-    'Network: sandbox',
-    `Chain ID: ${drawExpectedChainId('sandbox')}`,
-    `Contract: ${drawContractAddress('sandbox')}`,
-    `Nonce: ${nonce}`,
-    `Issued At: ${issuedAt}`,
-    'This only grants temporary access to isolated mainnet sandbox winner data. No transaction will be sent.',
-  ].join('\n')
-}
-
-function pruneDrawSandboxWinnerViewerChallenges() {
-  const now = Date.now()
-  for (const [nonce, challenge] of drawSandboxWinnerViewerChallenges) {
-    if (!challenge || Number(challenge.expiresAtMs || 0) <= now) {
-      drawSandboxWinnerViewerChallenges.delete(nonce)
-    }
-  }
-}
-
-function createDrawSandboxWinnerViewerChallenge(address) {
-  pruneDrawSandboxWinnerViewerChallenges()
-  const normalizedAddress = assertDrawAdminWalletAllowed(address, 'sandbox')
-  const nonce = randomUUID()
-  const issuedAt = new Date().toISOString()
-  const expiresAtMs = Date.now() + drawAdminChallengeTtlMs
-  const message = createDrawSandboxWinnerViewerMessage({
-    address: normalizedAddress,
-    nonce,
-    issuedAt,
-  })
-  drawSandboxWinnerViewerChallenges.set(nonce, {
-    address: normalizedAddress,
-    nonce,
-    issuedAt,
-    expiresAtMs,
-    message,
-  })
-  return {
-    ok: true,
-    address: normalizedAddress,
-    networkKey: 'sandbox',
-    nonce,
-    issuedAt,
-    expiresAt: new Date(expiresAtMs).toISOString(),
-    message,
-  }
-}
-
-function verifyDrawSandboxWinnerViewerChallenge({ address, nonce, signature }) {
-  const normalizedAddress = assertDrawAdminWalletAllowed(address, 'sandbox')
-  const challenge = drawSandboxWinnerViewerChallenges.get(String(nonce || ''))
-  drawSandboxWinnerViewerChallenges.delete(String(nonce || ''))
-  if (!challenge) {
-    throw Object.assign(new Error('Sandbox winner-view authorization challenge is missing or already used.'), {
-      statusCode: 401,
-      code: 'sandbox_winner_view_challenge_missing',
-    })
-  }
-  if (Date.now() > challenge.expiresAtMs) {
-    throw Object.assign(new Error('Sandbox winner-view authorization challenge expired.'), {
-      statusCode: 401,
-      code: 'sandbox_winner_view_challenge_expired',
-    })
-  }
-  if (challenge.address !== normalizedAddress) {
-    throw Object.assign(new Error('Sandbox winner-view authorization challenge does not match this wallet.'), {
-      statusCode: 401,
-      code: 'sandbox_winner_view_challenge_mismatch',
-    })
-  }
-
-  let recovered = ''
-  try {
-    recovered = normalizeDrawAdminWalletAddress(verifyMessage(challenge.message, String(signature || '')))
-  } catch {
-    recovered = ''
-  }
-  if (recovered !== normalizedAddress) {
-    throw Object.assign(new Error('Sandbox winner-view authorization signature is invalid.'), {
-      statusCode: 401,
-      code: 'sandbox_winner_view_signature_invalid',
-    })
-  }
-  return challenge
-}
-
-function createDrawSandboxWinnerViewerSession(address) {
-  pruneDrawSandboxWinnerViewerSessions()
-  const token = randomUUID()
-  const expiresAtMs = Date.now() + drawSandboxWinnerViewerTtlMs
-  const normalizedAddress = assertDrawAdminWalletAllowed(address, 'sandbox')
-  drawSandboxWinnerViewerSessions.set(token, {
-    address: normalizedAddress,
-    expiresAtMs,
-  })
-  return {
-    token,
-    address: normalizedAddress,
-    expiresAt: new Date(expiresAtMs).toISOString(),
-  }
 }
 
 function appendOutputWithLimit(current, chunk, limitBytes) {
@@ -3728,102 +3604,6 @@ const server = createServer(async (request, response) => {
         },
         { 'cache-control': 'no-store' },
       )
-    }
-    return
-  }
-
-  if (url.pathname === '/api/draw-admin/sandbox-winners/challenge') {
-    if (request.method !== 'POST') {
-      sendJson(request, response, 405, { ok: false, error: 'POST required.' }, { 'cache-control': 'no-store' })
-      return
-    }
-
-    try {
-      if (!enforceUnsafeRequestOrigin(request, response)) return
-      const disabled = drawAdminDisabledError()
-      if (disabled) throw disabled
-      const body = await readJsonBody(request)
-      const address = assertDrawAdminWalletAllowed(body?.address, 'sandbox')
-      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, 'winner_view', 'sandbox'))) return
-      sendJson(request, response, 200, createDrawSandboxWinnerViewerChallenge(address), {
-        'cache-control': 'no-store',
-      })
-    } catch (error) {
-      sendJson(request, response, Number(error?.statusCode || 500), {
-        ok: false,
-        code: error?.code || 'sandbox_winner_view_challenge_failed',
-        error: error instanceof Error ? error.message : 'Could not create sandbox winner-view authorization challenge.',
-      }, { 'cache-control': 'no-store' })
-    }
-    return
-  }
-
-  if (url.pathname === '/api/draw-admin/sandbox-winners/session') {
-    if (request.method === 'GET') {
-      const access = drawSandboxWinnerViewerAccess(request)
-      sendJson(request, response, 200, {
-        ok: true,
-        networkKey: 'sandbox',
-        ...access,
-      }, { 'cache-control': 'no-store' })
-      return
-    }
-
-    if (request.method === 'DELETE') {
-      if (!enforceUnsafeRequestOrigin(request, response)) return
-      const cookies = parseCookies(request.headers.cookie || '')
-      const token = String(cookies[drawSandboxWinnerViewerCookieName] || '').trim()
-      if (token) drawSandboxWinnerViewerSessions.delete(token)
-      sendJson(request, response, 200, {
-        ok: true,
-        networkKey: 'sandbox',
-        allowed: false,
-        address: '',
-        expiresAt: null,
-      }, {
-        'cache-control': 'no-store',
-        'set-cookie': drawSandboxWinnerViewerCookie(),
-      })
-      return
-    }
-
-    if (request.method !== 'POST') {
-      sendJson(request, response, 405, { ok: false, error: 'GET, POST, or DELETE required.' }, { 'cache-control': 'no-store' })
-      return
-    }
-
-    try {
-      if (!enforceUnsafeRequestOrigin(request, response)) return
-      const disabled = drawAdminDisabledError()
-      if (disabled) throw disabled
-      const body = await readJsonBody(request)
-      const address = assertDrawAdminWalletAllowed(body?.address, 'sandbox')
-      if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, 'winner_view', 'sandbox'))) return
-      verifyDrawSandboxWinnerViewerChallenge({
-        address,
-        nonce: body?.nonce,
-        signature: body?.signature,
-      })
-      const session = createDrawSandboxWinnerViewerSession(address)
-      sendJson(request, response, 200, {
-        ok: true,
-        networkKey: 'sandbox',
-        allowed: true,
-        address: session.address,
-        expiresAt: session.expiresAt,
-      }, {
-        'cache-control': 'no-store',
-        'set-cookie': drawSandboxWinnerViewerCookie({
-          token: session.token,
-          maxAge: drawSandboxWinnerViewerTtlSeconds,
-        }),
-      })
-    } catch (error) {
-      sendJson(request, response, Number(error?.statusCode || 500), {
-        ok: false,
-        code: error?.code || 'sandbox_winner_view_session_failed',
-        error: error instanceof Error ? error.message : 'Could not verify sandbox winner-view authorization.',
-      }, { 'cache-control': 'no-store' })
     }
     return
   }
