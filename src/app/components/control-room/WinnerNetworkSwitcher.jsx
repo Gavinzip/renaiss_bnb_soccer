@@ -22,7 +22,7 @@ export function WinnerNetworkSwitcher({
     }
   }, [network, onSelectNetwork]);
 
-  if (!authorized) return null;
+  if (!authorized || isOfficialDrawMode) return null;
 
   return (
     <section className="winner-network-switcher" aria-label={t("winnerReveal.networkSwitcherAria")}>

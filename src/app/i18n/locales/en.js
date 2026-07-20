@@ -874,6 +874,8 @@ export const enLocale = {
       "operatorExecutionBody": "Official mainnet and the mainnet sandbox follow the real execution state through pool lock, randomness, and winner reveal.",
       "operatorExecutionStagesAria": "On-chain draw stages",
       "operatorExecutionPool": "Locking the official draw pool",
+      "operatorExecutionLocked": "Official draw pool locked",
+      "operatorExecutionLockedBody": "The pool is fixed and ready for the official on-chain draw.",
       "operatorExecutionRandomness": "Transaction submitted, waiting for on-chain randomness",
       "operatorExecutionComplete": "On-chain draw complete",
       "operatorExecutionCompleteBody": "The verified winner will appear in the prize presentation above.",

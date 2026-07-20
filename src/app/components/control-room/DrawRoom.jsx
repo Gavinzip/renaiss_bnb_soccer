@@ -1427,7 +1427,7 @@ export function DrawOperatorWallet({
   const runTone = runIsRunning ? "is-running" : visibleRun?.ok ? "is-ready" : visibleRun ? "is-warning" : "";
   const runStage = runStageCopy({ runPayloadResult, visibleRun, output: outputText, t });
   const executionProgressPhase = (() => {
-    if (!currentExecutionRun) return ledgerLocked ? "pool" : "idle";
+    if (!currentExecutionRun) return ledgerLocked ? "locked" : "idle";
     if (
       currentExecutionRun.status === "failed"
       || (currentExecutionRun.finishedAt && !currentExecutionRun.ok)
@@ -1459,6 +1459,8 @@ export function DrawOperatorWallet({
     ? currentExecutionRun?.error || resultDetails[0] || ""
     : executionProgressPhase === "randomness"
     ? currentExecutionStage
+    : executionProgressPhase === "locked"
+    ? activeRoundLedger?.ledgerHash || ""
     : "";
   const currentBroadcastCompleted = drawRunSucceeded(runResult, "broadcast", drawRoundId, selectedNetworkKey)
     || drawRunSucceeded(visibleRun, "broadcast", drawRoundId, selectedNetworkKey);

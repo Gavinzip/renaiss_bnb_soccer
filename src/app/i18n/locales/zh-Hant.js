@@ -874,6 +874,8 @@ export const zhHantLocale = {
       "operatorExecutionBody": "正式主網與主網試跑都會依真實執行狀態顯示名單封存、亂數抽選與得主揭示。",
       "operatorExecutionStagesAria": "鏈上抽獎階段",
       "operatorExecutionPool": "正在封存正式抽獎名單",
+      "operatorExecutionLocked": "已封存正式抽獎名單",
+      "operatorExecutionLockedBody": "名單已固定，等待正式抽獎上鏈。",
       "operatorExecutionRandomness": "交易已送出，正在等待鏈上亂數",
       "operatorExecutionComplete": "鏈上抽獎已完成",
       "operatorExecutionCompleteBody": "真實得主將同步顯示在上方獎項區。",

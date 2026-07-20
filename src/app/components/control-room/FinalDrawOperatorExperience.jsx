@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  CheckCircle2,
   ChevronRight,
   Dices,
   Gift,
@@ -379,7 +380,7 @@ export function DrawExecutionProgress({
   const reduceMotion = useReducedMotion();
   const prizeImage = getMatchPrizeImage({ roundId: activeDraw.id }, 0);
   const activeStage =
-    phase === "pool"
+    phase === "pool" || phase === "locked"
       ? 1
       : phase === "randomness"
       ? 2
@@ -452,6 +453,32 @@ export function DrawExecutionProgress({
                 </span>
                 <div className="draw-simulation__reel" aria-hidden="true">
                   {[networkLabel, activeDraw.id, detail || "ON-CHAIN", networkLabel].map(
+                    (entry, index) => (
+                      <code key={`${entry}-${index}`}>{entry}</code>
+                    )
+                  )}
+                </div>
+              </motion.section>
+            ) : null}
+
+            {phase === "locked" ? (
+              <motion.section
+                className="draw-simulation__drawing draw-execution__locked"
+                key="locked"
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.985 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={reduceMotion ? undefined : { opacity: 0, scale: 1.015 }}
+              >
+                <span className="draw-simulation__orb" aria-hidden="true">
+                  <CheckCircle2 size={34} strokeWidth={1.8} />
+                </span>
+                <span>
+                  <small>{t("draw.operatorSimulationStagePool")}</small>
+                  <strong>{t("draw.operatorExecutionLocked")}</strong>
+                  <p>{detail || t("draw.operatorExecutionLockedBody")}</p>
+                </span>
+                <div className="draw-simulation__reel" aria-hidden="true">
+                  {[networkLabel, activeDraw.id, "LOCKED", networkLabel].map(
                     (entry, index) => (
                       <code key={`${entry}-${index}`}>{entry}</code>
                     )

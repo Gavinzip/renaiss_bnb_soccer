@@ -874,6 +874,8 @@ export const koLocale = {
       "operatorExecutionBody": "공식 메인넷과 메인넷 샌드박스는 실제 실행 상태에 따라 명단 잠금, 난수 추첨, 당첨자 공개를 표시합니다.",
       "operatorExecutionStagesAria": "온체인 추첨 단계",
       "operatorExecutionPool": "공식 추첨 명단을 잠그는 중",
+      "operatorExecutionLocked": "공식 추첨 명단이 잠겼습니다",
+      "operatorExecutionLockedBody": "명단이 확정되었으며 공식 온체인 추첨을 기다립니다.",
       "operatorExecutionRandomness": "거래가 제출되어 온체인 난수를 기다리는 중",
       "operatorExecutionComplete": "온체인 추첨 완료",
       "operatorExecutionCompleteBody": "검증된 당첨자는 위의 상품 표시 영역에 나타납니다.",

@@ -33653,6 +33653,21 @@ body {
   text-align: center;
 }
 
+.draw-execution__locked .draw-simulation__orb {
+  border-color: rgba(111, 226, 173, 0.5);
+  background: rgba(80, 190, 135, 0.12);
+  color: rgba(143, 242, 191, 0.96);
+}
+
+.draw-execution__locked p {
+  max-width: 32rem;
+  margin: 0;
+  color: rgba(211, 241, 223, 0.74);
+  font-size: 0.76rem;
+  font-weight: 720;
+  line-height: 1.55;
+}
+
 .draw-simulation__orb {
   width: 84px;
   height: 84px;
