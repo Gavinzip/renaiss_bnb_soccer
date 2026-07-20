@@ -52,7 +52,6 @@ import { requestRenaissProviderSignOut } from "./utils/renaissAuth";
 import { sameMatchId } from "./data/matchIds.js";
 import { getRoundTicketAvailability } from "./data/ticketEligibility";
 import { buildLiveVoteStats } from "./data/votePoolRuntime";
-import { canViewWinnersFinalDraw } from "./utils/drawVisibility";
 
 const INITIAL_LOADER_MIN_VISIBLE_MS = 1100;
 const INITIAL_LOADER_EXIT_MS = 540;
@@ -434,18 +433,16 @@ function AppContent() {
   const [winnerRevealReady, setWinnerRevealReady] = useState(!drawWinnersUrl);
   const [winnerRevealRefreshToken, setWinnerRevealRefreshToken] = useState(0);
   const winnerRevealCacheRef = useRef(new Map());
-  const winnerRevealFreshnessRef = useRef({ mainnet: "" });
+  const winnerRevealFreshnessRef = useRef({ mainnet: "", sandbox: "" });
   const [authSession, setAuthSession] = useState({ authenticated: false, config: null });
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
   const [winnerRevealNetwork, setWinnerRevealNetwork] = useState("mainnet");
-  const canSwitchWinnerRevealNetwork = canViewWinnersFinalDraw({
-    localToolsEnabled: localTestOrigin,
-    enabled: import.meta.env.VITE_WINNERS_FINAL_DRAW_ENABLED,
-    allowlist: import.meta.env.VITE_WINNERS_FINAL_DRAW_ALLOWED_WALLETS,
-    authSession,
-  });
-  const selectedWinnerRevealNetwork = "mainnet";
+  const [sandboxWinnerAccessGranted, setSandboxWinnerAccessGranted] = useState(false);
+  const canSwitchWinnerRevealNetwork = sandboxWinnerAccessGranted;
+  const selectedWinnerRevealNetwork = canSwitchWinnerRevealNetwork
+    ? winnerRevealNetwork
+    : "mainnet";
   const selectedDrawWinnersUrl = useMemo(
     () => urlWithQueryParams(drawWinnersUrl, { network: selectedWinnerRevealNetwork }),
     [drawWinnersUrl, selectedWinnerRevealNetwork],
@@ -463,7 +460,9 @@ function AppContent() {
   const winnerRevealLoading = !winnerRevealReady
     || winnerRevealDataNetwork !== selectedWinnerRevealNetwork;
   const handleSelectWinnerRevealNetwork = useCallback((network) => {
-    const nextNetwork = "mainnet";
+    const nextNetwork = network === "sandbox" && canSwitchWinnerRevealNetwork
+      ? "sandbox"
+      : "mainnet";
     const cachedData = winnerRevealCacheRef.current.get(nextNetwork);
     if (cachedData) {
       setWinnerRevealData(cachedData);
@@ -471,7 +470,7 @@ function AppContent() {
       setWinnerRevealIssue("");
     }
     setWinnerRevealNetwork(nextNetwork);
-  }, []);
+  }, [canSwitchWinnerRevealNetwork]);
   const [activeViewId, setActiveViewId] = useState(readInitialViewId);
   const [localSimulationMode, setLocalSimulationMode] = useState(defaultSimulationMode);
   const simulationMode = localTestOrigin ? localSimulationMode : "realtime";
@@ -1794,7 +1793,7 @@ function AppContent() {
           winnerRevealIssue={winnerRevealIssue}
           winnerRevealLoading={winnerRevealLoading}
           winnerRevealNetwork={selectedWinnerRevealNetwork}
-          canSwitchWinnerRevealNetwork={canSwitchWinnerRevealNetwork}
+          onSandboxWinnerAccessChange={setSandboxWinnerAccessGranted}
           currentWinnerWalletAddress={currentWinnerWalletAddress}
           currentUserWinnerCount={currentUserWinnerCount}
           drawStats={drawStats}

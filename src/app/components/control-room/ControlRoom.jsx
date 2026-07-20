@@ -955,7 +955,7 @@ export function ControlRoom({
   winnerRevealIssue,
   winnerRevealLoading,
   winnerRevealNetwork,
-  canSwitchWinnerRevealNetwork,
+  onSandboxWinnerAccessChange,
   currentWinnerWalletAddress,
   currentUserWinnerCount,
   drawStats,
@@ -1526,11 +1526,11 @@ export function ControlRoom({
               currentUserWinnerCount={visibleCurrentUserWinnerCount}
               canViewFinalDraw={canViewFinalDrawInWinners}
               canSwitchDrawNetwork={canViewFinalDrawInWinners}
-              canSwitchWinnerRevealNetwork={canSwitchWinnerRevealNetwork}
               finalDraw={finalDraw}
               experienceVisible={experienceVisible}
               onInitialMediaStateChange={onInitialViewMediaStateChange}
               onSelectWinnerRevealNetwork={onSelectWinnerRevealNetwork}
+              onSandboxWinnerAccessChange={onSandboxWinnerAccessChange}
               onRevealStateChange={setWinnerRevealStarted}
             />
           ) : null}

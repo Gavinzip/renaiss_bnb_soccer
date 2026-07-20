@@ -27519,6 +27519,76 @@ body {
   -webkit-backdrop-filter: blur(22px) saturate(1.18);
 }
 
+.winner-network-access {
+  position: absolute;
+  top: clamp(96px, 10vh, 124px);
+  right: clamp(18px, 3.2vw, 44px);
+  z-index: 6;
+  display: grid;
+  gap: 7px;
+  width: min(296px, calc(100vw - 36px));
+}
+
+.winner-network-access > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid rgba(237, 213, 156, 0.2);
+  border-radius: 10px;
+  color: rgba(255, 248, 226, 0.9);
+  background: rgba(7, 9, 9, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.winner-network-access > button:hover,
+.winner-network-access > button:focus-visible {
+  border-color: rgba(237, 213, 156, 0.38);
+  background: rgba(17, 18, 15, 0.86);
+  outline: none;
+}
+
+.winner-network-access > button:disabled {
+  cursor: wait;
+  opacity: 0.66;
+}
+
+.winner-network-access > button > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.winner-network-access small {
+  overflow: hidden;
+  color: rgba(247, 243, 232, 0.46);
+  font-size: 0.58rem;
+  font-weight: 760;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.winner-network-access strong {
+  color: rgba(255, 248, 226, 0.94);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.winner-network-access p {
+  margin: 0;
+  color: rgba(246, 188, 176, 0.9);
+  font-size: 0.62rem;
+  font-weight: 760;
+  line-height: 1.4;
+}
+
 .winner-network-switcher__label {
   display: inline-flex;
   align-items: center;
@@ -27861,6 +27931,13 @@ body {
 }
 
 @media (max-width: 620px) {
+  .winner-network-access {
+    top: 94px;
+    right: 18px;
+    left: 18px;
+    width: auto;
+  }
+
   .winner-network-switcher {
     top: 94px;
     right: 18px;

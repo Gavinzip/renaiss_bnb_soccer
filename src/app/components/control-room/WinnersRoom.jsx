@@ -21,6 +21,7 @@ import { compactAddress, formatNumber } from "../../data/ticketMath";
 import { useCampaignCopy } from "../../i18n/useCampaignCopy";
 import { preloadImageDecoded } from "../../utils/preloadAssets";
 import SideRays from "../SideRays/SideRays";
+import { WinnerNetworkSwitcher } from "./WinnerNetworkSwitcher";
 
 const FALLBACK_ROUND_ORDER = [
   "round32",
@@ -649,11 +650,11 @@ export function WinnersRoom({
   currentWalletAddress = "",
   canViewFinalDraw = false,
   canSwitchDrawNetwork = false,
-  canSwitchWinnerRevealNetwork = false,
   finalDraw = null,
   experienceVisible = true,
   onInitialMediaStateChange,
   onSelectWinnerRevealNetwork,
+  onSandboxWinnerAccessChange,
   onRevealStateChange,
 }) {
   const { t, roundLabel } = useCampaignCopy();
@@ -697,7 +698,10 @@ export function WinnersRoom({
       roundOptions[0] ||
       null;
   const showFinalDrawControl = Boolean(
-    canViewFinalDraw && activeRoundId === "final" && finalDraw?.id === "final"
+    winnerRevealNetwork === "mainnet"
+    && canViewFinalDraw
+    && activeRoundId === "final"
+    && finalDraw?.id === "final"
   );
   const selectedWinnerRevealData = useMemo(() => {
     const selectedRoundId = String(selectedRound?.id || "").trim();
@@ -1007,6 +1011,12 @@ export function WinnersRoom({
           </div>
         ) : null}
         <div className="winner-stage-scrim" aria-hidden="true" />
+        <WinnerNetworkSwitcher
+          network={winnerRevealNetwork}
+          loading={winnerRevealLoading}
+          onSelectNetwork={onSelectWinnerRevealNetwork}
+          onAccessChange={onSandboxWinnerAccessChange}
+        />
 
         <section className="winner-stage-intro" aria-hidden={revealStarted}>
           <span>
