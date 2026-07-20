@@ -33,10 +33,10 @@ import {
 
 const drawStepIds = ["results", "eligible", "snapshot", "reveal"];
 const fallbackDrawNetworks = [
-  { key: "mainnet", label: "BNB Chain", chainId: "56", chainIdHex: "0x38" },
-  { key: "testnet", label: "BNB Testnet", chainId: "97", chainIdHex: "0x61" },
+  { key: "mainnet", label: "BNB Chain · Official", chainId: "56", chainIdHex: "0x38", scope: "official" },
+  { key: "sandbox", label: "BNB Chain · Mainnet sandbox", chainId: "56", chainIdHex: "0x38", scope: "sandbox" },
 ];
-const drawExecutionModes = ["mainnet", "testnet", "simulation"];
+const drawExecutionModes = ["mainnet", "sandbox", "simulation"];
 const defaultDrawNetworkKey = normalizeDrawNetworkKey(
   import.meta.env.VITE_DRAW_NETWORK || "mainnet"
 );
@@ -52,8 +52,8 @@ function normalizeDrawExecutionMode(value) {
 function drawExecutionModeLabel(mode, t) {
   return t(
     `draw.operatorMode${
-      normalizeDrawExecutionMode(mode) === "testnet"
-        ? "Testnet"
+      normalizeDrawExecutionMode(mode) === "sandbox"
+        ? "Sandbox"
         : normalizeDrawExecutionMode(mode) === "simulation"
         ? "Simulation"
         : "Mainnet"
@@ -491,7 +491,7 @@ function normalizeChainId(value) {
 function normalizeDrawNetworkKey(value) {
   const key = String(value || "").trim().toLowerCase();
   if (!key || key === "mainnet" || key === "bsc" || key === "bnb" || key === "56" || key === "0x38") return "mainnet";
-  if (key === "testnet" || key === "bsc-testnet" || key === "bnb-testnet" || key === "97" || key === "0x61") return "testnet";
+  if (key === "sandbox" || key === "mainnet-sandbox" || key === "bnb-mainnet-sandbox") return "sandbox";
   return "mainnet";
 }
 
@@ -504,7 +504,7 @@ function drawNetworkOptions(adminStatus) {
     .map((network) => ({
       ...network,
       key: normalizeDrawNetworkKey(network?.key || network?.chainId || network?.chainIdHex),
-      label: network?.label || (normalizeChainId(network?.chainIdHex || network?.chainId) === "0x61" ? "BNB Testnet" : "BNB Chain"),
+      label: network?.label || "BNB Chain",
     }))
     .filter((network) => {
       if (seen.has(network.key)) return false;
@@ -532,7 +532,6 @@ function chainLabel(chainId, t) {
   const normalized = normalizeChainId(chainId);
   if (!normalized) return t("draw.operatorWalletChainUnknown");
   if (normalized === "0x38") return "BNB Chain";
-  if (normalized === "0x61") return "BNB Testnet";
   return normalized;
 }
 
@@ -540,7 +539,7 @@ function drawNetworkLabel(network, t) {
   const networkKey = normalizeDrawNetworkKey(
     network?.key || network?.chainIdHex || network?.chainId
   );
-  if (networkKey === "testnet") return t("draw.operatorNetworkTestnet");
+  if (networkKey === "sandbox") return t("draw.operatorNetworkSandbox");
   return t("draw.operatorNetworkMainnet");
 }
 
@@ -557,15 +556,6 @@ function walletChainParamsForNetwork(network, t) {
       nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
       rpcUrls: ["https://bsc-dataseed.binance.org/"],
       blockExplorerUrls: ["https://bscscan.com"],
-    };
-  }
-  if (chainId === "0x61") {
-    return {
-      chainId,
-      chainName: "BNB Smart Chain Testnet",
-      nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-      rpcUrls: ["https://data-seed-prebsc-1-s1.bnbchain.org:8545/"],
-      blockExplorerUrls: ["https://testnet.bscscan.com"],
     };
   }
   return {
@@ -722,7 +712,7 @@ function hasLockedLedgerForRound(adminStatus, roundId) {
 
 function drawAdminReadinessItems(adminStatus, roundId, t) {
   if (!adminStatus) return [];
-  return [
+  const items = [
     {
       id: "api",
       ready: adminStatus.enabled !== false,
@@ -754,6 +744,16 @@ function drawAdminReadinessItems(adminStatus, roundId, t) {
       label: hasLockedLedgerForRound(adminStatus, roundId) ? t("draw.operatorDrawLedgerReady") : t("draw.operatorDrawLedgerMissing"),
     },
   ];
+  if (adminStatus.networkKey === "sandbox" || adminStatus.scope === "sandbox") {
+    items.splice(1, 0, {
+      id: "isolation",
+      ready: !adminStatus.sandboxIsolationError,
+      label: adminStatus.sandboxIsolationError
+        ? t("draw.operatorSandboxIsolationMissing")
+        : t("draw.operatorSandboxIsolationReady"),
+    });
+  }
+  return items;
 }
 
 export function DrawOperatorWallet({
@@ -788,10 +788,13 @@ export function DrawOperatorWallet({
     ? normalizeDrawExecutionMode(executionMode)
     : "mainnet";
   const simulationMode = activeExecutionMode === "simulation";
+  const sandboxMode = activeExecutionMode === "sandbox";
   const selectedNetworkKey =
-    activeExecutionMode === "testnet" ? "testnet" : "mainnet";
+    sandboxMode ? "sandbox" : "mainnet";
   const sourceRoundId = activeDraw.id;
-  const drawRoundId = drawRoundIdFor(sourceRoundId, redrawEnabled, redrawAttempt);
+  const drawRoundId = sandboxMode
+    ? sourceRoundId
+    : drawRoundIdFor(sourceRoundId, redrawEnabled, redrawAttempt);
   const redrawActive = drawRoundId !== sourceRoundId;
   const selectedNetwork = selectedDrawNetwork(adminStatus, selectedNetworkKey);
   const targetDrawChainId = drawNetworkChainId(selectedNetwork);
@@ -1075,6 +1078,7 @@ export function DrawOperatorWallet({
   }
 
   function selectRedrawEnabled(value) {
+    if (sandboxMode) return;
     if (busyAction || adminStatus?.running) return;
     setRedrawEnabled(Boolean(value));
     setIssue("");
@@ -1091,6 +1095,7 @@ export function DrawOperatorWallet({
   }
 
   function enableNextRedrawVersion() {
+    if (sandboxMode) return sourceRoundId;
     const nextAttempt = redrawEnabled ? normalizeRedrawAttempt(redrawAttempt + 1) : normalizeRedrawAttempt(redrawAttempt);
     const nextDrawRoundId = drawRoundIdFor(sourceRoundId, true, nextAttempt);
     setRedrawEnabled(true);
@@ -1145,7 +1150,13 @@ export function DrawOperatorWallet({
     const currentStatus = statusForSelectedNetwork(adminStatus, selectedNetworkKey);
     const readiness = currentStatus?.roundReadiness || runResult?.readiness || null;
     if (!readiness) {
-      return {
+      return sandboxMode ? {
+        complete: true,
+        confirmedCount: 1,
+        expectedCount: 1,
+        missingCount: 0,
+        missingMatchIds: [],
+      } : {
         complete: activeDraw.officialFinalsComplete,
         confirmedCount: activeDraw.officialFinalCount,
         expectedCount: activeDraw.matchCount,
@@ -1181,7 +1192,10 @@ export function DrawOperatorWallet({
       return;
     }
     if (typeof window !== "undefined") {
-      const confirmed = window.confirm(t("draw.operatorDrawLedgerConfirm", { round: drawRoundId, sourceRound: sourceRoundId }));
+      const confirmed = window.confirm(t(
+        sandboxMode ? "draw.operatorSandboxLedgerConfirm" : "draw.operatorDrawLedgerConfirm",
+        { round: drawRoundId, sourceRound: sourceRoundId },
+      ));
       if (!confirmed) return;
     }
 
@@ -1249,7 +1263,10 @@ export function DrawOperatorWallet({
       return;
     }
     if (broadcast && typeof window !== "undefined") {
-      const confirmed = window.confirm(t("draw.operatorDrawBroadcastConfirm", { round: drawRoundId, sourceRound: sourceRoundId }));
+      const confirmed = window.confirm(t(
+        sandboxMode ? "draw.operatorSandboxBroadcastConfirm" : "draw.operatorDrawBroadcastConfirm",
+        { round: drawRoundId, sourceRound: sourceRoundId },
+      ));
       if (!confirmed) return;
     }
 
@@ -1298,14 +1315,14 @@ export function DrawOperatorWallet({
             },
           }));
           if (broadcast) onPresentationReady?.("mainnet");
-        } else if (broadcast && activeExecutionMode === "testnet") {
-          onPresentationReady?.("testnet");
         }
       }
     } catch (error) {
       const payload = error?.payload || null;
       const failureMessage = payload?.error || error?.message || t("draw.operatorDrawFailed");
-      const nextRedrawRoundId = shouldAutoRedrawAfterFailure(action, payload, error) ? enableNextRedrawVersion() : "";
+      const nextRedrawRoundId = !sandboxMode && shouldAutoRedrawAfterFailure(action, payload, error)
+        ? enableNextRedrawVersion()
+        : "";
       setIssue(nextRedrawRoundId
         ? `${failureMessage} ${t("draw.operatorDrawAutoRedrawEnabled", { drawRound: nextRedrawRoundId })}`
         : failureMessage);
@@ -1336,13 +1353,18 @@ export function DrawOperatorWallet({
   const roundReadiness = drawRoundReadinessSnapshot();
   const activeRoundLedger = roundLedgerSummaryFor(currentAdminStatus, drawRoundId);
   const ledgerLocked = Boolean(activeRoundLedger);
-  const adminBaseReady = Boolean(currentAdminStatus?.enabled && currentAdminStatus?.allowlistConfigured);
+  const adminBaseReady = Boolean(
+    currentAdminStatus?.enabled
+    && currentAdminStatus?.allowlistConfigured
+    && !currentAdminStatus?.sandboxIsolationError,
+  );
   const contractExecutionReady = Boolean(
     currentAdminStatus?.enabled
     && currentAdminStatus?.contractConfigured
     && currentAdminStatus?.rpcConfigured
     && currentAdminStatus?.broadcasterConfigured
-    && currentAdminStatus?.allowlistConfigured,
+    && currentAdminStatus?.allowlistConfigured
+    && !currentAdminStatus?.sandboxIsolationError,
   );
   const adminReady = contractExecutionReady && ledgerLocked;
   const canLockLedger = connected && adminBaseReady && roundReadiness.complete && !operationBusy;
@@ -1356,7 +1378,9 @@ export function DrawOperatorWallet({
         items: missingReadinessItems.map((item) => item.label).join(" · "),
       })
       : t("draw.operatorDrawAllReady"));
-  const finalsNotice = roundReadiness.complete
+  const finalsNotice = sandboxMode
+    ? t("draw.operatorSandboxReady")
+    : roundReadiness.complete
     ? t("draw.operatorDrawFinalsReady", {
       finals: formatNumber(roundReadiness.confirmedCount),
       matches: formatNumber(roundReadiness.expectedCount),
@@ -1429,6 +1453,9 @@ export function DrawOperatorWallet({
     : "";
   const currentBroadcastCompleted = drawRunSucceeded(runResult, "broadcast", drawRoundId, selectedNetworkKey)
     || drawRunSucceeded(visibleRun, "broadcast", drawRoundId, selectedNetworkKey);
+  const executionProgressDraw = sandboxMode
+    ? { ...activeDraw, id: drawRoundId }
+    : activeDraw;
   const primaryDrawStep = (() => {
     if (operationBusy) {
       return {
@@ -1472,7 +1499,7 @@ export function DrawOperatorWallet({
         action: "ledger",
         disabled: !canLockLedger,
         Icon: LockKeyhole,
-        label: t("draw.operatorDrawLockLedger"),
+        label: t(sandboxMode ? "draw.operatorSandboxLockLedger" : "draw.operatorDrawLockLedger"),
         className: "is-primary",
       };
     }
@@ -1481,7 +1508,7 @@ export function DrawOperatorWallet({
         action: "broadcast",
         disabled: !canBroadcastDraw,
         Icon: Award,
-        label: t("draw.operatorDrawBroadcast"),
+        label: t(sandboxMode ? "draw.operatorSandboxBroadcast" : "draw.operatorDrawBroadcast"),
         className: "is-danger",
       };
     }
@@ -1525,6 +1552,8 @@ export function DrawOperatorWallet({
       <p>
         {simulationMode
           ? t("draw.operatorSimulationModeBody")
+          : sandboxMode
+          ? t("draw.operatorSandboxModeBody")
           : t("draw.operatorControlBody")}
       </p>
 
@@ -1639,7 +1668,7 @@ export function DrawOperatorWallet({
       ) : (
         <>
           <DrawExecutionProgress
-            activeDraw={activeDraw}
+            activeDraw={executionProgressDraw}
             detail={executionProgressDetail}
             networkLabel={targetNetworkLabel}
             phase={executionProgressPhase}
@@ -1667,47 +1696,61 @@ export function DrawOperatorWallet({
                   </code>
                 ) : null}
               </span>
-              <section
-                className="draw-operator-wallet__redraw"
-                aria-label={t("draw.operatorRedrawAria")}
-              >
-                <label className="draw-operator-wallet__redraw-toggle">
-                  <input
-                    type="checkbox"
-                    checked={redrawEnabled}
-                    disabled={operationBusy}
-                    onChange={(event) =>
-                      selectRedrawEnabled(event.target.checked)
-                    }
-                  />
-                  <strong>{t("draw.operatorRedrawLabel")}</strong>
-                </label>
-                {redrawEnabled ? (
-                  <label className="draw-operator-wallet__redraw-version">
-                    <span>{t("draw.operatorRedrawAttempt")}</span>
+              {sandboxMode ? (
+                <section
+                  className="draw-operator-wallet__redraw"
+                  aria-label={t("draw.operatorSandboxFixtureTitle")}
+                >
+                  <strong>{t("draw.operatorSandboxFixtureTitle")}</strong>
+                  <p>{t("draw.operatorSandboxFixtureBody")}</p>
+                  <code>{sourceRoundId}</code>
+                  {currentAdminStatus?.roundReadiness?.sourceLedgerHash ? (
+                    <code>{compactAddress(currentAdminStatus.roundReadiness.sourceLedgerHash)}</code>
+                  ) : null}
+                </section>
+              ) : (
+                <section
+                  className="draw-operator-wallet__redraw"
+                  aria-label={t("draw.operatorRedrawAria")}
+                >
+                  <label className="draw-operator-wallet__redraw-toggle">
                     <input
-                      type="number"
-                      min="1"
-                      max="999"
-                      step="1"
-                      value={redrawAttempt}
+                      type="checkbox"
+                      checked={redrawEnabled}
                       disabled={operationBusy}
                       onChange={(event) =>
-                        updateRedrawAttempt(event.target.value)
+                        selectRedrawEnabled(event.target.checked)
                       }
                     />
-                    <code>{drawRoundId}</code>
+                    <strong>{t("draw.operatorRedrawLabel")}</strong>
                   </label>
-                ) : null}
-                {redrawActive ? (
-                  <p>
-                    {t("draw.operatorRedrawWarning", {
-                      sourceRound: sourceRoundId,
-                      drawRound: drawRoundId,
-                    })}
-                  </p>
-                ) : null}
-              </section>
+                  {redrawEnabled ? (
+                    <label className="draw-operator-wallet__redraw-version">
+                      <span>{t("draw.operatorRedrawAttempt")}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        step="1"
+                        value={redrawAttempt}
+                        disabled={operationBusy}
+                        onChange={(event) =>
+                          updateRedrawAttempt(event.target.value)
+                        }
+                      />
+                      <code>{drawRoundId}</code>
+                    </label>
+                  ) : null}
+                  {redrawActive ? (
+                    <p>
+                      {t("draw.operatorRedrawWarning", {
+                        sourceRound: sourceRoundId,
+                        drawRound: drawRoundId,
+                      })}
+                    </p>
+                  ) : null}
+                </section>
+              )}
             </div>
             <p
               className={[
@@ -1835,9 +1878,9 @@ export function DrawOperatorWallet({
               </strong>
               <p>
                 {runResult.action === "ledger"
-                  ? t("draw.operatorDrawLedgerLocked")
+                  ? t(sandboxMode ? "draw.operatorSandboxLedgerLocked" : "draw.operatorDrawLedgerLocked")
                   : runResult.result?.broadcast
-                  ? t("draw.operatorDrawBroadcasted")
+                  ? t(sandboxMode ? "draw.operatorSandboxBroadcasted" : "draw.operatorDrawBroadcasted")
                   : t("draw.operatorDrawDryRun")}
               </p>
               {runResult.action === "ledger" &&

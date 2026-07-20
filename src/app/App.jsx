@@ -434,7 +434,7 @@ function AppContent() {
   const [winnerRevealReady, setWinnerRevealReady] = useState(!drawWinnersUrl);
   const [winnerRevealRefreshToken, setWinnerRevealRefreshToken] = useState(0);
   const winnerRevealCacheRef = useRef(new Map());
-  const winnerRevealFreshnessRef = useRef({ mainnet: "", testnet: "" });
+  const winnerRevealFreshnessRef = useRef({ mainnet: "" });
   const [authSession, setAuthSession] = useState({ authenticated: false, config: null });
   const [authIssue, setAuthIssue] = useState("");
   const [authReady, setAuthReady] = useState(!authMeUrl);
@@ -445,9 +445,7 @@ function AppContent() {
     allowlist: import.meta.env.VITE_WINNERS_FINAL_DRAW_ALLOWED_WALLETS,
     authSession,
   });
-  const selectedWinnerRevealNetwork = canSwitchWinnerRevealNetwork
-    ? winnerRevealNetwork
-    : "mainnet";
+  const selectedWinnerRevealNetwork = "mainnet";
   const selectedDrawWinnersUrl = useMemo(
     () => urlWithQueryParams(drawWinnersUrl, { network: selectedWinnerRevealNetwork }),
     [drawWinnersUrl, selectedWinnerRevealNetwork],
@@ -465,7 +463,7 @@ function AppContent() {
   const winnerRevealLoading = !winnerRevealReady
     || winnerRevealDataNetwork !== selectedWinnerRevealNetwork;
   const handleSelectWinnerRevealNetwork = useCallback((network) => {
-    const nextNetwork = network === "testnet" ? "testnet" : "mainnet";
+    const nextNetwork = "mainnet";
     const cachedData = winnerRevealCacheRef.current.get(nextNetwork);
     if (cachedData) {
       setWinnerRevealData(cachedData);
@@ -912,44 +910,6 @@ function AppContent() {
       controller.abort();
     };
   }, [selectedDrawWinnersUrl, selectedWinnerRevealNetwork, t, winnerRevealVideoUrl, winnerRevealRefreshToken]);
-
-  useEffect(() => {
-    if (
-      !canSwitchWinnerRevealNetwork
-      || !drawWinnersUrl
-      || selectedWinnerRevealNetwork === "testnet"
-      || winnerRevealCacheRef.current.has("testnet")
-    ) {
-      return undefined;
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-    const testnetUrl = urlWithQueryParams(drawWinnersUrl, { network: "testnet" });
-
-    fetchJsonWithTimeout(testnetUrl, {
-      cache: "no-store",
-      credentials: "same-origin",
-      signal: controller.signal,
-      timeoutMs: DATA_REQUEST_TIMEOUT_MS,
-    })
-      .then(({ payload }) => payload)
-      .then((payload) => {
-        if (cancelled) return;
-        const payloadNetwork = String(payload?.networkKey || "").trim().toLowerCase();
-        if (payloadNetwork !== "testnet") return;
-        winnerRevealCacheRef.current.set(
-          "testnet",
-          normalizeWinnerRevealPayload(payload, winnerRevealVideoUrl),
-        );
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [canSwitchWinnerRevealNetwork, drawWinnersUrl, selectedWinnerRevealNetwork, winnerRevealVideoUrl]);
 
   useEffect(() => {
     function refreshWinnerRevealData() {

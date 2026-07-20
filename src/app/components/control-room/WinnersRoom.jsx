@@ -44,14 +44,13 @@ const WINNER_ROUND_LABEL_KEYS = {
 
 const FINAL_PRESENTATION_PREVIEW_WALLETS = {
   simulation: "0x000000000000000000000000000000000000d3e0",
-  testnet: "0x0000000000000000000000000000000000000097",
 };
 
 function buildFinalPresentationPreview(mode, matches, t) {
-  if (mode !== "simulation" && mode !== "testnet") return null;
+  if (mode !== "simulation") return null;
   const finalMatch = matches.find((match) => match.roundId === "final") || null;
   const matchId = finalMatch?.id || "final";
-  const ticketNumber = mode === "testnet" ? "TEST-FINAL-097" : "DEMO-FINAL-071";
+  const ticketNumber = "DEMO-FINAL-071";
 
   return {
     mode,
@@ -63,7 +62,7 @@ function buildFinalPresentationPreview(mode, matches, t) {
       ticketNumber,
       walletAddress: FINAL_PRESENTATION_PREVIEW_WALLETS[mode],
       profile: {
-        displayName: t(`winnerReveal.finalPresentation${mode === "testnet" ? "Testnet" : "Simulation"}Winner`),
+        displayName: t("winnerReveal.finalPresentationSimulationWinner"),
       },
     },
     matchLabel: t("winnerReveal.finalPresentationMatchLabel"),
@@ -138,7 +137,7 @@ function compactHash(value) {
 }
 
 function bscScanBase(chainId) {
-  return String(chainId || "") === "97" ? "https://testnet.bscscan.com" : "https://bscscan.com";
+  return "https://bscscan.com";
 }
 
 function transactionHref(hash, chainId) {
@@ -497,22 +496,16 @@ function WinnerOnChainProof({ winnerRevealData, selectedRound, selectedActiveWin
 function WinnersFinalDrawControl({
   activeDraw,
   canSwitchNetwork,
-  selectedNetwork,
   hasOfficialResult,
-  onSelectedNetworkChange,
   onPresentationPreview,
   onPresentationReset,
 }) {
   const { t } = useCampaignCopy();
   const [open, setOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
-  const [simulationNetwork, setSimulationNetwork] = useState("");
+  const [executionMode, setExecutionMode] = useState("mainnet");
   const [simulationPhase, setSimulationPhase] = useState("idle");
   const openFrameRef = useRef(0);
-  const normalizedSelectedNetwork = selectedNetwork === "testnet" ? "testnet" : "mainnet";
-  const executionMode = simulationNetwork === normalizedSelectedNetwork
-    ? "simulation"
-    : normalizedSelectedNetwork;
 
   const handleSimulationPhaseChange = useCallback((phase) => {
     setSimulationPhase(phase);
@@ -528,15 +521,10 @@ function WinnersFinalDrawControl({
   }, [onPresentationPreview]);
 
   const handleExecutionModeChange = useCallback((mode) => {
-    if (mode === "simulation") {
-      setSimulationNetwork(normalizedSelectedNetwork);
-    } else if (mode === "mainnet" || mode === "testnet") {
-      setSimulationNetwork("");
-      onSelectedNetworkChange?.(mode);
-    }
+    setExecutionMode(["mainnet", "sandbox", "simulation"].includes(mode) ? mode : "mainnet");
     setSimulationPhase("idle");
     onPresentationReset?.();
-  }, [normalizedSelectedNetwork, onPresentationReset, onSelectedNetworkChange]);
+  }, [onPresentationReset]);
 
   const handleOpenChange = useCallback(() => {
     if (open) {
@@ -552,17 +540,11 @@ function WinnersFinalDrawControl({
 
   useEffect(() => () => window.cancelAnimationFrame(openFrameRef.current), []);
 
-  useEffect(() => {
-    setSimulationNetwork("");
-    setSimulationPhase("idle");
-    onPresentationReset?.();
-  }, [onPresentationReset, selectedNetwork]);
-
   if (!activeDraw) return null;
 
   const modeLabel =
-    executionMode === "testnet"
-      ? t("draw.operatorModeTestnet")
+    executionMode === "sandbox"
+      ? t("draw.operatorModeSandbox")
       : executionMode === "simulation"
       ? simulationPhase === "complete"
         ? t("draw.operatorSimulationStatusComplete")
@@ -570,10 +552,8 @@ function WinnersFinalDrawControl({
         ? t("draw.operatorSimulationStatusRunning")
         : t("draw.operatorModeSimulation")
       : t("draw.operatorModeMainnet");
-  const presentationPreviewDisabled = executionMode !== "simulation" && !hasOfficialResult;
-  const pendingNetworkLabel = executionMode === "testnet"
-    ? t("winnerReveal.networkTestnetShort")
-    : t("winnerReveal.networkMainnetShort");
+  const presentationPreviewDisabled = executionMode === "sandbox" || (executionMode !== "simulation" && !hasOfficialResult);
+  const pendingNetworkLabel = t("winnerReveal.networkMainnetShort");
 
   return (
     <section
@@ -601,17 +581,19 @@ function WinnersFinalDrawControl({
               <strong>{modeLabel}</strong>
             </span>
           </span>
-          <button
-            type="button"
-            className="winner-final-draw__preview"
-            disabled={presentationPreviewDisabled}
-            onClick={() => onPresentationPreview?.(executionMode, { scroll: true })}
-          >
-            <Eye size={16} strokeWidth={2.25} />
-            {presentationPreviewDisabled
-              ? t("winnerReveal.finalPresentationPending", { network: pendingNetworkLabel })
-              : t("winnerReveal.finalPresentationPreviewButton")}
-          </button>
+          {executionMode !== "sandbox" ? (
+            <button
+              type="button"
+              className="winner-final-draw__preview"
+              disabled={presentationPreviewDisabled}
+              onClick={() => onPresentationPreview?.(executionMode, { scroll: true })}
+            >
+              <Eye size={16} strokeWidth={2.25} />
+              {presentationPreviewDisabled
+                ? t("winnerReveal.finalPresentationPending", { network: pendingNetworkLabel })
+                : t("winnerReveal.finalPresentationPreviewButton")}
+            </button>
+          ) : null}
           <button
             type="button"
             aria-expanded={open}
@@ -765,7 +747,7 @@ export function WinnersRoom({
     : t("winnerReveal.cardPrizeTitle");
 
   const showFinalPresentation = useCallback((mode, { scroll = true, waitForRefresh = false } = {}) => {
-    if (mode === "mainnet" || mode === "testnet") {
+    if (mode === "mainnet") {
       if (waitForRefresh) {
         setPendingOfficialPresentation({
           mode,
@@ -986,45 +968,6 @@ export function WinnersRoom({
       aria-label={t("winnerReveal.roomAria")}
     >
       <div className="winner-stage-presentation">
-        {canSwitchWinnerRevealNetwork ? (
-          <section
-            className="winner-network-switcher"
-            aria-label={t("winnerReveal.networkSwitcherAria")}
-          >
-            <span className="winner-network-switcher__label">
-              <Network size={15} strokeWidth={2.25} />
-              <span>
-                <small>{t("winnerReveal.networkSwitcherLabel")}</small>
-                <strong>
-                  {winnerRevealNetwork === "testnet"
-                    ? t("winnerReveal.networkTestnet")
-                    : t("winnerReveal.networkMainnet")}
-                </strong>
-              </span>
-            </span>
-            <span className="winner-network-switcher__options">
-              {["mainnet", "testnet"].map((network) => (
-                <button
-                  type="button"
-                  className={winnerRevealNetwork === network ? "is-active" : ""}
-                  aria-pressed={winnerRevealNetwork === network}
-                  disabled={winnerRevealLoading && winnerRevealNetwork === network}
-                  onClick={() => onSelectWinnerRevealNetwork?.(network)}
-                  key={network}
-                >
-                  {network === "testnet"
-                    ? t("winnerReveal.networkTestnetShort")
-                    : t("winnerReveal.networkMainnetShort")}
-                </button>
-              ))}
-            </span>
-            {winnerRevealLoading ? (
-              <small className="winner-network-switcher__loading">
-                {t("winnerReveal.networkLoading")}
-              </small>
-            ) : null}
-          </section>
-        ) : null}
         <video
           ref={videoRef}
           className="winner-stage-video"
@@ -1117,9 +1060,7 @@ export function WinnersRoom({
                 <span>
                   <Eye size={15} strokeWidth={2.25} />
                   <strong>{t("winnerReveal.finalPresentationPreviewNotice", {
-                    mode: finalPresentationPreview.mode === "testnet"
-                      ? t("draw.operatorModeTestnet")
-                      : t("draw.operatorModeSimulation"),
+                    mode: t("draw.operatorModeSimulation"),
                   })}</strong>
                 </span>
                 <p>{t("winnerReveal.finalPresentationPreviewBody")}</p>
@@ -1199,9 +1140,7 @@ export function WinnersRoom({
             <WinnersFinalDrawControl
               activeDraw={finalDraw}
               canSwitchNetwork={canSwitchDrawNetwork}
-              selectedNetwork={winnerRevealNetwork}
               hasOfficialResult={selectedRoundHasWinners}
-              onSelectedNetworkChange={onSelectWinnerRevealNetwork}
               onPresentationPreview={showFinalPresentation}
               onPresentationReset={resetFinalPresentation}
             />

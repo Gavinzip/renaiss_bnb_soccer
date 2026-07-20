@@ -1034,13 +1034,12 @@ export function ControlRoom({
     ? roundTicketBreakdown
     : { usableTickets: 0, remainingTickets: 0, usedTickets: 0, allocations: [] };
   const visibleWinnerRevealData = useMemo(
-    () => (canViewAdminOnlyRounds || (canViewFinalDrawInWinners && winnerRevealNetwork === "testnet")
+    () => (canViewAdminOnlyRounds
       ? winnerRevealData
       : filterWinnerRevealDataByRounds(winnerRevealData, visibleRoundIds)),
-    [canViewAdminOnlyRounds, canViewFinalDrawInWinners, visibleRoundIds, winnerRevealData, winnerRevealNetwork],
+    [canViewAdminOnlyRounds, visibleRoundIds, winnerRevealData],
   );
-  const canViewAllWinnerRounds = canViewAdminOnlyRounds
-    || (canViewFinalDrawInWinners && winnerRevealNetwork === "testnet");
+  const canViewAllWinnerRounds = canViewAdminOnlyRounds;
   const winnerRoomRounds = canViewAllWinnerRounds ? rounds : visibleRounds;
   const visibleCurrentUserWinnerCount = canViewAllWinnerRounds
     ? currentUserWinnerCount

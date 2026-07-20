@@ -130,8 +130,8 @@ const drawAdminScriptTimeoutMs = drawAdminScriptTimeoutSeconds * 1000
 const drawAdminOutputLimitBytes = readIntegerEnv('DRAW_ADMIN_OUTPUT_LIMIT_BYTES', 512 * 1024, 16 * 1024)
 const drawAdminRoundIds = new Set(roundDefinitions.map((round) => String(round.id || '').trim()).filter(Boolean))
 const drawNetworkDefinitions = [
-  { key: 'mainnet', label: 'BNB Chain', chainId: '56', chainIdHex: '0x38' },
-  { key: 'testnet', label: 'BNB Testnet', chainId: '97', chainIdHex: '0x61' },
+  { key: 'mainnet', label: 'BNB Chain · 正式合約', chainId: '56', chainIdHex: '0x38', scope: 'official', publicWinners: true },
+  { key: 'sandbox', label: 'BNB Chain · 主網試跑合約', chainId: '56', chainIdHex: '0x38', scope: 'sandbox', publicWinners: false },
 ]
 const drawDefaultNetworkKey = normalizeDrawNetworkKey(process.env.DRAW_NETWORK || process.env.DRAW_DEFAULT_NETWORK || 'mainnet')
 const drawAdminChallenges = new Map()
@@ -549,7 +549,7 @@ function normalizeDrawAdminWalletAddress(value) {
 function normalizeDrawNetworkKey(value) {
   const key = String(value || '').trim().toLowerCase()
   if (!key || key === 'mainnet' || key === 'bsc' || key === 'bnb' || key === '56' || key === '0x38') return 'mainnet'
-  if (key === 'testnet' || key === 'bsc-testnet' || key === 'bnb-testnet' || key === '97' || key === '0x61') return 'testnet'
+  if (key === 'sandbox' || key === 'mainnet-sandbox' || key === 'bnb-mainnet-sandbox') return 'sandbox'
   throw Object.assign(new Error('Unsupported draw network.'), {
     statusCode: 400,
     code: 'draw_network_invalid',
@@ -572,17 +572,18 @@ function readEnvString(name) {
 
 function drawNetworkEnv(networkKey = drawDefaultNetworkKey) {
   const network = drawNetworkDefinition(networkKey)
-  if (network.key === 'testnet') {
+  if (network.key === 'sandbox') {
     return {
       ...network,
-      chainId: readEnvString('DRAW_TESTNET_CHAIN_ID') || readEnvString('BSC_TESTNET_CHAIN_ID') || network.chainId,
-      contractAddress: readEnvString('DRAW_TESTNET_CONTRACT_ADDRESS') || readEnvString('VITE_DRAW_TESTNET_CONTRACT'),
-      rpcUrl: readEnvString('BSC_TESTNET_RPC_URL') || readEnvString('DRAW_TESTNET_RPC_URL'),
-      privateKey: readEnvString('BSC_TESTNET_DEPLOYER_PRIVATE_KEY') || readEnvString('DRAW_TESTNET_DEPLOYER_PRIVATE_KEY'),
-      ownerAddress: readEnvString('DRAW_TESTNET_OWNER_ADDRESS'),
-      operatorAddress: readEnvString('DRAW_TESTNET_OPERATOR_ADDRESS'),
-      adminAddresses: readEnvString('DRAW_TESTNET_ADMIN_ADDRESSES'),
-      envFile: readEnvString('DRAW_TESTNET_CONTRACT_ENV_FILE') || 'config/draw-contract.testnet.env.local',
+      chainId: readEnvString('DRAW_SANDBOX_CHAIN_ID') || network.chainId,
+      contractAddress: readEnvString('DRAW_SANDBOX_CONTRACT_ADDRESS'),
+      rpcUrl: readEnvString('DRAW_SANDBOX_RPC_URL'),
+      privateKey: readEnvString('DRAW_SANDBOX_DEPLOYER_PRIVATE_KEY'),
+      ownerAddress: readEnvString('DRAW_SANDBOX_OWNER_ADDRESS'),
+      operatorAddress: readEnvString('DRAW_SANDBOX_OPERATOR_ADDRESS'),
+      adminAddresses: readEnvString('DRAW_SANDBOX_ADMIN_ADDRESSES'),
+      envFile: readEnvString('DRAW_SANDBOX_CONTRACT_ENV_FILE') || 'config/draw-contract.sandbox.env.local',
+      subscriptionId: readEnvString('DRAW_SANDBOX_VRF_SUBSCRIPTION_ID'),
     }
   }
   return {
@@ -595,6 +596,7 @@ function drawNetworkEnv(networkKey = drawDefaultNetworkKey) {
     operatorAddress: readEnvString('DRAW_OPERATOR_ADDRESS'),
     adminAddresses: readEnvString('DRAW_ADMIN_ADDRESSES'),
     envFile: readEnvString('DRAW_CONTRACT_ENV_FILE') || 'config/draw-contract.env.local',
+    subscriptionId: readEnvString('DRAW_VRF_SUBSCRIPTION_ID') || readEnvString('VRF_SUBSCRIPTION_ID'),
   }
 }
 
@@ -625,6 +627,27 @@ function publicMatchDrawLedgerUri() {
   return origin ? `${origin}/match-draw-ledger.json` : matchDrawLedgerPath
 }
 
+function drawLedgerPathsForNetwork(networkKey = drawDefaultNetworkKey) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  if (selectedNetworkKey === 'sandbox') {
+    const aggregatePath = readEnvString('DRAW_SANDBOX_MATCH_DRAW_LEDGER_PATH')
+    const lockedRoundsDir = readEnvString('DRAW_SANDBOX_MATCH_DRAW_LEDGER_LOCKED_DIR')
+    return {
+      aggregatePath,
+      lockedRoundsDir,
+    }
+  }
+  return {
+    aggregatePath: matchDrawLedgerPath,
+    lockedRoundsDir: matchDrawLedgerLockedDir,
+    ledgerUriBase: publicMatchDrawLedgerUri(),
+  }
+}
+
+function drawSandboxSourceLockedLedgerDir() {
+  return readEnvString('DRAW_SANDBOX_SOURCE_LOCKED_LEDGER_DIR')
+}
+
 function drawExpectedChainId(networkKey = drawDefaultNetworkKey) {
   const network = drawNetworkEnv(networkKey)
   return String(network.chainId || drawNetworkDefinition(networkKey).chainId).trim() || drawNetworkDefinition(networkKey).chainId
@@ -633,58 +656,22 @@ function drawExpectedChainId(networkKey = drawDefaultNetworkKey) {
 function drawWinnersOutputPathForNetwork(networkKey = drawDefaultNetworkKey) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   if (selectedNetworkKey === 'mainnet') return drawWinnersPath
-  return readEnvString('DRAW_TESTNET_WINNERS_PATH') || readEnvString('SOCCER_TESTNET_DRAW_WINNERS_PATH')
-}
-
-function winnersNetworkSwitchEnabled() {
-  return ['1', 'true', 'yes', 'on'].includes(
-    readEnvString('VITE_WINNERS_FINAL_DRAW_ENABLED').toLowerCase(),
-  )
-}
-
-function winnersNetworkSwitchAllowedAddresses() {
-  return readEnvString('VITE_WINNERS_FINAL_DRAW_ALLOWED_WALLETS')
-    .split(/[,\s]+/)
-    .map(normalizeDrawAdminWalletAddress)
-    .filter(Boolean)
+  return readEnvString('DRAW_SANDBOX_WINNERS_PATH')
 }
 
 function authorizeDrawWinnersNetworkRequest(request, response, networkKey) {
-  if (networkKey === 'mainnet' || runtimeTarget === 'local') return true
-
-  const session = readAuthSession(auth, request)
-  if (!session) {
-    sendSecurityError(request, response, 401, {
-      code: 'winner_network_login_required',
-      error: 'Login is required to read testnet winner data.',
-    })
-    return false
-  }
-
-  const walletAddress = normalizeDrawAdminWalletAddress(session.walletAddress)
-  const allowedAddresses = winnersNetworkSwitchAllowedAddresses()
-  if (
-    !winnersNetworkSwitchEnabled()
-    || !walletAddress
-    || !allowedAddresses.includes(walletAddress)
-  ) {
-    sendSecurityError(request, response, 403, {
-      code: 'winner_network_not_allowed',
-      error: 'This wallet is not allowed to read testnet winner data.',
-    })
-    return false
-  }
-
-  return true
+  if (networkKey === 'mainnet') return true
+  sendSecurityError(request, response, 403, {
+    code: 'winner_network_not_public',
+    error: 'Sandbox draw results are not available in the public winners experience.',
+  })
+  return false
 }
 
 function drawWinnersArchiveDirForNetwork(networkKey = drawDefaultNetworkKey) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   if (selectedNetworkKey === 'mainnet') return drawWinnersArchiveDir
-  const configured = readEnvString('DRAW_TESTNET_WINNERS_ARCHIVE_DIR') || readEnvString('SOCCER_TESTNET_DRAW_WINNERS_ARCHIVE_DIR')
-  if (configured) return configured
-  const winnersPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
-  return winnersPath ? join(dirname(winnersPath), 'draw-winners-history') : ''
+  return readEnvString('DRAW_SANDBOX_WINNERS_ARCHIVE_DIR')
 }
 
 function expectedRoundMatchIds(roundId) {
@@ -716,10 +703,114 @@ function roundResultReadiness(roundId) {
   }
 }
 
-function readMatchDrawLedgerSummary() {
-  if (!existsSync(matchDrawLedgerPath)) return null
+function sandboxRoundReadiness(roundId) {
+  const normalizedRoundId = String(roundId || '').trim()
+  const sourceDir = drawSandboxSourceLockedLedgerDir()
+  const sourcePath = sourceDir && normalizedRoundId
+    ? join(sourceDir, `${normalizedRoundId}.json`)
+    : ''
+  const expectedMatchIds = expectedRoundMatchIds(normalizedRoundId)
+  if (!drawAdminRoundIds.has(normalizedRoundId)) {
+    return {
+      roundId: normalizedRoundId,
+      expectedMatchIds,
+      confirmedMatchIds: [],
+      missingMatchIds: ['unsupported-round'],
+      expectedCount: expectedMatchIds.length,
+      confirmedCount: 0,
+      missingCount: 1,
+      complete: false,
+      sourceStatus: 'invalid',
+      generatedAt: null,
+      hash: null,
+      summary: null,
+      sourceLockedSnapshotPath: sourcePath || null,
+    }
+  }
+  if (!sourceDir || !existsSync(sourcePath)) {
+    return {
+      roundId: normalizedRoundId,
+      expectedMatchIds,
+      confirmedMatchIds: [],
+      missingMatchIds: expectedMatchIds,
+      expectedCount: expectedMatchIds.length,
+      confirmedCount: 0,
+      missingCount: expectedMatchIds.length,
+      complete: false,
+      sourceStatus: 'locked-source-missing',
+      generatedAt: null,
+      hash: null,
+      summary: null,
+      sourceLockedSnapshotPath: sourcePath || null,
+    }
+  }
   try {
-    const payload = readMatchDrawLedgerPayload()
+    const source = JSON.parse(readFileSync(sourcePath, 'utf8'))
+    const round = (Array.isArray(source.roundDraws) ? source.roundDraws : [])
+      .find((row) => String(row?.roundId || '').trim() === normalizedRoundId)
+    const sourceMatchIds = Array.isArray(round?.matches)
+      ? round.matches.map((match) => canonicalMatchId(match?.matchId)).filter(Boolean)
+      : []
+    const sourceMatchSet = new Set(sourceMatchIds)
+    const sourceMatchesExpected = expectedMatchIds.length > 0
+      && expectedMatchIds.length === sourceMatchIds.length
+      && expectedMatchIds.every((matchId) => sourceMatchSet.has(matchId))
+    const draws = (Array.isArray(source.draws) ? source.draws : [])
+      .filter((draw) => String(draw?.roundId || '').trim() === normalizedRoundId)
+    const drawMatchSet = new Set(draws.map((draw) => canonicalMatchId(draw?.matchId)).filter(Boolean))
+    const drawsComplete = sourceMatchIds.length > 0 && sourceMatchIds.every((matchId) => drawMatchSet.has(matchId))
+    const locked = source.snapshotMode === 'locked-round-match-draw-ledger'
+      && String(source.lockedRoundId || '').trim() === normalizedRoundId
+    const validRound = Boolean(round?.roundKey && round?.ledgerHash)
+    const complete = locked && validRound && sourceMatchesExpected && drawsComplete
+    return {
+      roundId: normalizedRoundId,
+      expectedMatchIds,
+      confirmedMatchIds: complete ? expectedMatchIds : [],
+      missingMatchIds: complete ? [] : expectedMatchIds,
+      expectedCount: expectedMatchIds.length,
+      confirmedCount: complete ? expectedMatchIds.length : 0,
+      missingCount: complete ? 0 : expectedMatchIds.length,
+      complete,
+      sourceStatus: complete ? 'locked-source-ready' : 'locked-source-invalid',
+      generatedAt: source.lockedAt || source.generatedAt || null,
+      hash: round?.ledgerHash || null,
+      summary: null,
+      sourceLockedSnapshotPath: sourcePath,
+      sourceRoundKey: round?.roundKey || null,
+      sourceLedgerHash: round?.ledgerHash || null,
+      sourceMatchIds,
+    }
+  } catch (error) {
+    return {
+      roundId: normalizedRoundId,
+      expectedMatchIds,
+      confirmedMatchIds: [],
+      missingMatchIds: expectedMatchIds,
+      expectedCount: expectedMatchIds.length,
+      confirmedCount: 0,
+      missingCount: expectedMatchIds.length,
+      complete: false,
+      sourceStatus: 'locked-source-invalid',
+      generatedAt: null,
+      hash: null,
+      summary: null,
+      sourceLockedSnapshotPath: sourcePath,
+      error: error instanceof Error ? error.message : 'Could not read locked source snapshot.',
+    }
+  }
+}
+
+function drawRoundReadiness(networkKey, roundId) {
+  return normalizeOptionalDrawNetworkKey(networkKey) === 'sandbox'
+    ? sandboxRoundReadiness(roundId)
+    : roundResultReadiness(roundId)
+}
+
+function readMatchDrawLedgerSummary(path = matchDrawLedgerPath) {
+  if (!path || !existsSync(path)) return null
+  try {
+    const payload = readMatchDrawLedgerPayload(path)
     const roundDraws = Array.isArray(payload.roundDraws) ? payload.roundDraws : []
     const draws = Array.isArray(payload.draws) ? payload.draws : []
     return {
@@ -749,12 +840,13 @@ function readMatchDrawLedgerSummary() {
   }
 }
 
-function readMatchDrawLedgerPayload() {
-  return JSON.parse(readFileSync(matchDrawLedgerPath, 'utf8'))
+function readMatchDrawLedgerPayload(path = matchDrawLedgerPath) {
+  if (!path) throw new Error('Match draw ledger path is not configured.')
+  return JSON.parse(readFileSync(path, 'utf8'))
 }
 
-function matchDrawLedgerContainsRound(roundId) {
-  const summary = readMatchDrawLedgerSummary()
+function matchDrawLedgerContainsRound(roundId, path = matchDrawLedgerPath) {
+  const summary = readMatchDrawLedgerSummary(path)
   return Boolean(
     summary?.ok
     && Array.isArray(summary.roundDraws)
@@ -762,7 +854,7 @@ function matchDrawLedgerContainsRound(roundId) {
   )
 }
 
-function normalizeDrawAdminRoundId(value) {
+function normalizeDrawAdminRoundId(value, networkKey = drawDefaultNetworkKey) {
   const roundId = String(value || '').trim()
   if (!drawAdminRoundIds.has(roundId)) {
     throw Object.assign(new Error('Unsupported draw round.'), {
@@ -773,9 +865,19 @@ function normalizeDrawAdminRoundId(value) {
   return roundId
 }
 
-function normalizeDrawAdminDrawRoundId(value, sourceRoundId) {
-  const baseRoundId = normalizeDrawAdminRoundId(sourceRoundId)
+function normalizeDrawAdminDrawRoundId(value, sourceRoundId, networkKey = drawDefaultNetworkKey) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const baseRoundId = normalizeDrawAdminRoundId(sourceRoundId, selectedNetworkKey)
   const drawRoundId = String(value || baseRoundId).trim()
+  if (selectedNetworkKey === 'sandbox') {
+    if (drawRoundId !== baseRoundId) {
+      throw Object.assign(new Error('Sandbox source and on-chain round identities must match.'), {
+        statusCode: 400,
+        code: 'draw_sandbox_identity_invalid',
+      })
+    }
+    return drawRoundId
+  }
   if (drawRoundId === baseRoundId) return drawRoundId
   const redrawPrefix = `${baseRoundId}-redraw-`
   if (!drawRoundId.startsWith(redrawPrefix)) {
@@ -794,9 +896,10 @@ function normalizeDrawAdminDrawRoundId(value, sourceRoundId) {
   return drawRoundId
 }
 
-function normalizeDrawAdminRoundRequest(sourceValue, drawValue) {
-  const roundId = normalizeDrawAdminRoundId(sourceValue)
-  const drawRoundId = normalizeDrawAdminDrawRoundId(drawValue, roundId)
+function normalizeDrawAdminRoundRequest(sourceValue, drawValue, networkKey = drawDefaultNetworkKey) {
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  const roundId = normalizeDrawAdminRoundId(sourceValue, selectedNetworkKey)
+  const drawRoundId = normalizeDrawAdminDrawRoundId(drawValue, roundId, selectedNetworkKey)
   return { roundId, drawRoundId, isRedraw: drawRoundId !== roundId }
 }
 
@@ -809,15 +912,97 @@ function normalizeDrawAdminAction(value, broadcast) {
   })
 }
 
+function sandboxEnabled() {
+  return ['1', 'true', 'yes', 'on'].includes(readEnvString('DRAW_SANDBOX_ENABLED').toLowerCase())
+}
+
+function assertSandboxIsolation() {
+  if (!sandboxEnabled()) {
+    throw Object.assign(new Error('Mainnet sandbox draw is disabled.'), {
+      statusCode: 503,
+      code: 'draw_sandbox_disabled',
+    })
+  }
+  const sandbox = drawNetworkEnv('sandbox')
+  const official = drawNetworkEnv('mainnet')
+  const paths = drawLedgerPathsForNetwork('sandbox')
+  const sourceLockedLedgerDir = drawSandboxSourceLockedLedgerDir()
+  const sandboxContract = drawContractAddress('sandbox')
+  const officialContract = drawContractAddress('mainnet')
+  const sandboxWinnersPath = drawWinnersOutputPathForNetwork('sandbox')
+  const sandboxWinnerHistoryDir = drawWinnersArchiveDirForNetwork('sandbox')
+
+  if (drawExpectedChainId('sandbox') !== '56') {
+    throw Object.assign(new Error('Mainnet sandbox must use BNB Chain chain ID 56.'), {
+      statusCode: 503,
+      code: 'draw_sandbox_chain_invalid',
+    })
+  }
+  if (!sandboxContract || (officialContract && sandboxContract === officialContract)) {
+    throw Object.assign(new Error('Mainnet sandbox contract must be configured and differ from the official contract.'), {
+      statusCode: 503,
+      code: 'draw_sandbox_contract_not_isolated',
+    })
+  }
+  if (!paths.aggregatePath || !paths.lockedRoundsDir || !sandboxWinnersPath || !sandboxWinnerHistoryDir || !sourceLockedLedgerDir) {
+    throw Object.assign(new Error('Mainnet sandbox ledger and winner storage paths must all be configured.'), {
+      statusCode: 503,
+      code: 'draw_sandbox_storage_missing',
+    })
+  }
+  if (
+    paths.aggregatePath === matchDrawLedgerPath
+    || paths.lockedRoundsDir === matchDrawLedgerLockedDir
+    || sandboxWinnersPath === drawWinnersPath
+    || sandboxWinnerHistoryDir === drawWinnersArchiveDir
+  ) {
+    throw Object.assign(new Error('Mainnet sandbox storage paths must differ from official draw storage.'), {
+      statusCode: 503,
+      code: 'draw_sandbox_storage_not_isolated',
+    })
+  }
+  if (!existsSync(sourceLockedLedgerDir)) {
+    throw Object.assign(new Error('Mainnet sandbox locked source ledger directory is not available.'), {
+      statusCode: 503,
+      code: 'draw_sandbox_source_missing',
+    })
+  }
+  if (!sandbox.subscriptionId) {
+    throw Object.assign(new Error('Mainnet sandbox VRF subscription must be configured.'), {
+      statusCode: 503,
+      code: 'draw_sandbox_subscription_missing',
+    })
+  }
+  if (official.subscriptionId && sandbox.subscriptionId === official.subscriptionId) {
+    throw Object.assign(new Error('Mainnet sandbox VRF subscription must differ from the official subscription.'), {
+      statusCode: 503,
+      code: 'draw_sandbox_subscription_not_isolated',
+    })
+  }
+  return { sandbox, paths }
+}
+
+function drawNetworkIsolationError(networkKey) {
+  try {
+    if (normalizeOptionalDrawNetworkKey(networkKey) === 'sandbox') assertSandboxIsolation()
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Sandbox isolation check failed.'
+  }
+}
+
 function drawNetworkStatusPayload(networkKey = drawDefaultNetworkKey, { roundId = '', drawRoundId = roundId } = {}) {
   const network = drawNetworkEnv(networkKey)
   const contractAddress = drawContractAddress(network.key)
   const allowedAddresses = drawAdminAllowedAddresses(network.key)
   const chainId = drawExpectedChainId(network.key)
-  const roundReadiness = roundId ? roundResultReadiness(roundId) : null
+  const ledgerPaths = drawLedgerPathsForNetwork(network.key)
+  const roundReadiness = roundId ? drawRoundReadiness(network.key, roundId) : null
   return {
     key: network.key,
     label: network.label,
+    scope: network.scope,
+    publicWinners: network.publicWinners,
     chainId,
     chainIdHex: network.chainIdHex,
     contractAddress: contractAddress || null,
@@ -825,8 +1010,11 @@ function drawNetworkStatusPayload(networkKey = drawDefaultNetworkKey, { roundId 
     rpcConfigured: Boolean(network.rpcUrl),
     broadcasterConfigured: Boolean(network.privateKey),
     allowlistConfigured: allowedAddresses.length > 0,
-    matchDrawLedgerExists: existsSync(matchDrawLedgerPath),
-    matchDrawLedger: readMatchDrawLedgerSummary(),
+    sandboxEnabled: network.key === 'sandbox' ? sandboxEnabled() : false,
+    sandboxIsolationError: drawNetworkIsolationError(network.key),
+    sandboxSourceLockedLedgerDir: network.key === 'sandbox' ? drawSandboxSourceLockedLedgerDir() || null : null,
+    matchDrawLedgerExists: Boolean(ledgerPaths.aggregatePath && existsSync(ledgerPaths.aggregatePath)),
+    matchDrawLedger: readMatchDrawLedgerSummary(ledgerPaths.aggregatePath),
     roundId: roundId || null,
     drawRoundId: drawRoundId || roundId || null,
     drawWinnersExists: Boolean(
@@ -918,8 +1106,10 @@ function assertDrawAdminReady({
 } = {}) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const network = drawNetworkEnv(selectedNetworkKey)
+  const ledgerPaths = drawLedgerPathsForNetwork(selectedNetworkKey)
   const disabled = drawAdminDisabledError()
   if (disabled) throw disabled
+  if (selectedNetworkKey === 'sandbox') assertSandboxIsolation()
   if (!drawContractAddress(selectedNetworkKey)) {
     throw Object.assign(new Error('Draw contract address is not configured.'), {
       statusCode: 503,
@@ -944,13 +1134,13 @@ function assertDrawAdminReady({
       code: 'draw_allowlist_missing',
     })
   }
-  if (!existsSync(matchDrawLedgerPath)) {
+  if (!ledgerPaths.aggregatePath || !existsSync(ledgerPaths.aggregatePath)) {
     throw Object.assign(new Error('Match draw ledger is not ready.'), {
       statusCode: 503,
       code: 'draw_ledger_missing',
     })
   }
-  if (drawRoundId && !matchDrawLedgerContainsRound(drawRoundId)) {
+  if (drawRoundId && !matchDrawLedgerContainsRound(drawRoundId, ledgerPaths.aggregatePath)) {
     throw Object.assign(new Error('Match draw ledger does not include this round yet.'), {
       statusCode: 503,
       code: 'draw_ledger_round_missing',
@@ -962,6 +1152,7 @@ function assertDrawAdminBaseReady(networkKey = drawDefaultNetworkKey) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const disabled = drawAdminDisabledError()
   if (disabled) throw disabled
+  if (selectedNetworkKey === 'sandbox') assertSandboxIsolation()
   if (drawAdminAllowedAddresses(selectedNetworkKey).length === 0) {
     throw Object.assign(new Error('Draw admin wallet allowlist is not configured.'), {
       statusCode: 503,
@@ -971,7 +1162,19 @@ function assertDrawAdminBaseReady(networkKey = drawDefaultNetworkKey) {
 }
 
 function assertDrawLedgerBuildReady(roundId, { networkKey = drawDefaultNetworkKey } = {}) {
-  assertDrawAdminBaseReady(networkKey)
+  const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
+  assertDrawAdminBaseReady(selectedNetworkKey)
+  if (selectedNetworkKey === 'sandbox') {
+    const readiness = sandboxRoundReadiness(roundId)
+    if (!readiness.complete) {
+      throw Object.assign(new Error('Sandbox locked source snapshot is not ready for this round.'), {
+        statusCode: 409,
+        code: 'draw_sandbox_source_not_ready',
+        readiness,
+      })
+    }
+    return readiness
+  }
   if (!existsSync(ledgerPath)) {
     throw Object.assign(new Error('Base ticket ledger is not ready.'), {
       statusCode: 503,
@@ -1062,7 +1265,7 @@ function createDrawAdminMessage({ address, action, roundId, drawRoundId, nonce, 
 
 function createDrawAdminChallenge({ address, action, roundId, drawRoundId, networkKey }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
-  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
+  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId, selectedNetworkKey)
   const nonce = randomUUID()
   const issuedAt = new Date().toISOString()
   const expiresAtMs = Date.now() + drawAdminChallengeTtlMs
@@ -1102,7 +1305,7 @@ function createDrawAdminChallenge({ address, action, roundId, drawRoundId, netwo
 function verifyDrawAdminChallenge({ address, action, roundId, drawRoundId, networkKey, nonce, signature }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const normalizedAddress = assertDrawAdminWalletAllowed(address, selectedNetworkKey)
-  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
+  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId, selectedNetworkKey)
   const challenge = drawAdminChallenges.get(String(nonce || ''))
   drawAdminChallenges.delete(String(nonce || ''))
 
@@ -1165,31 +1368,44 @@ function parseDrawScriptOutput(stdout) {
 
 function runDrawAdminLedger({ roundId, drawRoundId = roundId, networkKey = drawDefaultNetworkKey }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
-  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
+  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId, selectedNetworkKey)
   const startedAt = new Date().toISOString()
-  const args = [
-    fileURLToPath(new URL('./build-match-draw-ledger.mjs', import.meta.url)),
-    '--base-ledger',
-    ledgerPath,
-    '--vote-store',
-    voteStoreMode,
-    '--vote-db',
-    voteDbPath,
-    '--vote-state',
-    voteStatePath,
-    '--match-results',
-    matchResultsPath,
-    '--out',
-    matchDrawLedgerPath,
-    '--locked-rounds-dir',
-    matchDrawLedgerLockedDir,
-    '--round-id',
-    normalizedDrawRoundId,
-    '--source-round-id',
-    roundId,
-    '--ledger-uri-base',
-    publicMatchDrawLedgerUri(),
-  ]
+  const ledgerPaths = drawLedgerPathsForNetwork(selectedNetworkKey)
+  const args = selectedNetworkKey === 'sandbox'
+    ? [
+      fileURLToPath(new URL('./build-mainnet-sandbox-ledger.mjs', import.meta.url)),
+      '--source-locked-rounds-dir',
+      drawSandboxSourceLockedLedgerDir(),
+      '--out',
+      ledgerPaths.aggregatePath,
+      '--locked-rounds-dir',
+      ledgerPaths.lockedRoundsDir,
+      '--round-id',
+      normalizedDrawRoundId,
+    ]
+    : [
+      fileURLToPath(new URL('./build-match-draw-ledger.mjs', import.meta.url)),
+      '--base-ledger',
+      ledgerPath,
+      '--vote-store',
+      voteStoreMode,
+      '--vote-db',
+      voteDbPath,
+      '--vote-state',
+      voteStatePath,
+      '--match-results',
+      matchResultsPath,
+      '--out',
+      ledgerPaths.aggregatePath,
+      '--locked-rounds-dir',
+      ledgerPaths.lockedRoundsDir,
+      '--round-id',
+      normalizedDrawRoundId,
+      '--source-round-id',
+      roundId,
+      '--ledger-uri-base',
+      ledgerPaths.ledgerUriBase,
+    ]
 
   drawAdminRunRunning = true
   lastDrawAdminRun = {
@@ -1298,7 +1514,9 @@ function runDrawAdminLedger({ roundId, drawRoundId = roundId, networkKey = drawD
       drawAdminRunRunning = false
 
       if (code === 0 && !parseError) {
-        if (!payload?.writeSkipped || !payload?.lockedRoundWriteSkipped) runDataBackup('draw-admin-ledger')
+        if (selectedNetworkKey === 'mainnet' && (!payload?.writeSkipped || !payload?.lockedRoundWriteSkipped)) {
+          runDataBackup('draw-admin-ledger')
+        }
         resolvePromise({
           ok: true,
           action: 'ledger',
@@ -1334,6 +1552,7 @@ function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
   const contractAddress = drawContractAddress(selectedNetworkKey)
   const winnersOutPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
   const winnersArchiveDir = drawWinnersArchiveDirForNetwork(selectedNetworkKey)
+  const ledgerPaths = drawLedgerPathsForNetwork(selectedNetworkKey)
   const childEnv = {
     ...process.env,
     BSC_CHAIN_ID: drawExpectedChainId(selectedNetworkKey),
@@ -1344,6 +1563,14 @@ function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
     DRAW_OWNER_ADDRESS: network.ownerAddress,
     DRAW_OPERATOR_ADDRESS: network.operatorAddress,
     DRAW_ADMIN_ADDRESSES: network.adminAddresses,
+    VRF_SUBSCRIPTION_ID: network.subscriptionId,
+    DRAW_VRF_SUBSCRIPTION_ID: network.subscriptionId,
+    LUCKY_DRAW_LEDGER_PATH: ledgerPaths.aggregatePath,
+    SOCCER_MATCH_DRAW_LEDGER_PATH: ledgerPaths.aggregatePath,
+  }
+  if (selectedNetworkKey === 'sandbox') {
+    const sandboxBatchSize = readEnvString('DRAW_SANDBOX_MATCH_BATCH_SIZE')
+    if (sandboxBatchSize) childEnv.DRAW_MATCH_BATCH_SIZE = sandboxBatchSize
   }
   if (winnersOutPath) {
     childEnv.SOCCER_DRAW_WINNERS_PATH = winnersOutPath
@@ -1361,10 +1588,11 @@ function drawNetworkChildEnv(networkKey = drawDefaultNetworkKey) {
 function runDrawAdminRound({ roundId, drawRoundId = roundId, action, networkKey = drawDefaultNetworkKey }) {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const network = drawNetworkEnv(selectedNetworkKey)
-  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId)
+  const normalizedDrawRoundId = normalizeDrawAdminDrawRoundId(drawRoundId, roundId, selectedNetworkKey)
   const broadcast = action === 'broadcast'
   const winnersOutPath = drawWinnersOutputPathForNetwork(selectedNetworkKey)
   const winnersArchiveDir = drawWinnersArchiveDirForNetwork(selectedNetworkKey)
+  const ledgerPaths = drawLedgerPathsForNetwork(selectedNetworkKey)
   const startedAt = new Date().toISOString()
   const args = [
     fileURLToPath(new URL('./run-lucky-draw-round-level.mjs', import.meta.url)),
@@ -1373,7 +1601,7 @@ function runDrawAdminRound({ roundId, drawRoundId = roundId, action, networkKey 
     '--contract',
     drawContractAddress(selectedNetworkKey),
     '--ledger',
-    matchDrawLedgerPath,
+    ledgerPaths.aggregatePath,
     '--round-id',
     normalizedDrawRoundId,
   ]
@@ -1383,8 +1611,11 @@ function runDrawAdminRound({ roundId, drawRoundId = roundId, action, networkKey 
   if (winnersArchiveDir) {
     args.push('--winners-history-dir', winnersArchiveDir)
   }
-  if (process.env.DRAW_MATCH_BATCH_SIZE) {
-    args.push('--match-batch-size', process.env.DRAW_MATCH_BATCH_SIZE)
+  const configuredBatchSize = selectedNetworkKey === 'sandbox'
+    ? readEnvString('DRAW_SANDBOX_MATCH_BATCH_SIZE')
+    : readEnvString('DRAW_MATCH_BATCH_SIZE')
+  if (configuredBatchSize) {
+    args.push('--match-batch-size', configuredBatchSize)
   }
   args.push(broadcast ? '--broadcast' : '--verify-only')
 
@@ -1800,17 +2031,21 @@ function drawWinnersArchiveFilePath(roundId, networkKey = 'mainnet') {
   return safeRoundId && directory ? join(directory, `${safeRoundId}.json`) : ''
 }
 
-function priorDrawRoundIds(currentSnapshot) {
+function priorDrawRoundIds(currentSnapshot, networkKey = 'mainnet') {
   const currentRoundId = drawWinnerSnapshotRoundId(currentSnapshot)
   const currentRoundIndex = roundDefinitions.findIndex((round) => String(round.id || '').trim() === currentRoundId)
+  const { aggregatePath } = drawLedgerPathsForNetwork(networkKey)
   if (currentRoundIndex <= 0) return []
   return roundDefinitions
     .slice(0, currentRoundIndex)
     .map((round) => String(round.id || '').trim())
-    .filter((roundId) => drawAdminRoundIds.has(roundId) && matchDrawLedgerContainsRound(roundId))
+    .filter((roundId) => drawAdminRoundIds.has(roundId) && matchDrawLedgerContainsRound(roundId, aggregatePath))
 }
 
 function drawWinnersHistoryContractAddress(roundId, networkKey) {
+  if (normalizeOptionalDrawNetworkKey(networkKey) === 'sandbox') {
+    return drawContractAddress(networkKey)
+  }
   const expectedChainId = drawExpectedChainId(networkKey)
   const historicRecord = readDrawWinnersProofRecords().find((record) => {
     const recordRoundId = String(record?.roundId || record?.round_id || record?.drawRoundId || record?.draw_round_id || '').trim()
@@ -1822,6 +2057,7 @@ function drawWinnersHistoryContractAddress(roundId, networkKey) {
 function rebuildDrawWinnersHistorySnapshot(roundId, networkKey = 'mainnet') {
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const network = drawNetworkEnv(selectedNetworkKey)
+  const { aggregatePath } = drawLedgerPathsForNetwork(selectedNetworkKey)
   const historyPath = drawWinnersArchiveFilePath(roundId, selectedNetworkKey)
   const historyDirectory = drawWinnersArchiveDirForNetwork(selectedNetworkKey)
   const args = [
@@ -1831,7 +2067,7 @@ function rebuildDrawWinnersHistorySnapshot(roundId, networkKey = 'mainnet') {
     '--contract',
     drawWinnersHistoryContractAddress(roundId, selectedNetworkKey),
     '--ledger',
-    matchDrawLedgerPath,
+    aggregatePath,
     '--round-id',
     roundId,
     '--verify-only',
@@ -1934,7 +2170,7 @@ async function readDrawWinnersSnapshot(networkKey = 'mainnet') {
   const historicalSnapshots = embeddedRoundSnapshots.length > 0
     ? embeddedRoundSnapshots
     : await Promise.all(
-      priorDrawRoundIds(currentSnapshot)
+      priorDrawRoundIds(currentSnapshot, selectedNetworkKey)
         .map((roundId) => readHistoricalDrawWinnersSnapshot(roundId, selectedNetworkKey)),
     )
   const snapshotInputs = embeddedRoundSnapshots.length > 0
@@ -2111,8 +2347,7 @@ function hasDrawWinnerProofTransactions(payload) {
 }
 
 function drawWinnerProofNetworkKey(payload) {
-  const chainId = String(payload?.chainId || payload?.chain_id || '').trim()
-  return chainId === '97' ? 'testnet' : 'mainnet'
+  return 'mainnet'
 }
 
 function readDrawContractAbi() {
@@ -2287,11 +2522,7 @@ async function buildDrawWinnersChainProof(payload) {
 
   const networkKey = drawWinnerProofNetworkKey(payload)
   const network = drawNetworkEnv(networkKey)
-  const rpcUrl = readEnvString(
-    networkKey === 'testnet'
-      ? 'DRAW_TESTNET_WINNERS_PROOF_RPC_URL'
-      : 'DRAW_WINNERS_PROOF_RPC_URL',
-  ) || readEnvString('DRAW_WINNERS_PROOF_RPC_URL') || network.rpcUrl || readEnvString('BSC_RPC_URL')
+  const rpcUrl = readEnvString('DRAW_WINNERS_PROOF_RPC_URL') || network.rpcUrl || readEnvString('BSC_RPC_URL')
   const abi = readDrawContractAbi()
   if (!rpcUrl || abi.length === 0) return null
 
@@ -3311,10 +3542,10 @@ const server = createServer(async (request, response) => {
     try {
       const networkKey = normalizeOptionalDrawNetworkKey(url.searchParams.get('network'))
       const roundIdValue = String(url.searchParams.get('roundId') || '').trim()
-      const roundId = roundIdValue ? normalizeDrawAdminRoundId(roundIdValue) : ''
+      const roundId = roundIdValue ? normalizeDrawAdminRoundId(roundIdValue, networkKey) : ''
       const drawRoundIdValue = String(url.searchParams.get('drawRoundId') || '').trim()
       const drawRoundId = roundId && drawRoundIdValue
-        ? normalizeDrawAdminDrawRoundId(drawRoundIdValue, roundId)
+        ? normalizeDrawAdminDrawRoundId(drawRoundIdValue, roundId, networkKey)
         : roundId
       sendJson(request, response, 200, drawAdminStatusPayload({
         includeLastRun: true,
@@ -3350,8 +3581,8 @@ const server = createServer(async (request, response) => {
       if (!enforceUnsafeRequestOrigin(request, response)) return
       const body = await readJsonBody(request)
       const action = normalizeDrawAdminAction(body?.action, body?.broadcast)
-      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId)
       const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
+      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId, networkKey)
       const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
       if (action === 'ledger') {
         assertDrawLedgerBuildReady(roundId, { networkKey })
@@ -3403,8 +3634,8 @@ const server = createServer(async (request, response) => {
           code: 'draw_action_invalid',
         })
       }
-      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId)
       const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
+      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId, networkKey)
       const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
       const readiness = assertDrawLedgerBuildReady(roundId, { networkKey })
       if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action, networkKey))) return
@@ -3472,8 +3703,8 @@ const server = createServer(async (request, response) => {
           code: 'draw_action_invalid',
         })
       }
-      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId)
       const networkKey = normalizeOptionalDrawNetworkKey(body?.network)
+      const { roundId, drawRoundId } = normalizeDrawAdminRoundRequest(body?.roundId, body?.drawRoundId, networkKey)
       const address = assertDrawAdminWalletAllowed(body?.address, networkKey)
       assertDrawAdminReady({ requireBroadcast: action === 'broadcast', roundId, drawRoundId, networkKey })
       if (!enforceRateLimit(request, response, drawAdminRateLimitRules(request, address, action, networkKey))) return

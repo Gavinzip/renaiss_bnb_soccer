@@ -39,7 +39,17 @@ function localApiProxy(target) {
   };
 }
 
-function readOnlyApiProxy(target) {
+function drawAdminProxy(target) {
+  if (!target) return {};
+  return {
+    "/api/draw-admin": {
+      target,
+      changeOrigin: true,
+    },
+  };
+}
+
+function readOnlyApiProxy(target, { drawAdminTarget = "" } = {}) {
   if (!target) return undefined;
   const createTarget = () => ({
     target,
@@ -58,7 +68,9 @@ function readOnlyApiProxy(target) {
     "/api/live-round16-matches": createTarget(),
     "/api/live-future-knockout-matches": createTarget(),
     "/api/draw-winners": createTarget(),
-    "/api/draw-admin/status": createTarget(),
+    "/api/draw-admin/status": drawAdminTarget
+      ? { target: drawAdminTarget, changeOrigin: true }
+      : createTarget(),
     "/api/auth/verification-stats": createTarget(),
     "/lucky-draw-ledger.json": createTarget(),
     "/match-draw-ledger.json": createTarget(),
@@ -71,12 +83,19 @@ function readOnlyApiProxy(target) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const readApiOrigin = String(env.LOCAL_READ_API_ORIGIN || "").trim();
-  const localApiOrigin = String(env.VITE_LOCAL_API_ORIGIN || "").trim();
+  const localApiOrigin = String(
+    env.LOCAL_DRAW_ADMIN_PROXY_ORIGIN || env.VITE_LOCAL_API_ORIGIN || ""
+  ).trim();
 
   return {
     plugins: [react()],
     server: {
-      proxy: readApiOrigin ? readOnlyApiProxy(readApiOrigin) : localApiProxy(localApiOrigin),
+      proxy: readApiOrigin
+        ? {
+            ...readOnlyApiProxy(readApiOrigin, { drawAdminTarget: localApiOrigin }),
+            ...drawAdminProxy(localApiOrigin),
+          }
+        : localApiProxy(localApiOrigin),
     },
   };
 });
