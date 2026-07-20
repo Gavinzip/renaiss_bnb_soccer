@@ -896,17 +896,10 @@ function normalizeDrawAdminDrawRoundId(value, sourceRoundId, networkKey = drawDe
   const selectedNetworkKey = normalizeOptionalDrawNetworkKey(networkKey)
   const baseRoundId = normalizeDrawAdminRoundId(sourceRoundId, selectedNetworkKey)
   const drawRoundId = String(value || baseRoundId).trim()
-  if (selectedNetworkKey === 'sandbox') {
-    if (drawRoundId !== baseRoundId) {
-      throw Object.assign(new Error('Sandbox source and on-chain round identities must match.'), {
-        statusCode: 400,
-        code: 'draw_sandbox_identity_invalid',
-      })
-    }
-    return drawRoundId
-  }
   if (drawRoundId === baseRoundId) return drawRoundId
-  const redrawPrefix = `${baseRoundId}-redraw-`
+  const redrawPrefix = selectedNetworkKey === 'sandbox'
+    ? `${baseRoundId}-sandbox-redraw-`
+    : `${baseRoundId}-redraw-`
   if (!drawRoundId.startsWith(redrawPrefix)) {
     throw Object.assign(new Error('Unsupported draw round identity.'), {
       statusCode: 400,
@@ -1407,7 +1400,9 @@ function runDrawAdminLedger({ roundId, drawRoundId = roundId, networkKey = drawD
       ledgerPaths.aggregatePath,
       '--locked-rounds-dir',
       ledgerPaths.lockedRoundsDir,
-      '--round-id',
+      '--source-round-id',
+      roundId,
+      '--draw-round-id',
       normalizedDrawRoundId,
     ]
     : [

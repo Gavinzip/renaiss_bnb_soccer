@@ -82,10 +82,11 @@ function normalizeRedrawAttempt(value) {
   return Math.min(999, Math.max(1, Math.floor(number)));
 }
 
-function drawRoundIdFor(baseRoundId, redrawEnabled, redrawAttempt) {
+function drawRoundIdFor(baseRoundId, redrawEnabled, redrawAttempt, networkKey = "mainnet") {
   const sourceRoundId = String(baseRoundId || "").trim();
   if (!sourceRoundId || !redrawEnabled) return sourceRoundId;
-  return `${sourceRoundId}-redraw-${normalizeRedrawAttempt(redrawAttempt)}`;
+  const redrawPrefix = networkKey === "sandbox" ? "sandbox-redraw" : "redraw";
+  return `${sourceRoundId}-${redrawPrefix}-${normalizeRedrawAttempt(redrawAttempt)}`;
 }
 
 export function preloadRoomAssets() {
@@ -792,9 +793,12 @@ export function DrawOperatorWallet({
   const selectedNetworkKey =
     sandboxMode ? "sandbox" : "mainnet";
   const sourceRoundId = activeDraw.id;
-  const drawRoundId = sandboxMode
-    ? sourceRoundId
-    : drawRoundIdFor(sourceRoundId, redrawEnabled, redrawAttempt);
+  const drawRoundId = drawRoundIdFor(
+    sourceRoundId,
+    redrawEnabled,
+    redrawAttempt,
+    selectedNetworkKey,
+  );
   const redrawActive = drawRoundId !== sourceRoundId;
   const selectedNetwork = selectedDrawNetwork(adminStatus, selectedNetworkKey);
   const targetDrawChainId = drawNetworkChainId(selectedNetwork);
@@ -1078,7 +1082,6 @@ export function DrawOperatorWallet({
   }
 
   function selectRedrawEnabled(value) {
-    if (sandboxMode) return;
     if (busyAction || adminStatus?.running) return;
     setRedrawEnabled(Boolean(value));
     setIssue("");
@@ -1095,9 +1098,13 @@ export function DrawOperatorWallet({
   }
 
   function enableNextRedrawVersion() {
-    if (sandboxMode) return sourceRoundId;
     const nextAttempt = redrawEnabled ? normalizeRedrawAttempt(redrawAttempt + 1) : normalizeRedrawAttempt(redrawAttempt);
-    const nextDrawRoundId = drawRoundIdFor(sourceRoundId, true, nextAttempt);
+    const nextDrawRoundId = drawRoundIdFor(
+      sourceRoundId,
+      true,
+      nextAttempt,
+      selectedNetworkKey,
+    );
     setRedrawEnabled(true);
     setRedrawAttempt(nextAttempt);
     return nextDrawRoundId;
@@ -1320,7 +1327,7 @@ export function DrawOperatorWallet({
     } catch (error) {
       const payload = error?.payload || null;
       const failureMessage = payload?.error || error?.message || t("draw.operatorDrawFailed");
-      const nextRedrawRoundId = !sandboxMode && shouldAutoRedrawAfterFailure(action, payload, error)
+      const nextRedrawRoundId = shouldAutoRedrawAfterFailure(action, payload, error)
         ? enableNextRedrawVersion()
         : "";
       setIssue(nextRedrawRoundId
@@ -1389,12 +1396,21 @@ export function DrawOperatorWallet({
       finals: formatNumber(roundReadiness.confirmedCount),
       matches: formatNumber(roundReadiness.expectedCount),
       remaining: formatNumber(roundReadiness.missingCount),
-    });
+  });
   const serverLastRun = currentAdminStatus?.lastRun?.startedAt ? currentAdminStatus.lastRun : null;
-  const visibleRun = serverLastRun || activeRun;
-  const runPayloadResult = runResult?.result || serverLastRun?.result || null;
+  const currentExecutionRun = drawRunMatches(activeRun, drawRoundId, selectedNetworkKey)
+    ? activeRun
+    : drawRunMatches(serverLastRun, drawRoundId, selectedNetworkKey)
+    ? serverLastRun
+    : null;
+  const visibleRun = currentExecutionRun;
+  const runPayloadResult = runResult?.result || currentExecutionRun?.result || null;
   const plannedSteps = Array.isArray(runPayloadResult?.plannedSteps) ? runPayloadResult.plannedSteps : [];
-  const outputText = runOutputText(runResult, activeRun, serverLastRun);
+  const outputText = runOutputText(
+    runResult,
+    currentExecutionRun === activeRun ? activeRun : null,
+    currentExecutionRun === serverLastRun ? serverLastRun : null,
+  );
   const txs = mergeRunTransactions(
     Array.isArray(runPayloadResult?.txs) ? runPayloadResult.txs : [],
     extractRunOutputTransactions(outputText),
@@ -1412,13 +1428,8 @@ export function DrawOperatorWallet({
         : t("draw.operatorRunIdle");
   const runTone = runIsRunning ? "is-running" : visibleRun?.ok ? "is-ready" : visibleRun ? "is-warning" : "";
   const runStage = runStageCopy({ runPayloadResult, visibleRun, output: outputText, t });
-  const currentExecutionRun = drawRunMatches(activeRun, drawRoundId, selectedNetworkKey)
-    ? activeRun
-    : drawRunMatches(serverLastRun, drawRoundId, selectedNetworkKey)
-    ? serverLastRun
-    : null;
   const executionProgressPhase = (() => {
-    if (!currentExecutionRun) return "idle";
+    if (!currentExecutionRun) return ledgerLocked ? "pool" : "idle";
     if (
       currentExecutionRun.status === "failed"
       || (currentExecutionRun.finishedAt && !currentExecutionRun.ok)
@@ -1706,6 +1717,42 @@ export function DrawOperatorWallet({
                   <code>{sourceRoundId}</code>
                   {currentAdminStatus?.roundReadiness?.sourceLedgerHash ? (
                     <code>{compactAddress(currentAdminStatus.roundReadiness.sourceLedgerHash)}</code>
+                  ) : null}
+                  <label className="draw-operator-wallet__redraw-toggle">
+                    <input
+                      type="checkbox"
+                      checked={redrawEnabled}
+                      disabled={operationBusy}
+                      onChange={(event) =>
+                        selectRedrawEnabled(event.target.checked)
+                      }
+                    />
+                    <strong>{t("draw.operatorRedrawLabel")}</strong>
+                  </label>
+                  {redrawEnabled ? (
+                    <label className="draw-operator-wallet__redraw-version">
+                      <span>{t("draw.operatorRedrawAttempt")}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        step="1"
+                        value={redrawAttempt}
+                        disabled={operationBusy}
+                        onChange={(event) =>
+                          updateRedrawAttempt(event.target.value)
+                        }
+                      />
+                      <code>{drawRoundId}</code>
+                    </label>
+                  ) : null}
+                  {redrawActive ? (
+                    <p>
+                      {t("draw.operatorRedrawWarning", {
+                        sourceRound: sourceRoundId,
+                        drawRound: drawRoundId,
+                      })}
+                    </p>
                   ) : null}
                 </section>
               ) : (
