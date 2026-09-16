@@ -89,6 +89,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("node_modules/three/")) return "three";
+          },
+        },
+      },
+    },
     server: {
       proxy: readApiOrigin
         ? {

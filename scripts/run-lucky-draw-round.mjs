@@ -155,7 +155,7 @@ function readFirstDefined(source, keys) {
 
 function normalizeDrawLedger({ ledger, matchId, drawId, env, ledgerPath }) {
   const row = findLedgerDraw(ledger, matchId, drawId)
-  if (!row) throw new Error('Ledger must contain a per-match draw row matching this drawId/matchId.')
+  if (!row) throw new Error('Ledger must contain a draw row matching this drawId/matchId.')
 
   const source = row
   const ledgerHash = String(readFirstDefined(source, ['ledgerHash', 'ledger_hash', 'hash']) || '')
@@ -192,7 +192,7 @@ function normalizeDrawLedger({ ledger, matchId, drawId, env, ledgerPath }) {
     totalTickets,
     prizeSlotCount,
     ledgerUri,
-    sourceMode: 'per-match-ledger',
+    sourceMode: String(source.sourceMode || 'per-match-ledger'),
     entries: Array.isArray(source.entries) ? source.entries : [],
   }
 }
