@@ -29,13 +29,8 @@
     "build:match-draw-ledger": "node scripts/build-match-draw-ledger.mjs",
     "build:match-draw-ledger:local": "node scripts/build-match-draw-ledger.mjs --env-file config/lucky-draw.env.local",
     "build:sandbox-draw-ledger": "node scripts/build-mainnet-sandbox-ledger.mjs",
-    "build:pokemon30-ticket-ledger": "node scripts/build-pokemon30-ticket-ledger.mjs",
-    "build:pokemon30-draw-ledger": "node scripts/build-pokemon30-draw-ledger.mjs",
     "bench:ledger:local": "node scripts/fetch-lucky-draw-ledger.mjs --env-file config/lucky-draw.env.local --dry-run --progress --cache-dir /tmp/renaiss-football-lucky-draw-benchmark",
     "contract:compile": "hardhat compile",
-    "contract:kbw:deploy:check": "node scripts/deploy-kbw-fair-checkout.mjs",
-    "contract:kbw:commit:check": "node scripts/commit-kbw-fair-set.mjs",
-    "contract:fair:access:check": "node scripts/check-official-fair-access.mjs",
     "contract:deploy:check": "node scripts/deploy-lucky-draw.mjs --env-file config/draw-contract.env.local",
     "contract:deploy:bsc": "node scripts/deploy-lucky-draw.mjs --env-file config/draw-contract.env.local --broadcast",
     "contract:sandbox:deploy:check": "node scripts/deploy-lucky-draw.mjs --env-file config/draw-contract.sandbox.env.local",
@@ -74,8 +69,7 @@
     "ogl": "^1.0.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "siwe": "^3.0.0",
-    "three": "^0.186.0"
+    "siwe": "^3.0.0"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.6",

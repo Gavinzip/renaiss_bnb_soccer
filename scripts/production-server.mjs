@@ -36,10 +36,6 @@ import {
   readLedgerPayload,
 } from './soccer-ledger-api.mjs'
 import {
-  pokemon30LedgerEntry,
-  readPokemon30Ledger,
-} from './pokemon30/outcome-ledger.mjs'
-import {
   buildMatchResultIndex,
   confirmedMatchResultFor,
   readMatchResultsSnapshot,
@@ -72,8 +68,6 @@ const dataDir = process.env.SOCCER_DATA_DIR || process.env.LUCKY_DRAW_DATA_DIR |
 const clientEntryAssetPath = readCurrentClientEntryAssetPath()
 const cacheDir = process.env.LUCKY_DRAW_CACHE_DIR || join(dataDir, 'cache')
 const ledgerPath = process.env.LUCKY_DRAW_LEDGER_PATH || join(dataDir, 'lucky-draw-ledger.json')
-const pokemon30LedgerPath = process.env.POKEMON30_TICKET_LEDGER_PATH || join(dataDir, 'pokemon30', 'ticket-ledger.json')
-const pokemon30EventCachePath = process.env.POKEMON30_EVENT_CACHE_PATH || join(dirname(pokemon30LedgerPath), 'onchain-events.json')
 const snapshotDir = process.env.LUCKY_DRAW_SNAPSHOT_DIR || join(dataDir, 'snapshots')
 const votesDir = process.env.SOCCER_VOTES_DIR || join(dataDir, 'votes')
 const voteEventsPath = process.env.SOCCER_VOTE_EVENTS_PATH || join(votesDir, 'vote-events.jsonl')
@@ -106,12 +100,6 @@ const eventCacheLookbackMinutesOverride = readIntegerEnv('LUCKY_DRAW_EVENT_CACHE
 const eventCacheLookbackMinutes = eventCacheLookbackMinutesOverride > 0
   ? eventCacheLookbackMinutesOverride
   : refreshMinutes * eventCacheLookbackRounds
-const pokemon30RefreshMinutes = readIntegerEnv('POKEMON30_REFRESH_MINUTES', 10, 1)
-const pokemon30RefreshIntervalMs = pokemon30RefreshMinutes * 60 * 1000
-const pokemon30RefreshHistoryLimit = readIntegerEnv('POKEMON30_REFRESH_HISTORY_LIMIT', 24, 1)
-const pokemon30RefreshEnabled = process.env.POKEMON30_REFRESH_ENABLED !== '0'
-const pokemon30RefreshOnStartup = process.env.POKEMON30_REFRESH_ON_STARTUP !== '0'
-const pokemon30EventCacheLookbackRounds = readIntegerEnv('POKEMON30_EVENT_CACHE_LOOKBACK_ROUNDS', 5, 1)
 const fifaResultSyncMinutes = readIntegerEnv('FIFA_RESULT_SYNC_MINUTES', 10, 1)
 const fifaResultSyncIntervalMs = fifaResultSyncMinutes * 60 * 1000
 const fifaResultSyncHistoryLimit = readIntegerEnv('FIFA_RESULT_SYNC_HISTORY_LIMIT', 24, 1)
@@ -238,15 +226,6 @@ function applyDefaultEnv(name, value, { replace = [] } = {}) {
   }
 }
 
-function isLoopbackHttpOrigin(value) {
-  try {
-    const url = new URL(String(value || '').trim())
-    return url.protocol === 'http:' && ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(url.hostname)
-  } catch {
-    return false
-  }
-}
-
 function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
   if (runtimeTarget !== 'local') return
 
@@ -256,13 +235,6 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
     || [localOrigin, 'http://127.0.0.1:5173', 'http://localhost:5173'].join(',')
   const serverDataDir = '/data/soccer'
   const serverOrigin = 'https://renaiss-worldcup.zeabur.app'
-  const localOriginReplacements = [serverOrigin]
-  for (const originName of ['PUBLIC_APP_ORIGIN', 'AUTH_PUBLIC_ORIGIN']) {
-    const configuredOrigin = process.env[originName]
-    if (isLoopbackHttpOrigin(configuredOrigin) && configuredOrigin !== localOrigin) {
-      localOriginReplacements.push(configuredOrigin)
-    }
-  }
   const localDefaultDirs = [
     '.local-data/soccer',
     '.local-data/soccer-production',
@@ -318,11 +290,8 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
     replace: localPathReplacements('fifa-match-map.json'),
   })
 
-  // The Vite development command is pinned to port 5173. A stale loopback
-  // origin would make the OAuth callback land on another local port, so local
-  // runtime consistently uses SOCCER_LOCAL_APP_ORIGIN (or that default).
-  applyDefaultEnv('PUBLIC_APP_ORIGIN', localOrigin, { replace: localOriginReplacements })
-  applyDefaultEnv('AUTH_PUBLIC_ORIGIN', localOrigin, { replace: localOriginReplacements })
+  applyDefaultEnv('PUBLIC_APP_ORIGIN', localOrigin, { replace: [serverOrigin] })
+  applyDefaultEnv('AUTH_PUBLIC_ORIGIN', localOrigin, { replace: [serverOrigin] })
   applyDefaultEnv('PUBLIC_APP_ORIGINS', localOrigins)
   applyDefaultEnv('AUTH_PUBLIC_ORIGINS', localOrigins)
   applyDefaultEnv('X_REDIRECT_URI', `${localOrigin}/api/auth/x/callback`, {
@@ -336,8 +305,6 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
 
   applyDefaultEnv('LUCKY_DRAW_REFRESH_ENABLED', '0')
   applyDefaultEnv('LUCKY_DRAW_REFRESH_ON_STARTUP', '0')
-  applyDefaultEnv('POKEMON30_REFRESH_ENABLED', '0')
-  applyDefaultEnv('POKEMON30_REFRESH_ON_STARTUP', '0')
   applyDefaultEnv('FIFA_RESULT_SYNC_ENABLED', '0')
   applyDefaultEnv('FIFA_RESULT_SYNC_ON_STARTUP', '0')
   applyDefaultEnv('DATA_BACKUP_ENABLED', '0')
@@ -346,8 +313,6 @@ function applyRuntimeDefaults({ runtimeTarget, repoRoot, port }) {
 
 let refreshRunning = false
 let refreshTimer = null
-let pokemon30RefreshRunning = false
-let pokemon30RefreshTimer = null
 let backupRunning = false
 let backupTimer = null
 let restoreRunning = false
@@ -361,16 +326,6 @@ let lastRefresh = {
   trigger: null,
 }
 let refreshHistory = []
-let lastPokemon30Refresh = {
-  ok: false,
-  startedAt: null,
-  finishedAt: null,
-  durationSeconds: null,
-  exitCode: null,
-  error: null,
-  trigger: null,
-}
-let pokemon30RefreshHistory = []
 let fifaResultSyncRunning = false
 let fifaResultSyncTimer = null
 let lastFifaResultSync = {
@@ -1897,21 +1852,6 @@ function privateHealthPayload() {
     bscscanApiKeyConfigured: Boolean(process.env.BSCSCAN_API_KEY),
     lastRefresh,
     refreshHistory,
-    pokemon30: {
-      ticketLedgerPath: pokemon30LedgerPath,
-      ticketLedgerExists: existsSync(pokemon30LedgerPath),
-      eventCachePath: pokemon30EventCachePath,
-      eventCacheExists: existsSync(pokemon30EventCachePath),
-      refreshEnabled: pokemon30RefreshEnabled,
-      refreshOnStartup: pokemon30RefreshOnStartup,
-      refreshMinutes: pokemon30RefreshMinutes,
-      eventCacheLookbackRounds: pokemon30EventCacheLookbackRounds,
-      refreshRunning: pokemon30RefreshRunning,
-      checkoutBuybackLinksConfigured: Boolean(process.env.POKEMON30_CHECKOUT_BUYBACK_LINK_PATH),
-      packRulesConfigured: Boolean(process.env.POKEMON30_PACK_RULES_JSON),
-      lastRefresh: lastPokemon30Refresh,
-      refreshHistory: pokemon30RefreshHistory,
-    },
     fifaResultSyncEnabled,
     fifaResultSyncOnStartup,
     fifaResultSyncMinutes,
@@ -1950,10 +1890,6 @@ function durationSeconds(startedAt, finishedAt) {
 
 function rememberRefresh(entry) {
   refreshHistory = [{ ...entry }, ...refreshHistory].slice(0, refreshHistoryLimit)
-}
-
-function rememberPokemon30Refresh(entry) {
-  pokemon30RefreshHistory = [{ ...entry }, ...pokemon30RefreshHistory].slice(0, pokemon30RefreshHistoryLimit)
 }
 
 function rememberFifaResultSync(entry) {
@@ -3467,98 +3403,6 @@ function runLedgerRefresh(trigger) {
   })
 }
 
-function pokemon30RefreshConfigurationError() {
-  if (!process.env.BSCSCAN_API_KEY) return 'BSCSCAN_API_KEY is not configured.'
-  if (!process.env.POKEMON30_PACK_RULES_JSON) return 'POKEMON30_PACK_RULES_JSON is not configured.'
-  const checkoutBuybackLinksPath = String(process.env.POKEMON30_CHECKOUT_BUYBACK_LINK_PATH || '').trim()
-  if (!checkoutBuybackLinksPath) return 'POKEMON30_CHECKOUT_BUYBACK_LINK_PATH is not configured.'
-  if (!existsSync(checkoutBuybackLinksPath)) return `Checkout-to-buyback link file does not exist: ${checkoutBuybackLinksPath}`
-  return ''
-}
-
-function runPokemon30LedgerRefresh(trigger) {
-  if (!pokemon30RefreshEnabled || pokemon30RefreshRunning) return
-  const configurationError = pokemon30RefreshConfigurationError()
-  if (configurationError) {
-    lastPokemon30Refresh = {
-      ok: false,
-      startedAt: null,
-      finishedAt: new Date().toISOString(),
-      durationSeconds: null,
-      exitCode: null,
-      error: configurationError,
-      trigger,
-      skipped: true,
-      reason: 'pokemon30-refresh-configuration-missing',
-    }
-    rememberPokemon30Refresh(lastPokemon30Refresh)
-    console.warn(`[pokemon30-refresh] skipped: ${configurationError}`)
-    return
-  }
-
-  pokemon30RefreshRunning = true
-  lastPokemon30Refresh = {
-    ok: false,
-    startedAt: new Date().toISOString(),
-    finishedAt: null,
-    durationSeconds: null,
-    exitCode: null,
-    error: null,
-    trigger,
-  }
-  mkdirSync(dirname(pokemon30LedgerPath), { recursive: true })
-  mkdirSync(dirname(pokemon30EventCachePath), { recursive: true })
-
-  const args = [
-    fileURLToPath(new URL('./build-pokemon30-ticket-ledger.mjs', import.meta.url)),
-    '--out',
-    pokemon30LedgerPath,
-    '--event-cache-path',
-    pokemon30EventCachePath,
-    '--event-cache-lookback-rounds',
-    String(pokemon30EventCacheLookbackRounds),
-    '--checkout-buyback-links',
-    process.env.POKEMON30_CHECKOUT_BUYBACK_LINK_PATH,
-  ]
-  console.log(
-    `[pokemon30-refresh] start trigger=${trigger} ledger=${pokemon30LedgerPath} cache=${pokemon30EventCachePath} interval=${pokemon30RefreshMinutes}m lookback=${pokemon30EventCacheLookbackRounds} rounds`,
-  )
-  const child = spawn(process.execPath, args, {
-    cwd: repoRoot,
-    env: process.env,
-    stdio: 'inherit',
-  })
-  child.on('close', (code) => {
-    pokemon30RefreshRunning = false
-    const finishedAt = new Date().toISOString()
-    lastPokemon30Refresh = {
-      ...lastPokemon30Refresh,
-      ok: code === 0,
-      finishedAt,
-      durationSeconds: durationSeconds(lastPokemon30Refresh.startedAt, finishedAt),
-      exitCode: code,
-      error: code === 0 ? null : `pokemon30 ticket-ledger refresh exited with code ${code}`,
-    }
-    rememberPokemon30Refresh(lastPokemon30Refresh)
-    console.log(`[pokemon30-refresh] finish trigger=${trigger} code=${code} duration=${lastPokemon30Refresh.durationSeconds ?? 'n/a'}s`)
-    if (code === 0) runDataBackup('pokemon30-ledger-refresh')
-  })
-  child.on('error', (error) => {
-    pokemon30RefreshRunning = false
-    const finishedAt = new Date().toISOString()
-    lastPokemon30Refresh = {
-      ...lastPokemon30Refresh,
-      ok: false,
-      finishedAt,
-      durationSeconds: durationSeconds(lastPokemon30Refresh.startedAt, finishedAt),
-      exitCode: null,
-      error: error.message,
-    }
-    rememberPokemon30Refresh(lastPokemon30Refresh)
-    console.error('[pokemon30-refresh] failed', error)
-  })
-}
-
 function runFifaResultSync(trigger) {
   if (!fifaResultSyncEnabled || fifaResultSyncRunning) return
   if (!existsSync(fifaSourceMapPath)) {
@@ -3948,72 +3792,6 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       sendLedgerApiError(request, response, error)
     }
-    return
-  }
-
-  if (url.pathname === '/api/pokemon30/raffle-summary') {
-    try {
-      sendJson(request, response, 200, readPokemon30Ledger(pokemon30LedgerPath), {
-        'cache-control': 'no-store',
-      })
-    } catch {
-      sendJson(request, response, 503, {
-        sourceStatus: 'not_ready',
-        sourceCode: 'pokemon30_ledger_read_failed',
-        message: 'Ticket ledger could not be read. No ticket totals are available.',
-        totals: null,
-      }, {
-        'cache-control': 'no-store',
-      })
-    }
-    return
-  }
-
-  if (url.pathname === '/api/pokemon30/raffle-entry') {
-    const session = readAuthSession(auth, request)
-    const walletAddress = session?.walletAddress || ''
-    if (!walletAddress) {
-      sendJson(request, response, 401, {
-        entry: null,
-        sourceStatus: 'login_required',
-        code: 'login_required',
-        error: 'Renaiss SSO login is required to view this ticket balance.',
-      }, {
-        'cache-control': 'no-store',
-      })
-      return
-    }
-    let ledger
-    try {
-      ledger = readPokemon30Ledger(pokemon30LedgerPath)
-    } catch {
-      sendJson(request, response, 503, {
-        entry: null,
-        sourceStatus: 'not_ready',
-        code: 'pokemon30_ledger_read_failed',
-        error: 'Ticket ledger could not be read. No ticket balance is available.',
-      }, {
-        'cache-control': 'no-store',
-      })
-      return
-    }
-    if (ledger.sourceStatus !== 'ready') {
-      sendJson(request, response, 503, {
-        entry: null,
-        sourceStatus: ledger.sourceStatus,
-        code: ledger.sourceCode || 'pokemon30_ledger_not_ready',
-        error: ledger.message || 'Ticket ledger is not ready.',
-      }, {
-        'cache-control': 'no-store',
-      })
-      return
-    }
-    sendJson(request, response, 200, {
-      entry: pokemon30LedgerEntry(ledger, walletAddress),
-      sourceStatus: ledger.sourceStatus,
-    }, {
-      'cache-control': 'no-store',
-    })
     return
   }
 
@@ -4519,10 +4297,6 @@ const voteStore = createConfiguredVoteStore()
 function startBackgroundJobs() {
   if (refreshEnabled && refreshOnStartup) runLedgerRefresh('startup')
   if (refreshEnabled) refreshTimer = setInterval(() => runLedgerRefresh('interval'), refreshIntervalMs)
-  if (pokemon30RefreshEnabled && pokemon30RefreshOnStartup) runPokemon30LedgerRefresh('startup')
-  if (pokemon30RefreshEnabled) {
-    pokemon30RefreshTimer = setInterval(() => runPokemon30LedgerRefresh('interval'), pokemon30RefreshIntervalMs)
-  }
   if (fifaResultSyncEnabled && fifaResultSyncOnStartup) runFifaResultSync('startup')
   if (fifaResultSyncEnabled) {
     fifaResultSyncTimer = setInterval(() => runFifaResultSync('interval'), fifaResultSyncIntervalMs)
@@ -4557,7 +4331,6 @@ server.listen(port, () => {
 function shutdown(signal) {
   console.log(`[server] shutdown signal=${signal}`)
   if (refreshTimer) clearInterval(refreshTimer)
-  if (pokemon30RefreshTimer) clearInterval(pokemon30RefreshTimer)
   if (fifaResultSyncTimer) clearInterval(fifaResultSyncTimer)
   if (backupTimer) clearInterval(backupTimer)
   voteStore.close?.()
